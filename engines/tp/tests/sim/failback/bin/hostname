@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# every engine in this repo runs on the storage node, and says so in its banner
+echo nfs01

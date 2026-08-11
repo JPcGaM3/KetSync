@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# fake zfs on the STORAGE node. The engine does two things here and only two:
+# it asks whether the image's filesystem is a dataset at all, and it takes the
+# safety snapshot before the final round writes.
+#
+# There is no destroy path on purpose. That snapshot is the operator's only way
+# back to the pre-failback image, so anything that removed one would be a
+# violation, not a simulated success.
+# shellcheck source=tests/sim/failback/lib.sh
+. "$SIMLIB"
+sub="${1:-}"; shift || true
+trace "zfs $sub $*"
+case "$sub" in
+  snapshot)
+    name="${1:-}"; ds="${name%@*}"
+    grep -qF -- "snapshot $ds" "$SIMROOT/zfs.fail" 2>/dev/null \
+      && { echo "cannot create snapshot '$name': out of space" >&2; exit 1; }
+    [[ "$(zfs_type "$ds")" == "fs" ]] || { echo "cannot open '$ds': dataset does not exist" >&2; exit 1; }
+    [[ -n "$(zfs_type "$name")" ]] && { echo "cannot create snapshot '$name': dataset already exists" >&2; exit 1; }
+    dry_forbids "zfs snapshot $name"
+    zfs_add "$name" snap "-"
+    exit 0;;
+  list)
+    [[ -n "$(zfs_type "${*: -1}")" ]] || { echo "cannot open '${*: -1}': dataset does not exist" >&2; exit 1; }
+    printf '%s\n' "${*: -1}"; exit 0;;
+  destroy)
+    violation "zfs destroy ${*} - the safety snapshot is the only way back to the pre-failback image"
+    exit 1;;
+esac
+echo "unsupported: zfs $sub $*" >&2
+exit 1

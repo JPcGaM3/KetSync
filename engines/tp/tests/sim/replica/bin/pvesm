@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# On the storage node the engine asks PVE exactly one thing: where a volume
+# lives. Anything else would be a write, and this tool does not write here.
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+sub="${1:-}"; shift || true
+trace "pvesm $sub $*"
+case "$sub" in
+  path)
+    vol="${1:-}"; st="${vol%%:*}"; rest="${vol#*:}"; vmid="${rest%%/*}"; name="${rest#*/}"
+    pf="$SIMROOT/storage/$st.path"
+    [[ -f "$pf" ]] || { echo "storage '$st' does not exist" >&2; exit 255; }
+    p="$(cat "$pf")"
+    # a block storage has no images/ layout, and the engine has to refuse it
+    [[ "$p" == /dev/* ]] && { printf '%s/vm-%s-disk-0.raw\n' "$p" "$vmid"; exit 0; }
+    printf '%s/images/%s/%s\n' "$p" "$vmid" "$name"; exit 0;;
+  *)
+    violation "pvesm $sub on the storage node - this engine only reads paths here"
+    exit 1;;
+esac

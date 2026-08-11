@@ -1,0 +1,36 @@
+# bridgemap.tsv - what each node calls the same network.
+#
+# Copy this to bridgemap.tsv (same directory) and fill it in. Without it the
+# bridge names on the source node are carried across unchanged, which is right
+# when both nodes name their networks the same way and wrong the moment they do
+# not: vmbr1 on one node and vmbr1 on another are the same string, not the same
+# segment, and nothing in either config says which.
+#
+# Four columns, TAB or spaces, # starts a comment:
+#
+#   old_node   old_bridge   new_node   new_bridge
+#
+# * is allowed in any of the first three columns and the first matching row
+# wins, so specific rows go above general ones. A row with fewer than four
+# columns is refused rather than ignored, because a row that silently never
+# matches looks exactly like no map at all.
+#
+# A bridge with no row here is carried across unchanged and marked UNMAPPED in
+# the output. That is deliberate: guessing puts a machine on the wrong segment,
+# and the mistake is invisible until something that should answer does not.
+#
+# This file is read by tools/c2v-prepare.sh when it prints the qm set commands
+# for the VM's interfaces. It never changes a running config by itself - the
+# operator still types those commands at go-live, by hand, on purpose.
+
+# --- normal use: one row per network that is named differently on the two nodes
+# old_node	old_bridge	new_node	new_bridge
+#pve6a		vmbr0		pve9a		vmbr0
+#pve6a		vmbr1		pve9a		vmbr2
+
+# --- lab use: a * in the bridge column sends every interface to one bridge.
+# That is how the VM gets tested on a dead-end OVS bridge while the CT is still
+# running - nothing can leave it, so the VM may carry the CT's own addresses.
+# The script warns about this row on every run. Take it out before go-live, or
+# the production machine comes up on a bridge with nothing on the other end.
+#*		*		*		vmbr99

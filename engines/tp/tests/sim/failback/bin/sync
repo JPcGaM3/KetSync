@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# the real one would flush the host's disks, which is neither needed nor kind
+exit 0

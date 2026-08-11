@@ -1,0 +1,16 @@
+# The engine and the inventory are read by bash on a Proxmox node. A CRLF that
+# a checkout on Windows or a careless editor introduced would break the shebang
+# line and put a stray \r into every field of every inventory row.
+* text=auto eol=lf
+
+*.sh      text eol=lf
+Makefile  text eol=lf
+*.conf    text eol=lf
+
+# inventory.tsv is TAB separated and the tabs are load-bearing. Never let a
+# filter or a smudge/clean script normalise whitespace in these.
+*.tsv     text eol=lf -whitespace
+
+# generated / vendored, so GitHub's language stats do not call this an HTML
+# project because of one very long operator guide
+docs/*.html linguist-documentation

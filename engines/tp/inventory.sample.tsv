@@ -1,0 +1,28 @@
+# inventory.tsv — whitespace/tab separated; lines starting with # are ignored
+# columns (ALL required):  old_node  old_ctid  new_ctid  new_node  storage
+#   old_node : host/IP of the source node (ssh reachable from storage-node via key)
+#   old_ctid : VMID on the old node (must be RUNNING to sync)
+#   new_ctid : VMID to create on the target node (must be free)
+#   new_node : host/IP of the target node for THIS CT (REQUIRED — no default;
+#              a row without new_node is skipped with an ERROR in the log)
+#   storage  : PVE storage id for THIS CT (REQUIRED — no default). It must exist
+#              on BOTH sides with the SAME id and DIFFERENT types:
+#                this node : dir  -> pvesm add dir tank-hdd-nas \
+#                                      --path /tank/hosting --is_mountpoint yes
+#                new_node  : nfs  -> same dataset over NFS, same id, so the
+#                                    volume id in the CT config resolves there
+#              The engine derives the pool path from PVE itself (pvesm path),
+#              so there is nothing else to keep in sync by hand.
+#
+#   rootfs size is derived from the old CT automatically (no size column)
+#   network is NOT written into the new config; add net0 by hand at go-live
+#
+# run one cron schedule per storage:
+#   ct-migrate.sh --storage tank-hdd-nas
+#   ct-migrate.sh --storage tank-ssd-nas
+# and set LANES in ctmig.conf to how many of those can overlap, so the
+# tool-wide bandwidth ceiling still holds.
+#
+# example — CTs split across two target nodes and two storages:
+10.100.1.23   300   99100   10.100.1.19   tank-hdd-nas
+10.100.1.23   998   99200   10.100.1.18   tank-ssd-nas

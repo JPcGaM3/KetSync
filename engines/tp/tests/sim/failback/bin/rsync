@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# fake rsync: a promoted copy on the backup node -> the loop-mounted PRODUCTION
+# image on this node. The opposite direction from ct-replica, and the dangerous
+# one: what is at risk here is a live customer's rootfs, not a copy of it.
+#
+# So this is where the fake refuses to pretend the hardest. Five different
+# disasters end up here, and each is a violation instead of a simulated
+# transfer.
+# shellcheck source=tests/sim/failback/lib.sh
+. "$SIMLIB"
+dst="${*: -1}"; dst="${dst%/}"; src="${*: -2:1}"; src="${src%/}"
+logfile=""; wants_stats=0; deletes=0; dryrun=0
+for a in "$@"; do
+  case "$a" in
+    --log-file=*) logfile="${a#--log-file=}";;
+    --stats)      wants_stats=1;;
+    --delete)     deletes=1;;
+    -n|--dry-run) dryrun=1;;
+  esac
+done
+trace "rsync $src -> $dst"
+# Every flag, recorded one per line. Without this the fake sees only src and
+# dst, and the whole option set is untestable: stripping -x, --delete,
+# --numeric-ids, --sparse and all six excludes left the suite 61/61 green.
+# -x is the flag that keeps a 2T mp0 out of a rootfs image; it was correct
+# in the tree and nothing would have said so on the day it stopped being.
+for _a in "$@"; do case "$_a" in -*) trace "rsyncopt $_a";; esac; done
+
+# The one rsync a dry run may make is one that cannot move a byte. Without
+# -n this call has --delete and --inplace on it, so a run that called itself
+# dry would empty and rewrite the customer's rootfs.
+(( dryrun )) || dry_forbids "rsync without -n, $src -> $dst"
+
+# The engine must never put rsync in a pipeline to read its stats: that takes
+# stdout away from --info=progress2 and the operator loses the progress bar. So
+# if it asked for stats it must have asked for a file to put them in.
+(( wants_stats && ${#logfile} == 0 )) \
+  && violation "rsync --stats without --log-file (stats could only come from stdout)"
+
+# --- the destination must be the loop-mounted image, on a real filesystem ---
+if [[ "$dst" == *:* ]]; then
+  violation "rsync destination '$dst' is remote - this failback writes on THIS node"
+  exit 1
+fi
+img="$(img_at "$dst")"
+if [[ -z "$img" ]]; then
+  # B5. A plain directory swallows the whole rootfs of a DR'd container and
+  # puts it on whatever filesystem $MNT_BASE happens to live on.
+  violation "rsync into $dst, which is not a loop-mounted image - the restore lands in a plain directory"
+elif ! is_mounted "$dst"; then
+  violation "rsync into $dst, which is not mounted"
+else
+  # B3. An unmounted backing dataset leaves an ordinary empty directory behind,
+  # so "writing into the image" fills the node's root disk instead.
+  [[ "$(fs_holder "$img")" == "/" ]] \
+    && violation "rsync writes into $img, which sits on the node ROOT filesystem - B3"
+  # B1, made executable. The image belongs to a container; if that container is
+  # up on its own node then its rootfs is mounted there too, and this second
+  # mount is ext4 corruption of the LIVE customer system.
+  ct="$(ct_of_image "$img")" || ct=""
+  if [[ -n "$ct" ]]; then
+    st="$(prod_status "$ct")" || st="unreachable"
+    [[ "$st" == "stopped" ]] \
+      || violation "rsync into the image of CT $ct while it is '$st' - B1"
+  fi
+fi
+
+# --- the source must be one promoted copy on the backup node ---
+if [[ "$src" != *:* ]]; then
+  violation "rsync source '$src' is not remote - the data is supposed to come off the backup node"
+  exit 1
+fi
+rpath="${src#*:}"; rpath="${rpath%/}"
+ds="$(bkp_ds_of "$rpath")"
+if [[ -z "$ds" || "$(bkp_field "$ds" 2)" != "yes" ]]; then
+  violation "rsync reads $rpath, which no MOUNTED dataset owns - that is an empty directory, and --delete would then empty the production image"
+else
+  base="${rpath##*/}"
+  if [[ "$base" =~ ^subvol-([0-9]+)-disk-0$ ]]; then
+    vmid="${BASH_REMATCH[1]}"
+    cst="$(cat "$BKP/ct/$vmid.status" 2>/dev/null)"
+    # B2. Both modes are legitimate; what is never legitimate is reading a copy
+    # that nothing is shielding. While it RUNS, ct-replica's R2 skips it. Once
+    # it is down, only PAUSE stands between the DR data and the next cron tick,
+    # which would overwrite it with the stale production image - and then this
+    # rsync would pull that staleness back over the customer's rootfs.
+    if (( ! dryrun )); then
+      case "$cst" in
+        running) ;;
+        stopped) [[ -f "$SIMWORK/PAUSE" ]] \
+                   || violation "rsync pulls from copy $vmid, which is STOPPED with ct-replica not paused - R2 is not shielding it any more";;
+        *)       violation "rsync pulls from copy $vmid, which is '${cst:-unknown}'";;
+      esac
+    fi
+  else
+    violation "rsync source $rpath is not a per-copy subvol dataset - this would pull every copy under it into one image"
+  fi
+fi
+
+# A scenario can interrupt this transfer. SIGINT goes to the engine, which is
+# where Ctrl-C lands: bash defers it until the foreground child is reaped, then
+# runs its EXIT trap and dies. Nothing after the rsync call runs - so whatever
+# has to survive a kill (here: the loop-mount on a live customer image) must be
+# in that trap.
+if [[ -f "$SIMROOT/rsync.kill" ]]; then
+  rm -f "$SIMROOT/rsync.kill"
+  # a terminal signals the whole foreground process GROUP, and both halves are
+  # needed: bash discards a SIGINT it took while a child was running if that
+  # child exits normally, and keeps going if only the child was signalled.
+  kill -INT "$PPID" 2>/dev/null
+  kill -INT $$
+  sleep 5                              # unreachable; here so a blocked signal shows
+  exit 20
+fi
+
+n="$(cat "$SIMROOT/rsync.n" 2>/dev/null || echo 0)"
+rc="$(awk -v i="$n" 'NR==1{print $(i+1)}' "$SIMROOT/rsync.rc" 2>/dev/null)"
+[[ -z "$rc" ]] && rc=0
+echo $(( n + 1 )) > "$SIMROOT/rsync.n"
+
+# real rsync writes its --stats block with THOUSANDS SEPARATORS, so the fake
+# does too - a parser that forgets to strip commas is caught here instead of on
+# a live CT.
+if [[ -n "$logfile" ]]; then
+  read -r f_files f_lit f_sent f_total < <(cat "$SIMROOT/rsync.stats" 2>/dev/null \
+    || echo "161 2469606195 2470127483 118111600640")
+  commafy(){ sed -e :a -e 's/\(.*[0-9]\)\([0-9]\{3\}\)/\1,\2/;ta' <<<"$1"; }
+  cat >> "$logfile" <<EOF
+Number of files: 157,957 (reg: 133,163, dir: 18,610)
+Number of created files: 0
+Number of deleted files: 0
+Number of regular files transferred: $(commafy "$f_files")
+Total file size: $(commafy "$f_total") bytes
+Total transferred file size: $(commafy "$f_lit") bytes
+Literal data: $(commafy "$f_lit") bytes
+Matched data: 0 bytes
+File list size: 0
+Total bytes sent: 3,271
+Total bytes received: $(commafy "$f_sent")
+EOF
+fi
+
+# Move the data, so a scenario can prove the production image really did end up
+# holding the DR generation. 11 is out of space: nothing lands. 23 is partial,
+# and it leaves the image half-written - which is the whole reason rc 23 must
+# never be counted as a success.
+if (( ! dryrun )) && [[ -d "$dst" && ( "$rc" == 0 || "$rc" == 24 || "$rc" == 23 ) ]]; then
+  (( deletes )) && find "$dst" -mindepth 1 -delete 2>/dev/null
+  [[ -d "$BKP/fs$rpath" ]] && cp -a "$BKP/fs$rpath/." "$dst/" 2>/dev/null
+fi
+exit "$rc"

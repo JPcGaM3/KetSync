@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+. "$SIMLIB"
+[[ "$1" == "-q" ]] && shift
+p="${1%/}"; trace "mountpoint $p"
+is_mounted "$p"

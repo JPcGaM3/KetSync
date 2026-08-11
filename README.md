@@ -23,9 +23,11 @@ problem from moving the bytes, which `tp` already solves.
 
 ## Getting started
 
+One repo, one clone. `engines/tp` is committed here, so there is no second
+checkout and no submodule to forget.
+
 ```bash
 git clone <this repo> /root/ketsync && cd /root/ketsync
-git clone <the tp repo> engines/tp
 
 cp ketsync.conf.sample  ketsync.conf
 cp nodes.tsv.sample     nodes.tsv
@@ -53,13 +55,34 @@ back is a decision, not a step.
 It does not choose where a container goes during a disaster. The `dr` column in
 the inventory does, written down in advance; `--node` overrides it on the day.
 
+## What is in here
+
+```
+ketsync              the dispatcher, and lib/ behind it — the decision layer
+engines/tp/          the three engines that do the moving, committed in full
+docs/decisions.md    why it is shaped this way, and what is not built
+tests/               the debt
+```
+
+## The gates
+
+```bash
+make lint       # both layers: bash -n, shellcheck, the language rule, doc embeds
+make test       # engines/tp: 179 simulator scenarios, the dispatcher, c2v, python
+make mutation   # 118 known bugs put back one at a time; none may survive
+```
+
+`make -C engines/tp test-replica` and friends still work if you want one engine.
+
 ## Status
 
 `sync`, `role` and `doctor` work. `distribute`, `recall` and `status` are
 stubs that say so and exit 2 — a command that half works is worse than one
 that admits it does not, especially the one you reach for during a DR.
 
-`tests/` is empty, and that is a debt rather than a decision. Read
-`tests/README.md` before adding anything that writes to a real machine.
+`engines/tp` is tested hard. `ketsync` itself is not tested at all: `tests/`
+is empty, and that is a debt rather than a decision. `make test` says so on
+every run. Read `tests/README.md` before adding anything here that writes to a
+real machine.
 
 The design, and the arguments behind it, are in `docs/decisions.md`.

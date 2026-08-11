@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+. "$SIMLIB"
+p="${@: -1}"; p="${p%/}"
+v=$(cat "$SIMROOT/pools/$(esc "$p").avail" 2>/dev/null || echo 5497558138880)
+echo "Avail"; echo "$v"

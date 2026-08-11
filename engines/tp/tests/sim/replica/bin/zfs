@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# fake zfs on the STORAGE node: snapshot, clone, get, destroy.
+#
+# The destroy rule is the one that matters. Everything this engine destroys it
+# created moments earlier and named after its own lane; a destroy of anything
+# else is a customer dataset going away, so it is a violation rather than a
+# simulated success.
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+sub="${1:-}"; shift || true
+trace "zfs $sub $*"
+
+# a scenario can make one operation fail the way a real pool does (out of
+# space, dataset busy, a leftover clone that will not go)
+_fails(){ grep -qF -- "$1" "$SIMROOT/zfs.fail" 2>/dev/null; }
+
+case "$sub" in
+  snapshot)
+    name="${1:-}"
+    _fails "snapshot ${name%@*}" && { echo "cannot create snapshot '$name': fake failure" >&2; exit 1; }
+    ds="${name%@*}"
+    [[ "$(zfs_type "$ds")" == "fs" ]] || { echo "cannot open '$ds': dataset does not exist" >&2; exit 1; }
+    [[ -n "$(zfs_type "$name")" ]] && { echo "cannot create snapshot '$name': dataset already exists" >&2; exit 1; }
+    dry_forbids "zfs snapshot $name"
+    zfs_add "$name" snap "-"
+    exit 0;;
+
+  clone)
+    snap="${1:-}"; clone="${2:-}"
+    _fails "clone ${snap%@*}" && { echo "cannot create '$clone': fake failure" >&2; exit 1; }
+    [[ "$(zfs_type "$snap")" == "snap" ]] || { echo "cannot open '$snap': dataset does not exist" >&2; exit 1; }
+    [[ -n "$(zfs_type "$clone")" ]] && { echo "cannot create '$clone': dataset already exists" >&2; exit 1; }
+    dry_forbids "zfs clone $snap $clone"
+    srcmnt="$(zfs_mnt "${snap%@*}")"
+    cmnt="$SIMROOT/z/$clone"
+    mkdir -p "$cmnt"
+    # a clone starts out byte-identical to the instant the snapshot was taken
+    [[ -d "$srcmnt" ]] && cp -a "$srcmnt/." "$cmnt/" 2>/dev/null
+    zfs_add "$clone" clone "$cmnt"
+    fs_add "$cmnt" zfs "$clone"
+    # a scenario can build the clone but leave it unmounted, which is what an
+    # inherited canmount=noauto looks like from here
+    [[ -f "$SIMROOT/clone.nomount" ]] || add_mount "$cmnt"
+    exit 0;;
+
+  destroy)
+    [[ "${1:-}" == "-r" ]] && shift
+    name="${1:-}"
+    if [[ "$name" == *@* ]]; then
+      [[ "${name#*@}" == ctrep-* ]] \
+        || violation "zfs destroy of snapshot $name - this run did not create it"
+    else
+      base="${name##*/}"
+      [[ "$base" == ctrep-clone-* ]] \
+        || violation "zfs destroy of $name - not a snapshot and not a ctrep clone"
+    fi
+    dry_forbids "zfs destroy $name"
+    [[ -n "$(zfs_type "$name")" ]] || { echo "cannot open '$name': dataset does not exist" >&2; exit 1; }
+    mnt="$(zfs_mnt "$name")"
+    if [[ -n "$mnt" && "$mnt" != "-" ]]; then del_mount "$mnt"; fs_del "$mnt"; rm -rf "$mnt"; fi
+    zfs_del "$name"
+    exit 0;;
+
+  get)   # zfs get -H -o value <prop> <name>
+    prop=""; name=""
+    while (( $# )); do
+      case "$1" in
+        -H) shift;;
+        -o) shift 2;;
+        *)  if [[ -z "$prop" ]]; then prop="$1"; else name="$1"; fi; shift;;
+      esac
+    done
+    [[ -n "$(zfs_type "$name")" ]] || { echo "cannot open '$name': dataset does not exist" >&2; exit 1; }
+    case "$prop" in
+      mountpoint) printf '%s\n' "$(zfs_mnt "$name")";;
+      mounted)    is_mounted "$(zfs_mnt "$name")" && echo yes || echo no;;
+      *)          echo "-";;
+    esac
+    exit 0;;
+
+  list)
+    [[ -n "$(zfs_type "${*: -1}")" ]] || { echo "cannot open '${*: -1}': dataset does not exist" >&2; exit 1; }
+    printf '%s\n' "${*: -1}"; exit 0;;
+esac
+echo "unsupported: zfs $sub $*" >&2
+exit 1

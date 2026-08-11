@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+m="${1%/}"; trace "umount $m"
+grep -qxF "$m" "$SIMROOT/umount.fail" 2>/dev/null && { echo "umount: target is busy" >&2; exit 32; }
+del_mount "$m"; del_loop_by_mnt "$m"
+# the filesystem goes away with the mount; anything left behind would be a
+# later run reading a previous run's image through a stale directory
+find "$m" -mindepth 1 -delete 2>/dev/null
+exit 0

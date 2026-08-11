@@ -1,0 +1,2585 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ติดตั้งระบบ PVE Hybrid</title>
+<style>
+  :root{
+    --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
+    --bg:#fbfaf8; --surface:#ffffff; --line:#e8e5de; --line2:#d9d5cc;
+    --accent:#0f766e; --accent-soft:#e6f1ef;
+    --warn:#a45309; --warn-soft:#fdf3e3;
+    --crit:#b02020; --crit-soft:#fceded;
+    --code-bg:#f5f4f0;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai","Sarabun",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+  .topbar{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line)}
+  .topbar .in{max-width:820px;margin:0 auto;padding:11px 24px;display:flex;
+              align-items:center;gap:14px;flex-wrap:wrap}
+  .topbar .name{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent)}
+  .topbar a{font-size:14px;color:var(--muted);text-decoration:none;padding:2px 0;
+            border-bottom:1.5px solid transparent}
+  .topbar a:hover{color:var(--ink);border-bottom-color:var(--accent)}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 90px}
+  header.doc{padding-bottom:26px;border-bottom:2px solid var(--ink);margin-bottom:8px}
+  h1{font-size:31px;line-height:1.35;margin:0 0 8px;font-weight:700}
+  header.doc p{color:var(--muted);margin:0;font-size:16.5px}
+  .where{display:inline-block;margin-top:16px;font-size:14px;background:var(--accent-soft);
+         color:var(--accent);border:1px solid #c6ddd9;border-radius:999px;padding:4px 14px}
+  section{margin-top:46px;scroll-margin-top:70px}
+  .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+  .num{font-family:var(--mono);font-size:13px;font-weight:600;color:#fff;background:var(--accent);
+       border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+  h2{font-size:22px;margin:0;font-weight:700}
+  h3{font-size:17px;margin:30px 0 6px;font-weight:700}
+  p{margin:0 0 14px}
+  .lead{color:var(--muted);margin-bottom:16px}
+  ul.clean{margin:8px 0 16px;padding:0;list-style:none}
+  ul.clean li{position:relative;padding-left:20px;margin:9px 0}
+  ul.clean li::before{content:"";position:absolute;left:2px;top:12px;width:6px;height:6px;
+                      background:var(--accent);border-radius:50%}
+  .code{position:relative;margin:14px 0 18px}
+  pre{background:var(--code-bg);border:1px solid var(--line2);border-radius:10px;
+      padding:15px 68px 15px 17px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;
+      font-family:var(--mono);font-size:13.5px;line-height:1.75;color:#22262c}
+  pre .p{color:var(--accent);user-select:none}
+  pre .c{color:var(--faint)}
+  .code .cp{position:absolute;top:8px;right:8px;font-family:var(--sans);font-size:12px;
+    color:var(--muted);background:var(--surface);border:1px solid var(--line2);
+    border-radius:7px;padding:3px 11px;cursor:pointer;line-height:1.5}
+  .code .cp:hover{color:var(--accent);border-color:var(--accent)}
+  .out{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line2);
+       border-radius:0 10px 10px 0;padding:13px 16px;margin:14px 0 18px;
+       white-space:pre-wrap;overflow-wrap:anywhere;
+       font-family:var(--mono);font-size:12.8px;line-height:1.8;color:#4b515b}
+  .out .g{color:var(--accent);font-weight:600}
+  code.inl{font-family:var(--mono);font-size:.87em;background:#eef0ec;border:1px solid var(--line2);
+           border-radius:4px;padding:1px 6px;color:#0c4f48;white-space:nowrap}
+  .tip,.warn,.stop{border-left:3px solid;border-radius:0 9px 9px 0;padding:13px 17px;
+                   margin:16px 0;font-size:15px}
+  .tip{border-color:var(--accent);background:var(--accent-soft)}
+  .warn{border-color:var(--warn);background:var(--warn-soft)}
+  .stop{border-color:var(--crit);background:var(--crit-soft)}
+  .tip b{color:var(--accent)} .warn b{color:var(--warn)} .stop b{color:var(--crit)}
+  .tip p:last-child,.warn p:last-child,.stop p:last-child{margin-bottom:0}
+  table{width:100%;border-collapse:collapse;margin:14px 0 18px;font-size:14.5px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:13px;color:var(--muted);font-weight:600;border-bottom:1.5px solid var(--line2)}
+  td.m,td .m{font-family:var(--mono);font-size:13px;white-space:nowrap;color:#0c4f48}
+  tr:hover td{background:#fdfdfb}
+  .machine{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:700;
+    color:var(--accent);background:var(--accent-soft);border:1px solid #c6ddd9;
+    border-radius:6px;padding:1px 9px;margin-bottom:6px}
+  details.src{margin:14px 0 18px;border:1px solid var(--line2);border-radius:10px;background:var(--surface)}
+  details.src summary{cursor:pointer;padding:11px 16px;font-size:14.5px;color:var(--accent);font-weight:600}
+  details.src summary:hover{background:var(--accent-soft);border-radius:10px}
+  details.src .code{margin:0;border-top:1px solid var(--line)}
+  details.src pre{border:0;border-radius:0 0 10px 10px;max-height:480px;overflow:auto}
+  footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);
+         font-size:13.5px;color:var(--faint);line-height:1.9}
+  @media(max-width:640px){
+    body{font-size:15.5px}
+    .wrap{padding:28px 18px 70px}
+    h1{font-size:25px}
+    table{font-size:13.5px}
+    th,td{padding:8px 8px}
+    td.m,td .m{white-space:normal}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="in">
+    <span class="name">infra-setup</span>
+    <a href="#s1">1. ทุกเครื่อง</a>
+    <a href="#s2">2. nfs</a>
+    <a href="#s3">3. cluster</a>
+    <a href="#s4">4. storage</a>
+    <a href="#s5">5. backup</a>
+    <a href="#s6">6. สร้าง CT/VM</a>
+    <a href="#s8">7. เช็คจบ</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="doc">
+  <h1>ติดตั้งระบบ PVE Hybrid</h1>
+  <p>ตั้งระบบทั้งชุดตั้งแต่ศูนย์ — เน้นคำสั่งที่ต้องรัน เรียงตามลำดับ ทำทีละข้อจนจบ</p>
+  <div class="where">แต่ละกล่องคำสั่งมีป้ายบอกว่ารันบนเครื่องไหน — ดูป้ายก่อนพิมพ์เสมอ</div>
+</header>
+
+<section id="s0">
+  <div class="eyebrow"><span class="num">0</span><h2>ระบบนี้มี 3 บทบาทเครื่อง</h2></div>
+  <table>
+    <tr><th>เครื่อง</th><th>หน้าที่</th></tr>
+    <tr><td class="m">{compute_node_xx}</td><td>รัน CT/VM ของลูกค้า (มีได้หลายเครื่อง: 01, 02, ...)</td></tr>
+    <tr><td class="m">{nfs_node}</td><td>เก็บข้อมูลของ CT/VM ทั้งหมด แชร์ให้ compute ผ่าน NFS — <b>ทำหน้าที่นี้อย่างเดียว</b></td></tr>
+    <tr><td class="m">{backup_node}</td><td>เก็บสำเนา CT (ปิดไว้) + เก็บ backup ระยะยาว (PBS)</td></tr>
+  </table>
+  <p>ทุกที่ในเอกสารที่เห็น <code class="inl">{...}</code> ให้แทนด้วยชื่อหรือไอพีจริงของเครื่องนั้น
+     ทุกเครื่องลง Proxmox VE 8 มาแล้วเรียบร้อย</p>
+</section>
+
+<section id="s1">
+  <div class="eyebrow"><span class="num">1</span><h2>เตรียมทุกเครื่อง</h2></div>
+  <p class="lead">เวลาตรงกัน + รู้จักชื่อกันครบ + กุญแจ ssh</p>
+
+  <span class="machine">ทุกเครื่อง</span>
+  <div class="code"><pre><span class="p">$ </span>timedatectl set-timezone Asia/Bangkok
+<span class="p">$ </span>apt update && apt install -y chrony
+<span class="p">$ </span>chronyc tracking     <span class="c"># must report that the clock is synced</span></pre></div>
+
+  <span class="machine">ทุกเครื่อง</span> — ใส่ชื่อทุกเครื่องลง <code class="inl">/etc/hosts</code> (แก้ไอพี/ชื่อให้ตรงของจริง)
+  <div class="code"><pre><span class="p">$ </span>cat >> /etc/hosts <<'EOF'
+{ip_nfs}      {nfs_node}
+{ip_compute}  {compute_node_01}
+{ip_backup}   {backup_node}
+EOF</pre></div>
+
+  <span class="machine">{nfs_node}</span> — สร้างกุญแจแล้วแจกไปเครื่อง backup (โปรแกรมสำเนาใช้)
+  <div class="code"><pre><span class="p">$ </span>ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
+<span class="p">$ </span>ssh-copy-id root@{backup_node}
+<span class="p">$ </span>ssh -o BatchMode=yes root@{backup_node} hostname   <span class="c"># must print a hostname, no password prompt</span></pre></div>
+</section>
+
+<section id="s2">
+  <div class="eyebrow"><span class="num">2</span><h2>เครื่อง nfs — ที่เก็บข้อมูลกลาง</h2></div>
+
+  <h3>2.1 สร้างที่เก็บข้อมูล</h3>
+  <span class="machine">{nfs_node}</span>
+  <p>สร้าง pool ตามดิสก์จริงก่อน (ผู้ดูแลเลือก layout เอง) แล้วค่อยรันสองคำสั่งนี้</p>
+  <div class="code"><pre><span class="p">$ </span>zfs create tank/hosting
+<span class="p">$ </span>zfs set compression=lz4 atime=off xattr=sa snapdir=visible tank/hosting</pre></div>
+
+  <h3>2.2 แชร์ผ่าน NFS</h3>
+  <span class="machine">{nfs_node}</span>
+  <div class="code"><pre><span class="p">$ </span>apt install -y nfs-kernel-server
+<span class="p">$ </span>echo '/tank/hosting {network}/24(rw,sync,no_subtree_check,no_root_squash)' >> /etc/exports
+<span class="p">$ </span>exportfs -ra && exportfs -v
+<span class="p">$ </span>systemctl enable --now nfs-kernel-server</pre></div>
+
+  <h3>2.3 เปิด snapshot อัตโนมัติ (ปุ่ม undo ของทั้งระบบ)</h3>
+  <span class="machine">{nfs_node}</span>
+  <div class="code"><pre><span class="p">$ </span>apt install -y sanoid
+<span class="p">$ </span>mkdir -p /etc/sanoid && cat > /etc/sanoid/sanoid.conf <<'EOF'
+[tank/hosting]
+        use_template = production
+        recursive = yes
+[tank/hosting-ssd]
+        use_template = production
+        recursive = yes
+[template_production]
+        frequently = 0
+        hourly = 12
+        daily = 7
+        monthly = 2
+        yearly = 0
+        autosnap = yes
+        autoprune = yes
+EOF
+<span class="p">$ </span>systemctl enable --now sanoid.timer</pre></div>
+
+  <p>ตัวเลขคือ<b>จำนวนชุดที่เก็บ ไม่ใช่ความถี่</b> — <code class="inl">hourly = 12</code> แปลว่าถ่าย
+     snapshot ชั่วโมงละครั้งแล้วเก็บย้อนหลัง 12 ชุด (ครึ่งวัน) ใส่ 0 คือปิดช่วงนั้นไปเลย
+     ยิ่งเก็บนานยิ่งกินที่ตามปริมาณข้อมูลที่เปลี่ยนในช่วงนั้น</p>
+
+  <div class="warn">
+    <p><b>ต้องเขียนทุก dataset ให้ครบ</b> <code class="inl">recursive</code> ครอบแค่ <i>ลูก</i>
+    ของ dataset นั้น — <code class="inl">tank/hosting-ssd</code> เป็น<b>พี่น้อง</b>ของ
+    <code class="inl">tank/hosting</code> ไม่ใช่ลูก ถ้าไม่เขียนแยกไว้ ชั้น SSD จะไม่มี snapshot เลย
+    โดยไม่มีอะไรฟ้อง</p>
+  </div>
+
+  <p>เช็คว่าได้ครบทั้งสองชั้นจริง หลังปล่อยไว้สักชั่วโมง</p>
+  <div class="code"><pre><span class="p">$ </span>zfs list -t snapshot -o name,creation | grep autosnap | tail
+<span class="p">$ </span>zfs list -o name,used,usedsnap,available tank/hosting tank/hosting-ssd</pre></div>
+</section>
+
+<section id="s3">
+  <div class="eyebrow"><span class="num">3</span><h2>รวมเครื่องเป็น cluster + ตัวช่วยโหวต</h2></div>
+
+  <h3>3.1 สร้างและ join</h3>
+  <span class="machine">{compute_node_01} (เครื่องแรกเครื่องเดียว)</span>
+  <div class="code"><pre><span class="p">$ </span>pvecm create tomato</pre></div>
+
+  <span class="machine">compute เครื่องอื่นๆ + {backup_node}</span> — ทีละเครื่อง รอเครื่องก่อนหน้าเสร็จ
+  <div class="code"><pre><span class="p">$ </span>pvecm add {compute_node_01}
+<span class="p">$ </span>pvecm status     <span class="c"># must say Quorate: Yes and list every node</span></pre></div>
+
+  <div class="stop">
+    <p><b>เครื่องที่จะ join ต้องยังไม่มี CT/VM ใดๆ</b> เพราะการ join จะล้างการตั้งค่าเดิมทั้งหมด
+    ({nfs_node} ไม่ต้อง join — มันอยู่นอก cluster โดยตั้งใจ)</p>
+  </div>
+
+  <h3>3.2 QDevice — กรรมการโหวตเวลาเครื่องดับ</h3>
+  <p>สร้าง CT เล็กๆ 1 ตัวบน {nfs_node} (Debian เปล่าๆ ก็พอ) ตั้งไอพีเป็นแบบ<b>คงที่</b> เรียกว่า {qdevice_ct}</p>
+
+  <span class="machine">CT {qdevice_ct}</span>
+  <div class="code"><pre><span class="p">$ </span>apt install -y corosync-qnetd</pre></div>
+
+  <span class="machine">ทุกเครื่องใน cluster</span> — <b>ทุกเครื่อง ห้ามขาดแม้แต่เครื่องเดียว</b>
+  <div class="code"><pre><span class="p">$ </span>apt install -y corosync-qdevice</pre></div>
+
+  <span class="machine">{compute_node_01} (เครื่องเดียว)</span>
+  <div class="code"><pre><span class="p">$ </span>pvecm qdevice setup {qdevice_ct}
+<span class="p">$ </span>pvecm status</pre></div>
+
+  <p>ต้องเห็นธงของทุกเครื่องเป็น <code class="inl">A,V,NMW</code> และมีบรรทัด Qdevice ถ้าได้แบบนี้ = ผ่าน</p>
+
+  <div class="warn">
+    <p><b>ถ้า setup จบแต่ Qdevice ไม่โหวต (ธงเป็น A,NV,NMW)</b> ให้เข้าไปที่ CT {qdevice_ct} แล้วรันสองบรรทัดนี้
+    — เป็นอาการเจ้าของไฟล์ผิดที่เจอบ่อยที่สุด</p>
+  </div>
+  <span class="machine">CT {qdevice_ct}</span>
+  <div class="code"><pre><span class="p">$ </span>chown -R coroqnetd:coroqnetd /etc/corosync/qnetd
+<span class="p">$ </span>systemctl reset-failed corosync-qnetd && systemctl restart corosync-qnetd</pre></div>
+</section>
+
+<section id="s4">
+  <div class="eyebrow"><span class="num">4</span><h2>ต่อ storage กลางเข้า cluster</h2></div>
+  <p class="lead">สั่งครั้งเดียว ทุกเครื่องใน cluster จะ mount ให้เองอัตโนมัติ</p>
+
+  <span class="machine">เครื่องไหนก็ได้ใน cluster</span>
+  <div class="code"><pre><span class="p">$ </span>pvesm add nfs tank-hdd-nas \
+  --server {nfs_node} \
+  --export /tank/hosting \
+  --content images,rootdir \
+  --options vers=4.2,hard,noatime
+
+<span class="p">$ </span>pvesm status | grep tank-hdd-nas    <span class="c"># must be active - check this on every node</span></pre></div>
+
+  <p>ถ้ามีชั้น SSD บน {nfs_node} ด้วย ก็ทำซ้ำอีกชุดเป็น <code class="inl">tank-ssd-nas</code> ชี้ export ของ SSD</p>
+</section>
+
+<section id="s5">
+  <div class="eyebrow"><span class="num">5</span><h2>เครื่อง backup — สำเนา + backup ระยะยาว</h2></div>
+
+  <h3>5.1 เตรียมพื้นที่</h3>
+  <p>สร้าง pool 3 ตัวตามดิสก์จริงก่อน (ผู้ดูแลเลือก layout): <code class="inl">replica-ssd</code>
+     <code class="inl">replica-hdd</code> <code class="inl">pbsstore-sas</code> แล้วรันสคริปต์เตรียมเครื่อง
+     — มันจัดการ dataset, การตั้งค่า, ความจำ cache ให้หมด</p>
+  <span class="machine">{backup_node}</span>
+  <div class="code"><pre><span class="p">$ </span>bash bkp02-setup.sh</pre></div>
+
+  <p>ยังไม่มีไฟล์นี้บนเครื่อง? สร้างเองได้เลย: พิมพ์ <code class="inl">nano bkp02-setup.sh</code> แล้ววางโค้ดจากกล่องข้างล่าง (กดปุ่ม copy ที่มุมกล่อง) บันทึก แล้วค่อยรันคำสั่งข้างบน</p>
+  <details class="src"><summary>โค้ดเต็ม: bkp02-setup.sh — กดเปิด แล้วกดปุ่ม copy มุมขวาบน</summary>
+  <div class="code"><pre>#!/usr/bin/env bash
+# =============================================================================
+#  bkp02-setup.sh — one-time prep on the BACKUP node (bkp02, 100.100.100.35)
+#  before the first ct-replica.sh run. Idempotent: safe to run again.
+#
+#  Assumes YOU already created the two pools:  replica-hdd  and  replica-ssd
+#  (this script refuses to run if either is missing - it configures, it does
+#  not decide disk layout). Everything below the pool level is handled here:
+#
+#    1) datasets replica-hdd/ct + replica-ssd/ct with per-role properties:
+#         both : atime=off  xattr=sa  acltype=posixacl   (LXC needs these two)
+#                recordsize=128k (explicit: CT rootfs = many small/mixed files;
+#                recordsize is a MAX, small files still use small records)
+#         hdd  : compression=zstd  (40 idle cores buy a better ratio, and a
+#                better ratio = fewer HDD IOs; worth it on the capacity tier)
+#         ssd  : compression=lz4   (fastest path for a DR copy that must
+#                pct start NOW; ratio matters less on the fast tier)
+#       children subvol-&lt;id&gt;-disk-0 inherit all of it.
+#    2) autotrim=on on the replica-ssd POOL (meaningless on HDD, skipped there)
+#    3) PVE storage ids (named after the pools, per decision):
+#         replica-hdd -&gt; replica-hdd/ct,  replica-ssd -&gt; replica-ssd/ct
+#    4) recordsize=1M on the PBS chunk store (chunks are 1-4MB; only affects
+#       NEW chunks, so it must happen BEFORE real backups start landing)
+#    5) ARC cap: PVE &gt;= 8.1 installs with zfs_arc_max ~ 10% of RAM; on 64G
+#       that is ~6G. Raise to 32G on a dedicated backup node.
+#    6) zed running (hot-spare activation + mail) + monthly scrub, every pool
+# =============================================================================
+set -uo pipefail
+
+ARC_BYTES=34359738368          # 32 GiB
+PBS_CHUNKS=&quot;pbsstore-sas/chunks&quot;
+
+say(){ printf &#x27;\n== %s\n&#x27; &quot;$*&quot;; }
+die(){ printf &#x27;ERROR: %s\n&#x27; &quot;$*&quot; &gt;&amp;2; exit 1; }
+
+# --- 0) the pools are YOUR job; refuse loudly when they are not there --------
+for p in replica-hdd replica-ssd; do
+  zpool list -H -o name &quot;$p&quot; &gt;/dev/null 2&gt;&amp;1 \
+    || die &quot;pool &#x27;$p&#x27; does not exist - create it first, then run this again&quot;
+done
+
+# --- 1) datasets + per-role properties ---------------------------------------
+mkparent(){  # $1=dataset $2=storage-id $3=compression
+  local ds=&quot;$1&quot; sid=&quot;$2&quot; comp=&quot;$3&quot;
+  if ! zfs list -H -o name &quot;$ds&quot; &gt;/dev/null 2&gt;&amp;1; then
+    say &quot;create $ds&quot;
+    zfs create -p &quot;$ds&quot;
+  fi
+  say &quot;properties on $ds (children inherit)&quot;
+  zfs set atime=off xattr=sa acltype=posixacl recordsize=128k compression=&quot;$comp&quot; &quot;$ds&quot;
+  # --- 3) storage id, so the copy configs&#x27; rootfs lines resolve --------------
+  if ! pvesm status --storage &quot;$sid&quot; &gt;/dev/null 2&gt;&amp;1; then
+    say &quot;add storage $sid -&gt; $ds&quot;
+    pvesm add zfspool &quot;$sid&quot; --pool &quot;$ds&quot; --content rootdir,images --sparse 1 --nodes &quot;$(hostname)&quot;
+  fi
+  zfs get -H -o name,property,value compression,recordsize,atime,xattr,acltype &quot;$ds&quot;
+}
+# storage id = pool name, per decision: what the GUI shows is what zpool shows
+mkparent replica-hdd/ct replica-hdd zstd
+mkparent replica-ssd/ct replica-ssd lz4
+
+# --- 2) autotrim: SSD pool only ----------------------------------------------
+say &quot;autotrim=on for replica-ssd (pool-level; no effect on HDD so not set there)&quot;
+zpool set autotrim=on replica-ssd
+zpool get -H autotrim replica-ssd
+
+# --- 4) PBS chunk store: big records for big chunks --------------------------
+if zfs list -H -o name &quot;$PBS_CHUNKS&quot; &gt;/dev/null 2&gt;&amp;1; then
+  say &quot;recordsize=1M on $PBS_CHUNKS (fewer IOPS on raidz1 HDD; new chunks only)&quot;
+  zfs set recordsize=1M &quot;$PBS_CHUNKS&quot;
+else
+  say &quot;SKIP recordsize: $PBS_CHUNKS not found&quot;
+fi
+
+# --- 5) ARC ------------------------------------------------------------------
+cur=$(cat /sys/module/zfs/parameters/zfs_arc_max 2&gt;/dev/null || echo 0)
+say &quot;zfs_arc_max now: $cur ($(( cur / 1024 / 1024 / 1024 ))G; 0 = default 50% of RAM)&quot;
+if (( cur != ARC_BYTES )); then
+  say &quot;set zfs_arc_max = $(( ARC_BYTES / 1024 / 1024 / 1024 ))G (live + persistent)&quot;
+  echo &quot;$ARC_BYTES&quot; &gt; /sys/module/zfs/parameters/zfs_arc_max
+  echo &quot;options zfs zfs_arc_max=$ARC_BYTES&quot; &gt; /etc/modprobe.d/zfs.conf
+  update-initramfs -u -k all
+fi
+
+# --- 6) zed + monthly scrub --------------------------------------------------
+say &quot;zed (needed for hot-spare auto-activation + email alerts)&quot;
+sed -i &#x27;s/^#\?ZED_EMAIL_ADDR=.*/ZED_EMAIL_ADDR=&quot;root&quot;/&#x27; /etc/zfs/zed.d/zed.rc
+systemctl enable --now zfs-zed
+systemctl is-active zfs-zed
+# Owner&#x27;s decision (2026-07-31): no monthly scrub on the SSD pools.
+# (For the record: scrub is a READ pass and barely touches SSD wear - it exists
+# to catch silent corruption on any media. Remove a pool from this list to
+# scrub it again.)
+SCRUB_SKIP=&quot;replica-ssd rpool&quot;
+for p in $(zpool list -H -o name); do
+  case &quot; $SCRUB_SKIP &quot; in
+    *&quot; $p &quot;*)
+      systemctl disable --now &quot;zfs-scrub-monthly@${p}.timer&quot; 2&gt;/dev/null
+      echo &quot;scrub-monthly SKIPPED (SCRUB_SKIP): $p&quot;
+      continue;;
+  esac
+  systemctl enable --now &quot;zfs-scrub-monthly@${p}.timer&quot; 2&gt;/dev/null \
+    &amp;&amp; echo &quot;scrub-monthly enabled: $p&quot;
+done
+
+say &quot;done. verify:&quot;
+echo &quot;  zfs list -o name,used,avail,recordsize,compression | grep -E &#x27;replica|pbsstore&#x27;&quot;
+echo &quot;  pvesm status | grep -E &#x27;replica-hdd|replica-ssd&#x27;&quot;
+echo &quot;  zpool get autotrim replica-ssd&quot;
+echo &quot;  arc_summary | head -12&quot;</pre></div>
+  </details>
+
+
+  <h3>5.2 ติดตั้ง PBS (โปรแกรม backup ระยะยาว)</h3>
+  <span class="machine">{backup_node}</span>
+  <div class="code"><pre><span class="p">$ </span>echo "deb http://download.proxmox.com/debian/pbs bookworm pbs-no-subscription" > /etc/apt/sources.list.d/pbs.list
+<span class="p">$ </span>apt update && apt install -y proxmox-backup-server
+
+<span class="p">$ </span>zfs create pbsstore-sas/chunks
+<span class="p">$ </span>proxmox-backup-manager datastore create main /pbsstore-sas/chunks
+
+<span class="c"># a service user, not root</span>
+<span class="p">$ </span>proxmox-backup-manager user create svc-pve@pbs --password '{pbs_password}'
+<span class="p">$ </span>proxmox-backup-manager acl update /datastore/main DatastoreBackup --auth-id svc-pve@pbs
+
+<span class="c"># write this fingerprint down - 5.4 needs it</span>
+<span class="p">$ </span>proxmox-backup-manager cert info | grep Fingerprint</pre></div>
+
+  <p><code class="inl">{pbs_password}</code> คือรหัสผ่านที่ตั้งเอง ใช้ user เฉพาะงานแบบนี้
+     <b>อย่าผูก root ของ PBS เข้ากับ cluster</b> และค่า Fingerprint ที่ได้จากคำสั่งสุดท้าย
+     ให้จดไว้ ข้อ 5.4 ต้องใช้ทั้งสองค่า</p>
+
+  <h3>5.3 เก็บกี่ชุด + ตรวจสุขภาพไฟล์ backup</h3>
+  <span class="machine">{backup_node}</span>
+  <div class="code"><pre><span class="p">$ </span>proxmox-backup-manager prune-job create daily-prune \
+  --store main --schedule "daily 05:00" --keep-daily 14 --keep-weekly 8 --keep-monthly 6
+
+<span class="c"># GC is what frees space; prune alone only drops the index entry</span>
+<span class="p">$ </span>proxmox-backup-manager datastore update main --gc-schedule "sun 06:00"
+
+<span class="c"># verify re-reads every chunk against its checksum - the heavy one</span>
+<span class="p">$ </span>proxmox-backup-manager verify-job create weekly-verify \
+  --store main --schedule "wed 22:00" --ignore-verified true --outdated-after 30</pre></div>
+
+  <p>ทั้งสามงานอยู่บน <code class="inl">pbsstore-sas</code> คนละดิสก์กับ
+     <code class="inl">replica-*</code> ที่ ct-replica เขียนทุก 15 นาที เลยไม่แย่งหัวอ่านกัน
+     เวลาที่ตั้งไว้เป็นการเลี่ยงไม่ให้ทับ backup job ตอน 02:30</p>
+
+  <h3>5.4 ผูก PBS เข้า cluster + ตั้ง backup ทุกคืน</h3>
+  <span class="machine">เครื่องไหนก็ได้ใน cluster</span>
+  <div class="code"><pre><span class="p">$ </span>pvesm add pbs pbs-main \
+  --server {backup_node} --datastore main \
+  --username svc-pve@pbs --password '{pbs_password}' \
+  --fingerprint '{pbs_fingerprint}'
+
+<span class="c"># every guest at 02:30; guests created later join this job on their own</span>
+<span class="p">$ </span>pvesh create /cluster/backup \
+  --all 1 --storage pbs-main --schedule "02:30" \
+  --mode snapshot --mailnotification failure --notes-template '{{guestname}}'</pre></div>
+</section>
+
+<section id="s6">
+  <div class="eyebrow"><span class="num">6</span><h2>สร้าง CT / VM ให้ถูกแบบ</h2></div>
+  <p class="lead">กฎเดียว: ข้อมูลต้องอยู่บน storage กลาง (tank-hdd-nas / tank-ssd-nas) เสมอ</p>
+
+  <span class="machine">{compute_node_xx}</span> — ตัวอย่าง CT
+  <div class="code"><pre><span class="p">$ </span>pct create 105 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
+  --hostname web105 --memory 2048 --cores 2 \
+  --rootfs tank-hdd-nas:50 \
+  --net0 name=eth0,bridge=vmbr0,ip={ct_ip}/24,gw={gateway} \
+  --unprivileged 1 --onboot 1
+<span class="p">$ </span>pct start 105</pre></div>
+
+  <span class="machine">{compute_node_xx}</span> — ตัวอย่าง VM (<b>ต้องใส่ format=qcow2</b> ถึงจะกด snapshot จาก GUI ได้)
+  <div class="code"><pre><span class="p">$ </span>qm create 201 --name app201 --memory 4096 --cores 2 \
+  --scsi0 tank-hdd-nas:60,format=qcow2 \
+  --scsihw virtio-scsi-single --net0 virtio,bridge=vmbr0 \
+  --agent enabled=1 --onboot 1</pre></div>
+
+  <p>สร้างจาก GUI ก็ได้ — แค่เลือก storage เป็น <code class="inl">tank-hdd-nas</code>
+     และ VM เลือก format เป็น <code class="inl">qcow2</code></p>
+</section>
+
+<section id="s7">
+  <div class="eyebrow"><span class="num">7</span><h2>ระบบสำเนา CT (ct-replica)</h2></div>
+  <p>ส่วนนี้มีเอกสารแยกของตัวเอง ทำตาม <code class="inl">ct-replica-setup.html</code> ได้เลย
+     (ติดตั้งบน {nfs_node} — 5 ขั้น จบใน 10 นาที) แล้วใช้งานประจำวันตาม
+     <code class="inl">ct-replica-manual.html</code></p>
+
+  <p>ไฟล์ทั้งสามของระบบสำเนา อยู่ครบในนี้ — วางไว้โฟลเดอร์เดียวกันบน {nfs_node} (เช่น <code class="inl">/root/tp</code>) ตามวิธีในเอกสารติดตั้ง</p>
+  <details class="src"><summary>โค้ดเต็ม: ct-replica.sh (ตัวโปรแกรม — วางแล้ว chmod +x) — กดเปิด แล้วกดปุ่ม copy มุมขวาบน</summary>
+  <div class="code"><pre>#!/usr/bin/env bash
+# =============================================================================
+#  ct-replica.sh v3  —  run on the STORAGE NODE (nfs01)
+# -----------------------------------------------------------------------------
+#  Replicates critical CT rootfs (raw images on this node, served to compute
+#  over NFS) into ZFS subvol datasets on the BACKUP node, and creates a
+#  STOPPED copy CT config there. The copy can be snapshotted from the GUI
+#  (pct snapshot) and started by hand during DR.
+#
+#  The backup node offers more than one destination pool (e.g. replica-hdd
+#  and replica-ssd); every CT picks its destination in the inventory, or
+#  falls back to DEFAULT_DEST. The dest key maps to a dataset AND a PVE
+#  storage id via BKP_DESTS in ctrep.conf.
+#
+#  The copy gets the source&#x27;s REAL network config - same IP, same MAC, same
+#  everything, including its VLAN tag - moved onto an ISOLATED bridge
+#  (MOCKNET_BRIDGE). That bridge has no uplink, so nothing it carries can ever
+#  reach the wire, which is what makes a duplicate IP harmless and lets you
+#  boot a copy for a drill while the real CT is live. See R9: that one fact
+#  is now the whole safety model, so it is verified before every run.
+#
+#  usage:
+#    ct-replica.sh                          all CTs, lane &quot;all&quot;
+#    ct-replica.sh --storage tank-ssd-nas   only CTs whose rootfs lives on that
+#                                           SOURCE storage (own lane: lock+log)
+#    ct-replica.sh --ctid 105               only that SOURCE ct
+#    ct-replica.sh --dry-run                every guard, the plan, no write and
+#                                           no snapshot - so no transfer number
+#
+#  layout — everything resolves relative to this script, the folder can be
+#  moved or renamed freely; only re-point the cron line:
+#    ct-replica.sh    this engine
+#    ctrep.conf       site tuning (backup target, dests, bandwidth) — optional
+#    inventory-replica.tsv   which CTs to copy (see
+#                            inventory-replica.sample.tsv). A separate file
+#                            from ct-migrate.sh&#x27;s inventory.tsv on purpose:
+#                            they share a folder and their columns mean
+#                            different things
+#    exclude.tsv      CTIDs to skip when AUTO_DISCOVER=1
+#    PAUSE            create this file to stop all syncing (used during a
+#                     failback, when the copy holds the newer data)
+#    logs/            daily log per lane, auto-pruned after LOG_KEEP_DAYS
+#    state/           machine-readable status, one pair of files per CT:
+#                       &lt;src_ctid&gt;.json        snapshot, replaced atomically
+#                       &lt;src_ctid&gt;.runs.jsonl  append-only history, 1 JSON/run
+#                     the run object is the SAME shape ct-migrate writes, so
+#                     one dashboard can read both tools.
+#
+#  before any CT is touched the inventory is refused whole if it names the
+#  same src_ctid twice or resolves two rows to the same target VMID.
+#
+#  exit code: 0 = all ok, 1 = at least one CT needs attention,
+#             2 = inventory/conf/mocknet is broken, nothing was run at all.
+# -----------------------------------------------------------------------------
+#  THE GUARDS (R1..R11) — same contract as ct-migrate&#x27;s G1..G7: each exists
+#  because of a real incident on this fleet; keep them and keep their ORDER.
+#
+#   R1  point-in-time source, never a moving one. A ZFS-backed storage is
+#       snapshotted + cloned and every image is read from the CLONE, so all
+#       files in one round come from the same instant. A non-ZFS storage has
+#       no snapshot: reading the live image spreads the reads over minutes
+#       = torn copy. That runs only when LIVE_FALLBACK=1 says you accepted
+#       it, and it logs loudly every round.
+#       Also: if the backing filesystem of a storage path is not mounted, the
+#       path is an empty dir on the node root fs — refuse, do not &quot;sync&quot; it.
+#
+#   R2  never rsync into a copy that is RUNNING on the backup node. A running
+#       copy means DR was promoted; overwriting it destroys the live system.
+#
+#   R3  the destination dataset must report mounted=yes on the backup node,
+#       otherwise rsync pours the whole CT into the backup node&#x27;s root fs.
+#
+#   R4  the target VMID must not belong to any OTHER guest in the cluster —
+#       checked against every node&#x27;s lxc AND qemu-server config dirs.
+#
+#   R5  the copy config is written only after a GOOD sync (rc 0 or 24), then
+#       read back and compared; an existing config is NEVER overwritten (a
+#       human may have touched it). 24 = &quot;files vanished&quot;, normal on a live
+#       source. A write cut short by a dropped ssh leaves a half config that
+#       R5 would never rewrite, so the damage would be permanent and silent -
+#       hence the read-back.
+#
+#   R6  images are loop-mounted ro,noload: no ext4 journal replay (measured:
+#       replay = 43s/CT of random reads on HDD) and no writes into the clone.
+#       rc=23 right after a CT restart/failback is usually a ro,noload
+#       transient — rerun; the SAME file failing twice = stop the CT and
+#       e2fsck the raw image.
+#
+#   R7  one lock per lane, and snapshot/clone names carry the lane name, so
+#       an &quot;all&quot; run and a per-storage run can never destroy each other&#x27;s
+#       snapshots mid-transfer.
+#
+#   R8  an existing copy config must agree with the row&#x27;s destination.
+#       If someone edits the dest column AFTER the copy was created, the sync
+#       would fill the NEW dataset while the config still points at the OLD
+#       one — a copy that looks fresh but boots stale data. Refuse, and make
+#       the human move or remove the old copy first.
+#
+#   R9  the mock bridge must have NO uplink. Copies carry production IPs and
+#       MACs; the ONLY thing keeping that harmless is that MOCKNET_BRIDGE
+#       cannot reach a wire. The moment a physical NIC or a bond is added to
+#       it, every copy on it becomes a live duplicate of a production host.
+#       Checked ONCE, before anything runs, and it refuses the WHOLE run
+#       (exit 2) rather than continuing quietly - because if it trips, copies
+#       that already exist may be colliding on the wire right now, and that
+#       needs a human this minute, not a clean-looking log.
+#
+#   R10 one run at a time per TARGET copy. Lane locks assume lanes are
+#       disjoint; per-storage lanes are, but the &quot;all&quot; lane overlaps every one
+#       of them. A hand-run while cron is mid-flight would put two rsyncs with
+#       --delete into the same destination dataset - and hand-runs happen
+#       exactly when someone is watching a CT that cron also owns.
+#
+#   R11 a STOPPED copy must not sit on a production bridge. Going live moves it
+#       onto a real bridge; coming back must move it off again. Forgetting that
+#       leaves a copy holding a production IP and MAC one click from the wire,
+#       somewhere R9 cannot see. Warned every round, never silently fixed - the
+#       config belongs to whoever promoted it.
+# =============================================================================
+set -uo pipefail
+
+# cron hands a script PATH=/usr/bin:/bin and nothing else, while half of what
+# this tool needs lives in sbin: pvesm, zfs, losetup, e2fsck. Interactively as
+# root it all works, under cron `pvesm` is simply &quot;command not found&quot; and the
+# empty result then looks exactly like a storage that was never configured.
+# Set it here so the two cases cannot diverge.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+BASE=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)&quot; &amp;&amp; pwd)&quot;   # folder is relocatable
+INV=&quot;$BASE/inventory-replica.tsv&quot;
+CONF=&quot;$BASE/ctrep.conf&quot;
+EXC=&quot;$BASE/exclude.tsv&quot;
+
+# ---------- defaults (override in ctrep.conf, never here) ----------
+BKP_SSH=&quot;root@100.100.100.35&quot;    # backup node (bkp02), key auth required
+BKP_NODE=&quot;bkp02&quot;                 # its PVE node name (pmxcfs path component)
+BKP_DESTS=&quot;hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd&quot;
+DEFAULT_DEST=&quot;hdd&quot;               # rows without a dest, and auto-discovered CTs
+SRC_STORAGES=&quot;tank-hdd-nas tank-ssd-nas&quot;  # storages this tool may read from
+OFFSET=8000                      # default tgt_ctid = src_ctid + OFFSET
+AUTO_DISCOVER=0                  # 1 = every lxc in the cluster minus exclude.tsv
+LIVE_FALLBACK=0                  # 1 = allow syncing from LIVE images on non-ZFS
+MOCKNET=1                        # 1 = copy the source&#x27;s real net* onto the island
+MOCKNET_BRIDGE=vmbr99            # must exist on the backup node, and have NO uplink
+MOCKNET_TAG=&quot;&quot;                   # &quot;&quot; = keep each source&#x27;s own VLAN tag (default);
+                                 # a number forces every copy onto that one VLAN
+BW_TOTAL_MB=230                  # tool-wide ceiling in MiB/s across ALL lanes
+LANES=1                          # how many lanes may run at once (cron schedules)
+BW_MIN_MB=20                     # floor so a big LANES cannot starve a transfer
+RUNS_KEEP=200                    # per-CT run history kept in state/&lt;id&gt;.runs.jsonl
+LOG_KEEP_DAYS=14
+MNT_BASE=/mnt/ct-replica         # deliberately ABSOLUTE: live loop-mounts must
+                                 # not sit inside a folder someone can move
+HEALTH_URL=&quot;&quot;                    # healthchecks ping URL, empty = off
+# Cipher list for the rsync transport. OpenSSH negotiates chacha20-poly1305
+# first by default; it has no CPU instruction behind it and caps one stream at
+# roughly 150-400 MB/s. The AES-GCM ciphers use AES-NI and are typically twice
+# as fast on the same link. Empty = leave ssh to negotiate.
+SSH_CIPHERS=aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr
+# -------------------------------------------------------------------
+
+# ---------- args ----------
+LANE_STORAGE=&quot;&quot;; ONLY_CTID=&quot;&quot;; DRY=0
+# A value-taking flag whose value was lost to a copy-paste used to hang here
+# forever: `shift 2` fails when only one argument is left, the old `|| true`
+# swallowed that failure, and $# never reached zero. This lane runs from cron
+# every fifteen minutes, so that is a new spinning process every tick and no
+# replication. Refuse instead. &quot;$2&quot; is deliberately not &quot;${2:-}&quot;, so that
+# deleting the check below dies on set -u rather than spinning again.
+while (( $# )); do
+  case &quot;$1&quot; in
+    --storage) [[ $# -ge 2 ]] || { echo &quot;--storage needs a value&quot; &gt;&amp;2; exit 2; }
+               LANE_STORAGE=&quot;$2&quot;; shift 2;;
+    --ctid)    [[ $# -ge 2 ]] || { echo &quot;--ctid needs a value&quot; &gt;&amp;2; exit 2; }
+               ONLY_CTID=&quot;$2&quot;;    shift 2;;
+    --dry-run) DRY=1; shift;;
+    # Walks the comment block instead of counting lines: a fixed range used to
+    # stop short of the exit-code contract, which is the half of the header
+    # anything running under cron needs most. Strips the # the way tp does.
+    -h|--help) awk &#x27;NR&gt;1{ if (/^#/) { sub(/^#[ ]?/,&quot;&quot;); print } else exit }&#x27; &quot;${BASH_SOURCE[0]}&quot;; exit 0;;
+    *) echo &quot;unknown argument: $1&quot; &gt;&amp;2; exit 2;;
+  esac
+done
+
+# ---------- config ----------
+if [[ -f &quot;$CONF&quot; ]]; then
+  # shellcheck source=/dev/null
+  . &quot;$CONF&quot; || { echo &quot;failed to read $CONF&quot; &gt;&amp;2; exit 1; }
+fi
+for _v in OFFSET AUTO_DISCOVER LIVE_FALLBACK MOCKNET \
+          BW_TOTAL_MB LANES BW_MIN_MB RUNS_KEEP LOG_KEEP_DAYS; do
+  if [[ ! &quot;${!_v}&quot; =~ ^[0-9]+$ ]]; then
+    echo &quot;ctrep.conf: $_v=&#x27;${!_v}&#x27; is not a plain integer&quot; &gt;&amp;2; exit 1
+  fi
+done
+if [[ -n &quot;$MOCKNET_TAG&quot; &amp;&amp; ! &quot;$MOCKNET_TAG&quot; =~ ^[0-9]+$ ]]; then
+  echo &quot;ctrep.conf: MOCKNET_TAG=&#x27;$MOCKNET_TAG&#x27; must be empty (keep the source tag) or a number&quot; &gt;&amp;2; exit 1
+fi
+(( LANES &gt;= 1 )) || { echo &quot;ctrep.conf: LANES must be &gt;= 1&quot; &gt;&amp;2; exit 1; }
+if [[ -n &quot;$SSH_CIPHERS&quot; &amp;&amp; ! &quot;$SSH_CIPHERS&quot; =~ ^[A-Za-z0-9@.,+-]+$ ]]; then
+  echo &quot;ctrep.conf: SSH_CIPHERS=&#x27;$SSH_CIPHERS&#x27; is not a plain cipher list&quot; &gt;&amp;2; exit 1
+fi
+# pasted into a remote command line, so it gets the character set an interface
+# name can legitimately be made of and nothing else.
+if [[ ! &quot;$MOCKNET_BRIDGE&quot; =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo &quot;ctrep.conf: MOCKNET_BRIDGE=&#x27;$MOCKNET_BRIDGE&#x27; is not a plain interface name&quot; &gt;&amp;2; exit 1
+fi
+
+# parse the dest map once; a broken entry is a conf error, not a per-row skip
+declare -A DEST_DS=() DEST_SID=()
+for _kv in $BKP_DESTS; do
+  _k=&quot;${_kv%%=*}&quot;; _rest=&quot;${_kv#*=}&quot;; _ds=&quot;${_rest%%:*}&quot;; _sid=&quot;${_rest#*:}&quot;
+  if [[ -z &quot;$_k&quot; || &quot;$_kv&quot; != *=* || &quot;$_rest&quot; != *:* || -z &quot;$_ds&quot; || -z &quot;$_sid&quot; ]]; then
+    echo &quot;ctrep.conf: BKP_DESTS entry &#x27;$_kv&#x27; is not key=dataset:storage-id&quot; &gt;&amp;2; exit 2
+  fi
+  DEST_DS[$_k]=&quot;$_ds&quot;; DEST_SID[$_k]=&quot;$_sid&quot;
+done
+if [[ -z &quot;${DEST_DS[$DEFAULT_DEST]:-}&quot; ]]; then
+  echo &quot;ctrep.conf: DEFAULT_DEST=&#x27;$DEFAULT_DEST&#x27; is not a key in BKP_DESTS ($BKP_DESTS)&quot; &gt;&amp;2; exit 2
+fi
+
+# Static split, not dynamic: a lane that computed its share while alone would
+# keep it after a second lane starts, and together they would break the
+# ceiling. Predictable beats optimal when the ceiling is a hard constraint.
+_bw=$(( BW_TOTAL_MB / LANES ))
+(( _bw &lt; BW_MIN_MB )) &amp;&amp; _bw=$BW_MIN_MB
+BWLIMIT=&quot;${_bw}m&quot;
+
+if [[ -n &quot;$LANE_STORAGE&quot; ]]; then
+  case &quot; $SRC_STORAGES &quot; in
+    *&quot; $LANE_STORAGE &quot;*) ;;
+    *) echo &quot;--storage $LANE_STORAGE is not in SRC_STORAGES ($SRC_STORAGES)&quot; &gt;&amp;2; exit 2;;
+  esac
+fi
+
+# ---------- ssh ----------
+# keepalives make a dead peer fail in ~3 min instead of hanging forever
+# (a hung run holds the lane lock and blocks every later cron run).
+SSH_COMMON=&quot;-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+-o GSSAPIAuthentication=no -o ServerAliveInterval=30 -o ServerAliveCountMax=6&quot;
+# control commands are multiplexed; socket lives in /run (tmpfs, wiped on boot)
+# The socket name carries THIS process id. Two lanes run concurrently under
+# cron, and the cleanup below closes the masters it finds - with a shared path,
+# a lane that finishes in a second (nothing to do) would tear down the master
+# the other lane is in the middle of using, and its next ssh dies for no
+# visible reason. Per-pid costs nothing: ControlPersist is 120s, far shorter
+# than the 15-minute cron interval, so no socket was ever being reused anyway.
+SSH_OPT=&quot;$SSH_COMMON -o ControlMaster=auto -o ControlPath=/run/ctrep-$$-%r@%h.sock -o ControlPersist=120&quot;
+# rsync transport is NOT multiplexed: a long transfer must not share its fate
+# with short control commands. Compression=no defends against a site-wide
+# ssh_config that turned it on (one gzip thread becomes the ceiling).
+SSH_DATA=&quot;$SSH_COMMON -o ControlMaster=no -o ControlPath=none -o Compression=no&quot;
+[[ -n &quot;$SSH_CIPHERS&quot; ]] &amp;&amp; SSH_DATA=&quot;$SSH_DATA -c $SSH_CIPHERS&quot;
+
+# ---------- lane identity (R7) ----------
+LANE=&quot;${LANE_STORAGE:-all}&quot;
+LANE=&quot;${LANE//[^A-Za-z0-9._-]/_}&quot;
+
+mkdir -p &quot;$BASE/logs&quot; &quot;$BASE/state&quot; &quot;$MNT_BASE&quot;
+LOG=&quot;$BASE/logs/replica-$LANE-$(date +%F).log&quot;
+# Prune before opening today&#x27;s file, so the run that finally fills the disk is
+# not this one. Only replica-*.log at depth 1, so nothing an operator parked
+# in here is collateral damage.
+if (( LOG_KEEP_DAYS &gt; 0 )); then
+  find &quot;$BASE/logs&quot; -maxdepth 1 -type f -name &#x27;replica-*.log&#x27; \
+       -mtime +&quot;$LOG_KEEP_DAYS&quot; -delete 2&gt;/dev/null || true
+fi
+
+# ST_MSG is the headline the state file shows for this CT. Captured here rather
+# than passed around: the FIRST interesting line of an iteration is the real
+# reason, every line after it is a how-to-fix hint. First one wins.
+ST_PREFIX=&quot;replica-&quot;
+ST_MSG=&quot;&quot;
+log(){
+  local m=&quot;$*&quot;
+  [[ -z &quot;$ST_MSG&quot; &amp;&amp; &quot;$m&quot; =~ (ERROR|GUARD\ R[0-9]|WARN|HINT|NOTE): ]] &amp;&amp; ST_MSG=&quot;$m&quot;
+  printf &#x27;%s %s\n&#x27; &quot;$(date &#x27;+%F %T&#x27;)&quot; &quot;$m&quot; | tee -a &quot;$LOG&quot;
+}
+
+# A daily log holds dozens of rounds and dozens of containers. Operations are
+# separated by a rule so the eye can find where one ends and the next begins
+# without reading timestamps - which is what somebody is actually doing at 2am,
+# scrolling for the container that failed. Deliberately no timestamp on the
+# rule itself: it is furniture, not an event.
+LOGSEP=&#x27;##############################################################################&#x27;
+hr(){ printf &#x27;%s\n&#x27; &quot;$LOGSEP&quot; | tee -a &quot;$LOG&quot;; }
+
+# A failback is the one time the replica holds NEWER data than the source, and
+# R2 only protects a copy while it is RUNNING. The moment you shut the copy
+# down to sync it back, the next cron tick would happily overwrite it with the
+# stale original. So there has to be an off switch a human can flip BEFORE that
+# shutdown, and it has to be obvious: a file, not a commented-out cron line.
+if [[ -f &quot;$BASE/PAUSE&quot; ]]; then
+  log &quot;PAUSED by $BASE/PAUSE - nothing will be synced until that file is removed&quot;
+  exit 0
+fi
+
+# A missing binary must say so in one line, instead of surfacing three steps
+# later as a wrong diagnosis (&quot;storage unknown&quot; is what a missing pvesm looks
+# like from the call site).
+#
+# This runs BEFORE the lock, and the order is the point. `flock -n 9` on a host
+# with no flock is command-not-found, which is a non-zero exit, which is
+# indistinguishable from &quot;somebody else holds the lock&quot; - so the engine says it
+# is skipping and returns 0. A missing tool producing a green run is the one
+# outcome this repo refuses everywhere else, and putting the check that names
+# the missing tool AFTER the lock meant it could never fire.
+_missing=()
+for _c in pvesm zfs ssh rsync flock mount umount mountpoint findmnt df mktemp; do
+  command -v &quot;$_c&quot; &gt;/dev/null 2&gt;&amp;1 || _missing+=(&quot;$_c&quot;)
+done
+if (( ${#_missing[@]} )); then
+  log &quot;ERROR: required command(s) not found: ${_missing[*]} - NOTHING was run&quot;
+  log &quot;ERROR:   PATH=$PATH&quot;
+  log &quot;ERROR:   this script sets PATH itself, so a miss here means the tool is genuinely absent&quot;
+  exit 2
+fi
+
+exec 9&gt;&quot;$BASE/.replica-$LANE.lock&quot;
+flock -n 9 || { log &quot;another run active in lane &#x27;$LANE&#x27; - skip&quot;; exit 0; }
+
+hr
+log &quot;=== $(hostname) lane=$LANE bw=$BWLIMIT (total ${BW_TOTAL_MB}m / $LANES lanes) conf=$([[ -f $CONF ]] &amp;&amp; echo yes || echo defaults) mocknet=$([[ $MOCKNET == 1 ]] &amp;&amp; echo &quot;$MOCKNET_BRIDGE tag ${MOCKNET_TAG:-&lt;from source&gt;}&quot; || echo off)$( (( DRY )) &amp;&amp; echo &quot; mode=dry-run&quot; ) ===&quot;
+
+# ---------- inventory: parse + preflight in one pass ----------
+# columns:  src_ctid  [fields in any order]
+#   a NUMERIC field        -&gt; tgt_ctid (default src_ctid + OFFSET)
+#   a key from BKP_DESTS   -&gt; destination (default DEFAULT_DEST)
+#   anything else          -&gt; SOURCE storage assertion, verified later
+# &#x27;#&#x27; starts a comment, whole-line or inline. The whole file is refused when a
+# field cannot be classified, a field kind repeats, the same src_ctid appears
+# twice, or two rows resolve to the same target VMID — a duplicate is a
+# property of the FILE, so nothing at all is run (exit 2).
+declare -a INV_CTS=()
+declare -A TGT_MAP=() DEST_MAP=() STOR_ASSERT=()
+declare -A SEEN_SRC=() SEEN_TGT=()
+declare -a INV_ERRS=()
+# A MISSING inventory is a deployment mistake, not an empty workload. Without
+# this the parse block below is simply skipped, the CT list comes out empty and
+# the run says &quot;nothing to do&quot; and exits 0 - which under cron is exactly what a
+# healthy night looks like, every fifteen minutes, while nothing is replicated
+# at all. The file was renamed once (it used to be inventory.tsv, which is now
+# ct-migrate&#x27;s), and that rename is precisely how a fleet stops being copied
+# without anybody being told.
+if [[ ! -f &quot;$INV&quot; ]] &amp;&amp; (( ! AUTO_DISCOVER )); then
+  log &quot;ERROR: no inventory at $INV - NOTHING was run&quot;
+  log &quot;ERROR:   this file is NOT ct-migrate&#x27;s inventory.tsv; the columns differ&quot;
+  log &quot;ERROR:   start from the sample:  cp $BASE/inventory-replica.sample.tsv $INV&quot;
+  log &quot;ERROR:   or set AUTO_DISCOVER=1 in $CONF to replicate every CT in the cluster&quot;
+  exit 2
+fi
+if [[ -f &quot;$INV&quot; ]]; then
+  ln=0
+  while IFS= read -r line || [[ -n &quot;${line:-}&quot; ]]; do
+    ln=$(( ln + 1 ))
+    line=&quot;${line%%#*}&quot;
+    read -r c rest &lt;&lt;&lt;&quot;$line&quot; || true
+    [[ -z &quot;${c:-}&quot; ]] &amp;&amp; continue
+    if [[ ! &quot;$c&quot; =~ ^[0-9]+$ ]]; then
+      INV_ERRS+=(&quot;line $ln: src_ctid &#x27;$c&#x27; is not a number&quot;); continue
+    fi
+    if [[ -n &quot;${SEEN_SRC[$c]:-}&quot; ]]; then
+      INV_ERRS+=(&quot;line $ln: src_ctid $c already on line ${SEEN_SRC[$c]}&quot;); continue
+    fi
+    SEEN_SRC[$c]=$ln
+    tgt=&quot;&quot;; dest=&quot;&quot;; stor=&quot;&quot;
+    for f in ${rest:-}; do
+      if [[ &quot;$f&quot; =~ ^[0-9]+$ ]]; then
+        [[ -n &quot;$tgt&quot;  ]] &amp;&amp; { INV_ERRS+=(&quot;line $ln: two numeric tgt_ctid fields (&#x27;$tgt&#x27; and &#x27;$f&#x27;)&quot;); continue 2; }
+        tgt=&quot;$f&quot;
+      elif [[ -n &quot;${DEST_DS[$f]:-}&quot; ]]; then
+        [[ -n &quot;$dest&quot; ]] &amp;&amp; { INV_ERRS+=(&quot;line $ln: two dest fields (&#x27;$dest&#x27; and &#x27;$f&#x27;)&quot;); continue 2; }
+        dest=&quot;$f&quot;
+      else
+        [[ -n &quot;$stor&quot; ]] &amp;&amp; { INV_ERRS+=(&quot;line $ln: field &#x27;$f&#x27; is not a tgt_ctid, not a dest key (${!DEST_DS[*]}), and a storage assertion &#x27;$stor&#x27; is already set&quot;); continue 2; }
+        stor=&quot;$f&quot;
+      fi
+    done
+    [[ -z &quot;$tgt&quot; ]] &amp;&amp; tgt=$(( c + OFFSET ))
+    if [[ -n &quot;${SEEN_TGT[$tgt]:-}&quot; ]]; then
+      INV_ERRS+=(&quot;line $ln: target VMID $tgt already produced by line ${SEEN_TGT[$tgt]} - two sources would sync into one copy&quot;)
+      continue
+    fi
+    SEEN_TGT[$tgt]=$ln
+    TGT_MAP[$c]=$tgt
+    [[ -n &quot;$dest&quot; ]] &amp;&amp; DEST_MAP[$c]=&quot;$dest&quot;
+    [[ -n &quot;$stor&quot; ]] &amp;&amp; STOR_ASSERT[$c]=&quot;$stor&quot;
+    INV_CTS+=(&quot;$c&quot;)
+  done &lt; &quot;$INV&quot;
+fi
+if (( ${#INV_ERRS[@]} )); then
+  log &quot;ERROR: inventory is broken - NOTHING was run&quot;
+  for e in &quot;${INV_ERRS[@]}&quot;; do log &quot;ERROR:   $e&quot;; done
+  log &quot;ERROR: fix $INV, then run again&quot;
+  exit 2
+fi
+
+# ---------- preflight: the backup node must be who ctrep.conf says it is -----
+# /etc/pve/local is a symlink to nodes/&lt;this node&gt;, so it is the authoritative
+# pmxcfs identity - safer than hostname, which can drift from it after a badly
+# done rename. Getting BKP_NODE wrong is expensive in the worst possible way:
+# every check below passes, the ENTIRE rootfs transfers, and only the very last
+# step fails (&quot;No such file or directory&quot; writing the copy config) - or worse,
+# if the name happens to be another cluster member, the write SUCCEEDS and the
+# copies appear on a compute node.
+_bkinfo=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; \
+  &#x27;readlink /etc/pve/local 2&gt;/dev/null | sed &quot;s|.*/||;s|^|NODE=|&quot;
+   ls -1 /etc/pve/nodes 2&gt;/dev/null | tr &quot;\n&quot; &quot; &quot; | sed &quot;s|^|NODES=|&quot;&#x27; \
+  &lt;/dev/null 2&gt;/dev/null)
+_bknode=$(printf &#x27;%s\n&#x27; &quot;$_bkinfo&quot; | sed -n &#x27;s/^NODE=//p&#x27; | head -1)
+_bknodes=$(printf &#x27;%s\n&#x27; &quot;$_bkinfo&quot; | sed -n &#x27;s/^NODES=//p&#x27; | head -1)
+if [[ -z &quot;$_bknode&quot; ]]; then
+  log &quot;ERROR: cannot read the PVE node identity of $BKP_SSH - NOTHING was run&quot;
+  log &quot;ERROR:   check: ssh $BKP_SSH &#x27;readlink /etc/pve/local&#x27;&quot;
+  exit 2
+fi
+if [[ &quot;$_bknode&quot; != &quot;$BKP_NODE&quot; ]]; then
+  log &quot;ERROR: BKP_NODE=&#x27;$BKP_NODE&#x27; but $BKP_SSH is really node &#x27;$_bknode&#x27; - NOTHING was run&quot;
+  log &quot;ERROR:   copy configs would land in a directory that is not this machine&#x27;s&quot;
+  log &quot;ERROR:   nodes visible there: ${_bknodes:-&lt;none&gt;}&quot;
+  log &quot;ERROR:   fix BKP_NODE in $CONF (set it to &#x27;$_bknode&#x27;)&quot;
+  exit 2
+fi
+
+# ---------- R9: the mock bridge must exist and must have no uplink ----------
+# Runs once, before any CT is touched, and refuses the whole run. A physical
+# NIC has a /sys/class/net/&lt;if&gt;/device symlink to its PCI device; a bond has a
+# /bonding directory. Neither exists for an OVS internal port or for the veth
+# PVE creates per container, which is exactly the distinction needed here.
+if (( MOCKNET )); then
+  _r9=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;
+    ip -br link show $MOCKNET_BRIDGE &gt;/dev/null 2&gt;&amp;1 || { echo MISSING; exit 0; }
+    ports=\$(ovs-vsctl list-ports $MOCKNET_BRIDGE 2&gt;/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2&gt;/dev/null)
+    for p in \$ports; do
+      if [ -e /sys/class/net/\$p/device ] || [ -d /sys/class/net/\$p/bonding ]; then echo \&quot;UPLINK \$p\&quot;; fi
+    done
+    echo OK
+  &quot; &lt;/dev/null 2&gt;/dev/null)
+  # MISSING is tested FIRST: the remote snippet prints MISSING and exits before
+  # it ever prints OK, so testing for a missing OK first swallowed this branch
+  # and told the operator &quot;ssh failed?&quot; when the real answer was &quot;the bridge is
+  # not there, here is how to make it&quot;.
+  if [[ &quot;$_r9&quot; == *MISSING* ]]; then
+    log &quot;GUARD R9: bridge $MOCKNET_BRIDGE does not exist on $BKP_NODE - NOTHING was run&quot;
+    log &quot;GUARD R9:   create it there (isolated island, NO uplink), then run again:&quot;
+    log &quot;GUARD R9:   /etc/network/interfaces.d/$MOCKNET_BRIDGE - see the setup guide&quot;
+    log &quot;GUARD R9:   or set MOCKNET=0 in ctrep.conf to make copies without any network&quot;
+    exit 2
+  fi
+  if [[ &quot;$_r9&quot; != *OK* ]]; then
+    log &quot;GUARD R9: cannot inspect $MOCKNET_BRIDGE on $BKP_NODE (ssh failed?) - NOTHING was run&quot;
+    exit 2
+  fi
+  if [[ &quot;$_r9&quot; == *UPLINK* ]]; then
+    log &quot;GUARD R9: $MOCKNET_BRIDGE on $BKP_NODE HAS AN UPLINK - NOTHING was run&quot;
+    printf &#x27;%s\n&#x27; &quot;$_r9&quot; | grep UPLINK | while read -r _ p; do
+      log &quot;GUARD R9:   port &#x27;$p&#x27; is a physical NIC or a bond&quot;
+    done
+    log &quot;GUARD R9:   copies carry PRODUCTION IPs and MACs; the only thing that made&quot;
+    log &quot;GUARD R9:   that safe was this bridge being unable to reach a wire.&quot;
+    log &quot;GUARD R9:   ANY COPY ALREADY RUNNING ON IT MAY BE COLLIDING WITH PRODUCTION NOW.&quot;
+    log &quot;GUARD R9:   check: ssh $BKP_SSH &#x27;pct list&#x27; ; ovs-vsctl list-ports $MOCKNET_BRIDGE&quot;
+    exit 2
+  fi
+  log &quot;R9: $MOCKNET_BRIDGE ok on $BKP_NODE (no uplink)&quot;
+fi
+
+declare -a CTS=()
+if (( AUTO_DISCOVER )); then
+  # No jq: Proxmox ships neither jq nor a guaranteed python3, and this used to
+  # call `jq -r` here - which on a real node means the pipe produces nothing,
+  # CTS comes back empty, and the run exits 0 saying &quot;nothing to do&quot;. Under
+  # cron that is indistinguishable from a healthy night.
+  # /cluster/resources returns a flat array of flat objects, so splitting on
+  # &#x27;{&#x27; puts one resource per line and the type and the vmid of the SAME
+  # resource are then on the same line, whatever order the keys came in.
+  mapfile -t CTS &lt; &lt;(ssh $SSH_OPT &quot;$BKP_SSH&quot; \
+      &quot;pvesh get /cluster/resources --type vm --output-format json&quot; &lt;/dev/null 2&gt;&gt;&quot;$LOG&quot; \
+    | tr &#x27;{&#x27; &#x27;\n&#x27; \
+    | grep &#x27;&quot;type&quot;[[:space:]]*:[[:space:]]*&quot;lxc&quot;&#x27; \
+    | sed -n &#x27;s/.*&quot;vmid&quot;[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p&#x27; \
+    | grep -vxFf &lt;(grep -v &#x27;^#&#x27; &quot;$EXC&quot; 2&gt;/dev/null || true) | sort -n)
+  # An empty discover is NOT &quot;nothing to do&quot;. Something answered wrong: ssh
+  # failed, pvesh is not there, the cluster returned no lxc at all. Exiting 0
+  # here is what makes a broken cron look green.
+  if [[ ${#CTS[@]} -eq 0 || -z &quot;${CTS[0]:-}&quot; ]]; then
+    log &quot;ERROR: AUTO_DISCOVER=1 but the cluster returned no container - NOTHING was run&quot;
+    log &quot;ERROR:   check: ssh $BKP_SSH &#x27;pvesh get /cluster/resources --type vm --output-format json&#x27;&quot;
+    log &quot;ERROR:   if the fleet really has no CT, set AUTO_DISCOVER=0 and use $INV&quot;
+    exit 2
+  fi
+else
+  CTS=(&quot;${INV_CTS[@]:-}&quot;)
+fi
+if [[ ${#CTS[@]} -eq 0 || -z &quot;${CTS[0]:-}&quot; ]]; then
+  # The file exists and parsed, it just names nobody. That is a legitimate
+  # state - somebody commented every row out - so it is not an error, but say
+  # WHICH file is empty rather than leaving a bare &quot;nothing to do&quot; in the log.
+  log &quot;WARN: $INV names no CT - nothing is being replicated&quot;
+  exit 0
+fi
+log &quot;candidates: ${CTS[*]}&quot;
+
+# =============================================================================
+#  MACHINE-READABLE STATE — the data contract for everything that is not this
+#  script. Two files per CT under state/, written here and nowhere else:
+#    state/&lt;src_ctid&gt;.json         current snapshot, replaced atomically
+#    state/&lt;src_ctid&gt;.runs.jsonl   append-only history, one JSON object per run
+#
+#  Why two files. &quot;Has the delta converged yet&quot; cannot be answered from a
+#  snapshot: one run reporting 2.3 GB moved means nothing without the run
+#  before it. Keeping that history inside the snapshot would mean
+#  read-modify-write of a JSON array in bash, which is precisely how a
+#  half-written state file gets created. Appending one sub-4KiB line to an
+#  O_APPEND fd is atomic; a rewritten array is not.
+#
+#  The RUN OBJECT is deliberately identical in shape to the one ct-migrate
+#  writes, so a single dashboard renders both tools&#x27; timelines. Only the
+#  snapshot&#x27;s identity fields differ, and any reader branches on &quot;tool&quot;.
+#
+#  No jq and no python: Proxmox ships neither.
+# =============================================================================
+SCHEMA_VERSION=1
+
+json_str(){  # any bash string -&gt; a valid, quoted JSON string
+  local s=&quot;$1&quot;
+  s=&quot;${s//\\/\\\\}&quot;; s=&quot;${s//\&quot;/\\\&quot;}&quot;
+  s=&quot;${s//$&#x27;\n&#x27;/\\n}&quot;; s=&quot;${s//$&#x27;\r&#x27;/\\r}&quot;; s=&quot;${s//$&#x27;\t&#x27;/\\t}&quot;
+  if [[ &quot;$s&quot; =~ [[:cntrl:]] ]]; then       # rare, but anything left must be \uXXXX
+    local out=&quot;&quot; i c
+    for (( i=0; i&lt;${#s}; i++ )); do
+      c=&quot;${s:i:1}&quot;
+      [[ &quot;$c&quot; =~ [[:cntrl:]] ]] &amp;&amp; printf -v c &#x27;\\u%04x&#x27; &quot;&#x27;$c&quot;
+      out+=&quot;$c&quot;
+    done
+    s=&quot;$out&quot;
+  fi
+  printf &#x27;&quot;%s&quot;&#x27; &quot;$s&quot;
+}
+json_num(){  [[ &quot;${1:-}&quot; =~ ^-?[0-9]+$ ]] &amp;&amp; printf &#x27;%s&#x27; &quot;$1&quot; || printf &#x27;0&#x27;; }
+json_bool(){ [[ &quot;${1:-0}&quot; == 1 ]] &amp;&amp; printf &#x27;true&#x27; || printf &#x27;false&#x27;; }
+
+RS_FILES=0; RS_LITERAL=0; RS_SENT=0; RS_TOTAL=0; RS_SECS=0
+ST_CTID=&quot;&quot;; ST_TGT=&quot;&quot;; ST_SRC_NODE=&quot;&quot;; ST_SRC_STORAGE=&quot;&quot;; ST_DEST=&quot;&quot;; ST_DS=&quot;&quot;
+ST_CFG_PRESENT=0; ST_MOCKNET=0; ST_STATUS=&quot;&quot;; ST_REASON=&quot;&quot;; ST_RC=-1; ST_MP=()
+
+st_reset(){
+  ST_CTID=&quot;&quot;; ST_TGT=&quot;&quot;; ST_SRC_NODE=&quot;&quot;; ST_SRC_STORAGE=&quot;&quot;; ST_DEST=&quot;&quot;; ST_DS=&quot;&quot;
+  ST_CFG_PRESENT=0; ST_MOCKNET=0; ST_STATUS=&quot;&quot;; ST_REASON=&quot;&quot;; ST_RC=-1
+  ST_MSG=&quot;&quot;; ST_MP=()
+  RS_FILES=0; RS_LITERAL=0; RS_SENT=0; RS_TOTAL=0; RS_SECS=0
+}
+
+_st_run_json(){
+  printf &#x27;{&quot;ts&quot;:%s,&quot;epoch&quot;:%s,&quot;lane&quot;:%s,&quot;mode&quot;:%s,&quot;status&quot;:%s,&quot;reason&quot;:%s,&quot;message&quot;:%s,&#x27; \
+    &quot;$(json_str &quot;$(date &#x27;+%FT%T%z&#x27;)&quot;)&quot; &quot;$(json_num &quot;$(date +%s)&quot;)&quot; \
+    &quot;$(json_str &quot;$LANE&quot;)&quot;      &quot;$(json_str replica)&quot; \
+    &quot;$(json_str &quot;$ST_STATUS&quot;)&quot; &quot;$(json_str &quot;$ST_REASON&quot;)&quot; &quot;$(json_str &quot;$ST_MSG&quot;)&quot;
+  printf &#x27;&quot;rc&quot;:%s,&quot;secs&quot;:%s,&quot;files&quot;:%s,&quot;literal_bytes&quot;:%s,&quot;bytes_sent&quot;:%s,&quot;total_bytes&quot;:%s,&quot;grow_attempts&quot;:0}&#x27; \
+    &quot;$(json_num &quot;$ST_RC&quot;)&quot;      &quot;$(json_num &quot;$RS_SECS&quot;)&quot;  &quot;$(json_num &quot;$RS_FILES&quot;)&quot; \
+    &quot;$(json_num &quot;$RS_LITERAL&quot;)&quot; &quot;$(json_num &quot;$RS_SENT&quot;)&quot;  &quot;$(json_num &quot;$RS_TOTAL&quot;)&quot;
+}
+
+_st_snapshot_json(){
+  local mp=&quot;&quot; p
+  for p in ${ST_MP+&quot;${ST_MP[@]}&quot;}; do mp+=&quot;${mp:+,}$(json_str &quot;$p&quot;)&quot;; done
+  printf &#x27;{\n&#x27;
+  printf &#x27;  &quot;schema_version&quot;: %s,\n&#x27;  &quot;$(json_num &quot;$SCHEMA_VERSION&quot;)&quot;
+  printf &#x27;  &quot;tool&quot;: %s,\n&#x27;            &quot;$(json_str ct-replica)&quot;
+  printf &#x27;  &quot;src_ctid&quot;: %s,\n&#x27;        &quot;$(json_str &quot;$ST_CTID&quot;)&quot;
+  printf &#x27;  &quot;tgt_ctid&quot;: %s,\n&#x27;        &quot;$(json_str &quot;$ST_TGT&quot;)&quot;
+  printf &#x27;  &quot;src_node&quot;: %s,\n&#x27;        &quot;$(json_str &quot;$ST_SRC_NODE&quot;)&quot;
+  printf &#x27;  &quot;bkp_node&quot;: %s,\n&#x27;        &quot;$(json_str &quot;$BKP_NODE&quot;)&quot;
+  printf &#x27;  &quot;src_storage&quot;: %s,\n&#x27;     &quot;$(json_str &quot;$ST_SRC_STORAGE&quot;)&quot;
+  printf &#x27;  &quot;dest&quot;: %s,\n&#x27;            &quot;$(json_str &quot;$ST_DEST&quot;)&quot;
+  printf &#x27;  &quot;dest_dataset&quot;: %s,\n&#x27;    &quot;$(json_str &quot;$ST_DS&quot;)&quot;
+  printf &#x27;  &quot;config_present&quot;: %s,\n&#x27;  &quot;$(json_bool &quot;$ST_CFG_PRESENT&quot;)&quot;
+  printf &#x27;  &quot;mocknet&quot;: %s,\n&#x27;         &quot;$(json_bool &quot;$ST_MOCKNET&quot;)&quot;
+  printf &#x27;  &quot;mp_empty&quot;: [%s],\n&#x27;      &quot;$mp&quot;
+  printf &#x27;  &quot;last&quot;: %s\n&#x27;             &quot;$(_st_run_json)&quot;
+  printf &#x27;}\n&#x27;
+}
+
+st_write(){   # replace the snapshot atomically - a reader never sees a half file
+  # A dry run writes no state: it must not overwrite the record of the last
+  # REAL round, or `tp status` reports a copy as healthy on the strength of a
+  # run that moved nothing.
+  (( DRY )) &amp;&amp; return 0
+  [[ -n &quot;$ST_CTID&quot; ]] || return 0
+  local f=&quot;$BASE/state/$ST_PREFIX$ST_CTID.json&quot; t=&quot;$BASE/state/.$ST_PREFIX$ST_CTID.json.$$&quot;
+  _st_snapshot_json &gt; &quot;$t&quot; 2&gt;/dev/null &amp;&amp; mv -f &quot;$t&quot; &quot;$f&quot; 2&gt;/dev/null &amp;&amp; return 0
+  rm -f &quot;$t&quot; 2&gt;/dev/null
+  log &quot;[$ST_CTID] WARN: could not write state file $f&quot;
+  return 1
+}
+st_begin(){ ST_STATUS=running; ST_REASON=&quot;&quot;; ST_RC=-1; st_write; }
+st_flush(){
+  [[ -n &quot;$ST_CTID&quot; ]] || return 0
+  # see st_write: no snapshot and no history line either. ST_CTID is still
+  # cleared, so the loop top and the EXIT trap do not try again.
+  (( DRY )) &amp;&amp; { ST_CTID=&quot;&quot;; return 0; }
+  [[ -n &quot;$ST_STATUS&quot; ]] || ST_STATUS=ok
+  st_write
+  local h=&quot;$BASE/state/$ST_PREFIX$ST_CTID.runs.jsonl&quot; n
+  printf &#x27;%s\n&#x27; &quot;$(_st_run_json)&quot; &gt;&gt; &quot;$h&quot; 2&gt;/dev/null || true
+  n=$(wc -l &lt; &quot;$h&quot; 2&gt;/dev/null || echo 0)
+  if [[ &quot;$n&quot; =~ ^[0-9]+$ ]] &amp;&amp; (( n &gt; RUNS_KEEP * 2 )); then
+    tail -n &quot;$RUNS_KEEP&quot; &quot;$h&quot; &gt; &quot;$h.tmp.$$&quot; 2&gt;/dev/null \
+      &amp;&amp; mv -f &quot;$h.tmp.$$&quot; &quot;$h&quot; 2&gt;/dev/null || rm -f &quot;$h.tmp.$$&quot; 2&gt;/dev/null
+  fi
+  ST_CTID=&quot;&quot;    # flushed; the loop top and the EXIT trap must not write it twice
+}
+st_fail(){ ST_STATUS=failed;  ST_REASON=&quot;$1&quot;; failed=$(( failed + 1 )); FAILED_IDS+=(&quot;${ST_CTID:-?}&quot;); }
+st_skip(){ ST_STATUS=skipped; ST_REASON=&quot;$1&quot;; skipped=$(( skipped + 1 )); }
+st_ok(){   ST_STATUS=ok;      ST_REASON=&quot;&quot;;   ok=$(( ok + 1 )); }
+
+# ---------- R1: per-storage point-in-time prep (lazy, cached) ----------
+declare -A PREP_STATE=() PREP_ROOT=() PREP_WHY=() DOWN_COUNT=() DOWN_SID=()
+declare -a CLONES=() SNAPS=()
+prep_pool(){   # $1 = pool path (dir that contains images/)   $2 = storage id
+  local p=&quot;$1&quot; sid=&quot;$2&quot; fsroot fstype fssrc ds pool snap clone cm rel
+  case &quot;${PREP_STATE[$p]:-}&quot; in ok) return 0;; fail) return 1;; esac
+  fsroot=$(findmnt -no TARGET -T &quot;$p&quot; 2&gt;/dev/null | head -1)
+  fstype=$(findmnt -no FSTYPE -T &quot;$p&quot; 2&gt;/dev/null | head -1)
+  fssrc=$(findmnt  -no SOURCE -T &quot;$p&quot; 2&gt;/dev/null | head -1)
+  if [[ -z &quot;$fsroot&quot; || &quot;$fsroot&quot; == &quot;/&quot; ]]; then
+    PREP_STATE[$p]=fail; PREP_WHY[$p]=&quot;backing filesystem is not mounted&quot;
+    log &quot;GUARD R1: $p sits on the ROOT filesystem - backing fs for &#x27;$sid&#x27; is not mounted&quot;
+    log &quot;GUARD R1:   check: findmnt -T $p ; zfs mount -a&quot;
+    return 1
+  fi
+  if [[ &quot;$fstype&quot; == &quot;zfs&quot; ]]; then
+    ds=&quot;$fssrc&quot;; pool=&quot;${ds%%/*}&quot;
+    snap=&quot;ctrep-$LANE&quot;
+    clone=&quot;$pool/ctrep-clone-$LANE-${ds//\//_}&quot;
+    # leftovers from a crashed run. On a clean run they do not exist, and zfs
+    # says so on stderr - which must not land in the log, or every healthy run
+    # looks like it failed. A leftover that genuinely cannot be destroyed makes
+    # the snapshot/clone below fail, and that path reports properly.
+    if (( DRY )); then
+      # A snapshot and a clone are named objects on live customer storage, and
+      # the leftover cleanup just below DESTROYS pre-existing ones. A dry run
+      # that died mid-way would leave a clone holding space on the pool it was
+      # only supposed to look at. So it does not take one - which means it
+      # cannot read the images either, and cannot say how much would move. It
+      # says that outright rather than printing a zero somebody would believe.
+      PREP_STATE[$p]=ok; PREP_ROOT[$p]=&quot;$p&quot;
+      log &quot;R1: DRY: would snapshot $ds@$snap and clone it to $clone&quot;
+      log &quot;R1: DRY:   not taken, so nothing is read from &#x27;$sid&#x27; and there is no transfer estimate&quot;
+      return 0
+    fi
+    zfs destroy -r &quot;$clone&quot;    &gt;/dev/null 2&gt;&amp;1 || true
+    zfs destroy    &quot;$ds@$snap&quot; &gt;/dev/null 2&gt;&amp;1 || true
+    if ! zfs snapshot &quot;$ds@$snap&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1 || ! zfs clone &quot;$ds@$snap&quot; &quot;$clone&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1; then
+      PREP_STATE[$p]=fail; PREP_WHY[$p]=&quot;snapshot/clone failed on $ds&quot;
+      log &quot;GUARD R1: snapshot/clone failed for $ds - see log&quot;
+      return 1
+    fi
+    SNAPS+=(&quot;$ds@$snap&quot;); CLONES+=(&quot;$clone&quot;)
+    cm=$(zfs get -H -o value mountpoint &quot;$clone&quot; 2&gt;/dev/null)
+    if [[ -z &quot;$cm&quot; || &quot;$cm&quot; == &quot;none&quot; ]] || ! mountpoint -q &quot;$cm&quot;; then
+      PREP_STATE[$p]=fail; PREP_WHY[$p]=&quot;the clone of $ds would not mount&quot;
+      log &quot;GUARD R1: clone $clone not mounted (mountpoint: ${cm:-?}) - abort this storage&quot;
+      return 1
+    fi
+    rel=&quot;${p#&quot;$fsroot&quot;}&quot;                 # storage may be a SUBDIR of the mount
+    PREP_ROOT[$p]=&quot;${cm}${rel}&quot;
+    log &quot;R1: &#x27;$sid&#x27; point-in-time ready ($ds@$snap -&gt; $clone)&quot;
+  else
+    if (( ! LIVE_FALLBACK )); then
+      PREP_STATE[$p]=fail; PREP_WHY[$p]=&quot;on $fstype, which has no snapshots&quot;
+      log &quot;GUARD R1: &#x27;$sid&#x27; is on $fstype - no snapshots, point-in-time copy impossible&quot;
+      log &quot;GUARD R1:   reading LIVE images gives a torn copy; if you accept that,&quot;
+      log &quot;GUARD R1:   set LIVE_FALLBACK=1 in ctrep.conf&quot;
+      return 1
+    fi
+    log &quot;WARN R1: &#x27;$sid&#x27; is on $fstype - syncing from LIVE images (no point-in-time; LIVE_FALLBACK=1)&quot;
+    PREP_ROOT[$p]=&quot;$p&quot;
+  fi
+  PREP_STATE[$p]=ok
+  return 0
+}
+
+# destination storage id must be active on the backup node, or every config
+# this run writes points at a storage PVE there cannot resolve. Cached per dest.
+declare -A DEST_OK=()
+dest_ready(){   # $1 = dest key
+  local d=&quot;$1&quot; sid st
+  case &quot;${DEST_OK[$d]:-}&quot; in 1) return 0;; 0) return 1;; esac
+  sid=&quot;${DEST_SID[$d]}&quot;
+  st=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;pvesm status --storage $sid&quot; &lt;/dev/null 2&gt;/dev/null || true)
+  if printf &#x27;%s\n&#x27; &quot;$st&quot; | awk &#x27;NR&gt;1 &amp;&amp; $3==&quot;active&quot;{f=1} END{exit !f}&#x27;; then
+    DEST_OK[$d]=1; return 0
+  fi
+  DEST_OK[$d]=0
+  log &quot;ERROR: dest &#x27;$d&#x27;: storage &#x27;$sid&#x27; is not active on $BKP_NODE&quot;
+  log &quot;ERROR:   add it there: pvesm add zfspool $sid --pool ${DEST_DS[$d]} --content rootdir,images --sparse 1 --nodes $BKP_NODE&quot;
+  return 1
+}
+
+# ---------- mock network ----------
+# The source&#x27;s net lines, verbatim, with ONE edit by default: the bridge
+# becomes the isolated one. The VLAN tag is deliberately left alone, because
+# a fleet that puts customers on separate VLANs can legitimately reuse the same
+# IP range in each of them - forcing every copy onto one VLAN would make those
+# copies collide WITH EACH OTHER on the island. Keeping the tag preserves that
+# separation exactly, and isolation does not depend on the tag anyway: it comes
+# from the bridge having no uplink (R9).
+# hwaddr is kept for the same reason: same MAC means DHCP reservations,
+# MAC-bound licences and MAC-keyed rules still work, and go-live is then a
+# one-field edit (bridge back to the real one).
+# Set MOCKNET_TAG to a number to force one VLAN instead - only useful when every
+# CT shares one subnet and you want all copies reachable from a single test port.
+#
+# stdout of this function IS config text - it is captured into the file being
+# written. Nothing here may print anything else, not even through log(): a log
+# line printed from in here lands inside the container config. That is why the
+# &quot;no bridge=&quot; case is refused up in the main loop instead, before the transfer
+# and before this runs; by the time we are here every line has a bridge.
+mocknet_lines(){   # $1 = source config text
+  printf &#x27;%s\n&#x27; &quot;$1&quot; | grep -E &#x27;^net[0-9]+:&#x27; | while IFS= read -r l; do
+    [[ &quot;$l&quot; == *bridge=* ]] || continue     # unreachable: refused in the main loop
+    if [[ -n &quot;$MOCKNET_TAG&quot; ]]; then
+      l=$(printf &#x27;%s&#x27; &quot;$l&quot; | sed -E &quot;s/,tag=[0-9]+//g; s/bridge=[^,]*/bridge=$MOCKNET_BRIDGE/&quot;)
+      printf &#x27;%s,tag=%s\n&#x27; &quot;$l&quot; &quot;$MOCKNET_TAG&quot;
+    else
+      printf &#x27;%s\n&#x27; &quot;$l&quot; | sed -E &quot;s/bridge=[^,]*/bridge=$MOCKNET_BRIDGE/&quot;
+    fi
+  done
+}
+
+# rsync stats: captured via --log-file so the tty progress bar is untouched.
+# Lines in that file carry a timestamp prefix, so the label is matched anywhere
+# in the line, not anchored.
+_rs_num(){ sed -n &quot;s/.*$1: *\([0-9,][0-9,]*\).*/\1/p&quot; &quot;$2&quot; 2&gt;/dev/null | tr -d &#x27;,&#x27; | tail -1; }
+
+# bytes -&gt; human, integer math only. The convergence signal lives in this line,
+# so a 158 KiB delta must not print as &quot;0MiB&quot; and look like nothing happened.
+hsize(){
+  local b=${1:-0}
+  if   (( b &gt;= 1073741824 )); then printf &#x27;%d.%01dGiB&#x27; $(( b/1073741824 )) $(( (b%1073741824)*10/1073741824 ))
+  elif (( b &gt;= 1048576    )); then printf &#x27;%d.%01dMiB&#x27; $(( b/1048576 ))    $(( (b%1048576)*10/1048576 ))
+  elif (( b &gt;= 1024       )); then printf &#x27;%dKiB&#x27; $(( b/1024 ))
+  else                             printf &#x27;%dB&#x27; &quot;$b&quot;; fi
+}
+
+# --- one run at a time per TARGET copy ---------------------------------------
+# Lane locks (R7) assume lanes are disjoint, and per-storage lanes are: a CT has
+# exactly one rootfs storage. The &quot;all&quot; lane is not - it overlaps every storage
+# lane. So a hand-run (./ct-replica.sh or --ctid, both lane &quot;all&quot;) while cron is
+# mid-flight in a storage lane puts TWO rsyncs with --delete into the SAME
+# destination dataset. That is the most likely way to meet this bug, because
+# hand-runs happen exactly when someone is watching a CT that cron also owns.
+# Non-blocking on purpose: whoever cannot have the target moves on to the next
+# CT instead of sitting on the lane lock; the next run picks it up.
+TGT_LOCK=&quot;&quot;
+take_tgt_lock(){   # $1 = target vmid -&gt; 0 when this run owns it
+  exec 8&gt;&quot;$BASE/.ct-$1.lock&quot; 2&gt;/dev/null || return 1
+  if flock -n 8; then TGT_LOCK=&quot;$1&quot;; return 0; fi
+  exec 8&gt;&amp;-
+  return 1
+}
+release_tgt_lock(){  # closing the fd is what drops the flock
+  [[ -n &quot;$TGT_LOCK&quot; ]] || return 0
+  exec 8&gt;&amp;-
+  TGT_LOCK=&quot;&quot;
+}
+
+# every exit path, including a kill: bring the loop-mount down and record what
+# happened. A CT still marked &quot;running&quot; here was interrupted, and saying so
+# beats leaving a state file that claims a sync is still in progress.
+CUR_MNT=&quot;&quot;
+end_iteration(){
+  if [[ -n &quot;$CUR_MNT&quot; ]]; then
+    mountpoint -q &quot;$CUR_MNT&quot; 2&gt;/dev/null &amp;&amp; { umount &quot;$CUR_MNT&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1 || true; }
+    CUR_MNT=&quot;&quot;
+  fi
+  release_tgt_lock
+  [[ &quot;$ST_STATUS&quot; == running ]] &amp;&amp; { ST_STATUS=interrupted; ST_REASON=interrupted; }
+  st_flush
+}
+
+cleanup(){
+  local d c s
+  end_iteration
+  for d in &quot;$MNT_BASE&quot;/*; do
+    mountpoint -q &quot;$d&quot; 2&gt;/dev/null &amp;&amp; umount &quot;$d&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1
+  done
+  for c in &quot;${CLONES[@]:-}&quot;; do        # clones first: snapshots depend on them
+    [[ -n &quot;$c&quot; ]] &amp;&amp; { zfs destroy -r &quot;$c&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1 || true; }
+  done
+  for s in &quot;${SNAPS[@]:-}&quot;; do
+    [[ -n &quot;$s&quot; ]] &amp;&amp; { zfs destroy &quot;$s&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1 || true; }
+  done
+  for s in /run/ctrep-$$-*.sock; do    # OUR mux masters only - never another lane&#x27;s
+    [[ -S &quot;$s&quot; ]] &amp;&amp; ssh -O exit -o ControlPath=&quot;$s&quot; x &gt;/dev/null 2&gt;&amp;1
+  done
+}
+trap cleanup EXIT
+
+# ---------- main loop ----------
+ok=0; skipped=0; failed=0
+matched=0            # CTs that survived --storage/--ctid; 0 = the flag is wrong
+FAILED_IDS=()
+
+for CT in &quot;${CTS[@]}&quot;; do
+  end_iteration          # closes out the PREVIOUS CT: unmount, write state
+  st_reset
+  [[ -n &quot;$ONLY_CTID&quot; &amp;&amp; &quot;$CT&quot; != &quot;$ONLY_CTID&quot; ]] &amp;&amp; continue
+  TGT=${TGT_MAP[$CT]:-$(( CT + OFFSET ))}
+  DEST=${DEST_MAP[$CT]:-$DEFAULT_DEST}
+  # armed here: from now on failures are recorded. The lane filter below clears
+  # it again, so a CT that belongs to the other lane never gets a state file
+  # written by this one.
+  ST_CTID=&quot;$CT&quot;; ST_TGT=&quot;$TGT&quot;; ST_DEST=&quot;$DEST&quot;
+
+  # --- one CT held back by a human, rather than the whole fleet -------------
+  # PAUSE stops everything, which is right during a failback and far too blunt
+  # for &quot;this one is being fsck&#x27;d&quot;. Same idiom, one file per CT, and whatever
+  # is written inside it is echoed every round: at 3am the first question is
+  # &quot;why is this one not copying&quot;, and the file should answer it. A pause that
+  # is forgotten is a CT with no DR copy and nothing saying so, so tp status
+  # and tp doctor report how long it has been there.
+  if [[ -f &quot;$BASE/pause/$CT&quot; ]]; then
+    _why=$(head -1 &quot;$BASE/pause/$CT&quot; 2&gt;/dev/null)
+    log &quot;[$CT] PAUSED by pause/$CT${_why:+ - $_why}&quot;
+    # It counts as matched. `--ctid 105` on a paused CT found the row it was
+    # asked for; reporting &quot;no CT matched --ctid 105&quot; would send somebody
+    # hunting for a typo that is not there.
+    [[ -n &quot;$ONLY_CTID&quot; ]] &amp;&amp; matched=$(( matched + 1 ))
+    st_skip paused; continue
+  fi
+  # The rc of the PREVIOUS run, read before st_begin overwrites it. rc=23 once
+  # is almost always the ro,noload transient; rc=23 twice on the same CT is a
+  # real filesystem problem, and only the run before this one can tell them
+  # apart. Empty when this CT has never run.
+  # Read the tool-prefixed file, and fall back to the pre-split name so a
+  # fleet that has been running for months does not silently lose this on the
+  # first round after an upgrade. Losing it would not fail a run - it would
+  # quietly downgrade &quot;this image is damaged&quot; back to &quot;probably transient&quot;,
+  # which is the wrong direction to be wrong in.
+  PREV_STATE=&quot;$BASE/state/$ST_PREFIX$CT.json&quot;
+  [[ -f &quot;$PREV_STATE&quot; ]] || PREV_STATE=&quot;$BASE/state/$CT.json&quot;
+  PREV_RC=$(sed -n &#x27;s/.*&quot;rc&quot;: *\(-\{0,1\}[0-9][0-9]*\).*/\1/p&#x27; \
+            &quot;$PREV_STATE&quot; 2&gt;/dev/null | tail -1)
+
+  # --- source config from the CLUSTER (this node is not a member; bkp is) ---
+  cfgpath=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;ls /etc/pve/nodes/*/lxc/$CT.conf 2&gt;/dev/null&quot; &lt;/dev/null 2&gt;/dev/null | head -1)
+  if [[ -z &quot;$cfgpath&quot; ]]; then
+    log &quot;[$CT] ERROR: no config for CT $CT anywhere in the cluster - skip&quot;
+    st_fail no_source_config; continue
+  fi
+  srcnode=&quot;${cfgpath#/etc/pve/nodes/}&quot;; srcnode=&quot;${srcnode%%/*}&quot;
+  ST_SRC_NODE=&quot;$srcnode&quot;
+  if [[ &quot;$srcnode&quot; == &quot;$BKP_NODE&quot; ]]; then
+    # a CT that lives on the backup node IS (most likely) one of our copies
+    if (( AUTO_DISCOVER )); then
+      log &quot;[$CT] NOTE: lives on $BKP_NODE (a copy?) - auto-discover skips it&quot;
+      ST_CTID=&quot;&quot;; continue
+    fi
+    log &quot;[$CT] ERROR: CT lives on $BKP_NODE - refusing to replicate the backup node onto itself&quot;
+    st_fail source_is_backup; continue
+  fi
+  # strip snapshot sections ([snapname]...) before parsing anything
+  srccfg=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;cat $cfgpath&quot; &lt;/dev/null 2&gt;/dev/null | sed &#x27;/^\[/,$d&#x27;)
+  if [[ -z &quot;$srccfg&quot; ]]; then
+    log &quot;[$CT] ERROR: cannot read $cfgpath - skip&quot;
+    st_fail source_config_unreadable; continue
+  fi
+
+  # --- derive the CT&#x27;s REAL storage from its own config: nothing to drift ---
+  sid=$(printf &#x27;%s\n&#x27; &quot;$srccfg&quot; | sed -n &#x27;s/^rootfs:[[:space:]]*\([^:]*\):.*/\1/p&#x27; | head -1)
+  vol=$(printf &#x27;%s\n&#x27; &quot;$srccfg&quot; | sed -n &#x27;s/^rootfs:[[:space:]]*[^:]*:\([^,]*\).*/\1/p&#x27; | head -1)
+  if [[ -z &quot;$sid&quot; || -z &quot;$vol&quot; ]]; then
+    log &quot;[$CT] ERROR: cannot parse the rootfs line of $cfgpath - skip&quot;
+    st_fail rootfs_unparsable; continue
+  fi
+  ST_SRC_STORAGE=&quot;$sid&quot;
+  case &quot; $SRC_STORAGES &quot; in
+    *&quot; $sid &quot;*) ;;
+    *)
+      if (( AUTO_DISCOVER )); then
+        log &quot;[$CT] NOTE: rootfs on &#x27;$sid&#x27; (not in SRC_STORAGES) - auto-discover skips it&quot;
+        ST_CTID=&quot;&quot;; continue
+      fi
+      log &quot;[$CT] ERROR: rootfs on &#x27;$sid&#x27; which is not in SRC_STORAGES ($SRC_STORAGES) - skip&quot;
+      st_fail storage_not_allowed; continue;;
+  esac
+  if [[ -n &quot;${STOR_ASSERT[$CT]:-}&quot; &amp;&amp; &quot;${STOR_ASSERT[$CT]}&quot; != &quot;$sid&quot; ]]; then
+    log &quot;[$CT] ERROR: inventory asserts &#x27;${STOR_ASSERT[$CT]}&#x27; but the CT really lives on &#x27;$sid&#x27;&quot;
+    log &quot;[$CT] ERROR:   someone moved it - fix the row (or drop the assertion) after checking WHY&quot;
+    st_fail storage_assert_mismatch; continue
+  fi
+  # lane filter comes AFTER derivation - membership is fact, not configuration.
+  # ST_CTID cleared so this lane leaves the other lane&#x27;s state file alone.
+  if [[ -n &quot;$LANE_STORAGE&quot; &amp;&amp; &quot;$sid&quot; != &quot;$LANE_STORAGE&quot; ]]; then ST_CTID=&quot;&quot;; continue; fi
+  matched=$(( matched + 1 ))
+  # The rule goes after the lane filter, so a lane never prints a block for a
+  # CT that belongs to the other one - and before the guards, so a guard that
+  # refuses this CT prints inside the block that names it.
+  hr
+  log &quot;[$CT] CT $CT on $sid  -&gt;  copy $TGT on $BKP_NODE, dest=$DEST&quot;
+
+  # --- destination must be resolvable before any data moves ---
+  if ! dest_ready &quot;$DEST&quot;; then
+    log &quot;[$CT] ERROR: dest &#x27;$DEST&#x27; not usable on $BKP_NODE - skip&quot;
+    st_fail dest_inactive; continue
+  fi
+
+  # --- resolve the LIVE image path from PVE, then re-root it into the clone --
+  IMG=$(pvesm path &quot;$sid:$vol&quot; 2&gt;&gt;&quot;$LOG&quot;) || IMG=&quot;&quot;
+  if [[ -z &quot;$IMG&quot; || &quot;$IMG&quot; != /*/images/* ]]; then
+    log &quot;[$CT] ERROR: storage &#x27;$sid&#x27; unknown on THIS node, or not a dir storage (got &#x27;${IMG:-none}&#x27;)&quot;
+    log &quot;[$CT] ERROR:   define it here: pvesm add dir $sid --path &lt;dataset-mountpoint&gt; --is_mountpoint yes&quot;
+    st_fail storage_unknown_here; continue
+  fi
+  POOLPATH=&quot;${IMG%/images/*}&quot;
+  if ! prep_pool &quot;$POOLPATH&quot; &quot;$sid&quot;; then
+    # A whole storage being unreachable is ONE fact, not one fact per CT. The
+    # node holding it is down, or its dataset is not mounted; saying so forty
+    # times buries the CT that failed for its own reason. prep_pool already
+    # explained it once, so this is a single line, and it is SKIPPED rather
+    # than failed - nothing about this CT is wrong. It clears itself: when the
+    # storage comes back, the next round syncs. That is the whole difference
+    # from pause/, which a human has to remember to undo.
+    DOWN_COUNT[$POOLPATH]=$(( ${DOWN_COUNT[$POOLPATH]:-0} + 1 )); DOWN_SID[$POOLPATH]=&quot;$sid&quot;
+    log &quot;[$CT] source &#x27;$sid&#x27; is down - skip (see GUARD R1 above)&quot;
+    st_skip source_down; continue
+  fi
+  RAW=&quot;${PREP_ROOT[$POOLPATH]}${IMG#&quot;$POOLPATH&quot;}&quot;
+  if [[ ! -f &quot;$RAW&quot; ]]; then
+    log &quot;[$CT] ERROR: raw image not found in snapshot ($RAW) - skip&quot;
+    st_fail image_missing; continue
+  fi
+
+  # --- take the target, or leave it to the lane that already has it ---
+  # First thing that would touch the destination, so this is where to serialise.
+  if ! take_tgt_lock &quot;$TGT&quot;; then
+    log &quot;[$CT] NOTE: copy $TGT is being synced by another lane right now - skip (next run picks it up)&quot;
+    st_skip target_busy; continue
+  fi
+
+  # --- every net line must carry a bridge=, or this CT does not get copied ---
+  # Checked HERE, before anything is transferred, and not inside
+  # mocknet_lines(): that function&#x27;s stdout IS the config being written, so it
+  # cannot report anything without corrupting the file it is building. Dropping
+  # the line silently was the old behaviour and it is worse than refusing - the
+  # copy comes up with one interface missing and looks healthy.
+  if (( MOCKNET )); then
+    _nobr=$(printf &#x27;%s\n&#x27; &quot;$srccfg&quot; | grep -E &#x27;^net[0-9]+:&#x27; | grep -v &#x27;bridge=&#x27; || true)
+    if [[ -n &quot;$_nobr&quot; ]]; then
+      log &quot;[$CT] ERROR: source config has a net line with no bridge= - NOT copying this CT&quot;
+      while IFS= read -r _l; do [[ -n &quot;$_l&quot; ]] &amp;&amp; log &quot;[$CT] ERROR:   $_l&quot;; done &lt;&lt;&lt; &quot;$_nobr&quot;
+      log &quot;[$CT] ERROR:   the copy would come up with that interface missing and look healthy&quot;
+      log &quot;[$CT] ERROR:   fix the source config, or set MOCKNET=0 to copy with no network at all&quot;
+      st_fail net_no_bridge; continue
+    fi
+  fi
+
+  # --- R2: never overwrite a copy that is RUNNING (DR promoted) ---
+  st=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;pct status $TGT 2&gt;/dev/null&quot; &lt;/dev/null 2&gt;/dev/null | awk &#x27;{print $2}&#x27;)
+  if [[ &quot;$st&quot; == &quot;running&quot; ]]; then
+    log &quot;[$CT] GUARD R2: copy $TGT is RUNNING on $BKP_NODE (DR active?) - SKIP + check by hand&quot;
+    st_skip r2_running; continue
+  fi
+
+  # --- R4: the target VMID must not belong to any OTHER guest, anywhere ---
+  # This used to live at the bottom, next to the config write, and only ran the
+  # first time a copy was created. That is the same hole G7 exists to close in
+  # ct-migrate, in the same words: R2 above only sees a copy that is RUNNING on
+  # the backup node, and R8 below only reads this node&#x27;s own config directory.
+  # A STOPPED guest on ANOTHER node holding this id is invisible to both - and
+  # by the time the old R4 noticed, rsync --delete had already emptied that
+  # guest&#x27;s rootfs into ours. It is checked here, before anything is
+  # transferred, and on every run rather than only on the first.
+  _own=&quot;/etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf&quot;
+  _owners=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; \
+      &quot;ls /etc/pve/nodes/*/lxc/$TGT.conf /etc/pve/nodes/*/qemu-server/$TGT.conf 2&gt;/dev/null&quot; \
+      &lt;/dev/null 2&gt;/dev/null | grep -vxF &quot;$_own&quot; || true)
+  if [[ -n &quot;$_owners&quot; ]]; then
+    log &quot;[$CT] GUARD R4: VMID $TGT already belongs to another guest - NOT syncing&quot;
+    while IFS= read -r _o; do [[ -n &quot;$_o&quot; ]] &amp;&amp; log &quot;[$CT] GUARD R4:   $_o&quot;; done &lt;&lt;&lt; &quot;$_owners&quot;
+    log &quot;[$CT] GUARD R4:   rsync --delete into that guest&#x27;s volume would empty its rootfs&quot;
+    log &quot;[$CT] GUARD R4:   fix: give this row an explicit tgt_ctid in $(basename &quot;$INV&quot;)&quot;
+    st_fail r4_vmid_taken; continue
+  fi
+
+  # --- R8: an existing copy config must agree with THIS row&#x27;s dest ---
+  # Read once here; reused at the bottom so config creation costs no extra ssh.
+  tgtcfg=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf 2&gt;/dev/null&quot; &lt;/dev/null 2&gt;/dev/null)
+  if [[ -n &quot;$tgtcfg&quot; ]]; then
+    ST_CFG_PRESENT=1
+    if printf &#x27;%s\n&#x27; &quot;$tgtcfg&quot; | grep -qE &#x27;^net[0-9]+:&#x27;; then
+      ST_MOCKNET=1
+      # R11: going live during DR means moving the copy onto a real bridge, and
+      # coming back from DR means moving it back. Forgetting the second half
+      # leaves a STOPPED copy holding a production IP and MAC one click away
+      # from the wire - and R9 cannot see it, because R9 only polices the mock
+      # bridge. R2 already skipped this CT if the copy is running, so reaching
+      # here with a real bridge means nobody put it back.
+      if (( MOCKNET )); then
+        _badbr=$(printf &#x27;%s\n&#x27; &quot;$tgtcfg&quot; | grep -E &#x27;^net[0-9]+:&#x27; \
+                 | grep -vE &quot;bridge=$MOCKNET_BRIDGE(,|$)&quot; || true)
+        if [[ -n &quot;$_badbr&quot; ]]; then
+          ST_MOCKNET=0
+          log &quot;[$CT] WARN R11: copy $TGT is STOPPED but its net is NOT on $MOCKNET_BRIDGE:&quot;
+          while IFS= read -r _l; do [[ -n &quot;$_l&quot; ]] &amp;&amp; log &quot;[$CT] WARN R11:   $_l&quot;; done &lt;&lt;&lt; &quot;$_badbr&quot;
+          log &quot;[$CT] WARN R11:   a DR promotion was not reverted - this copy carries a production&quot;
+          log &quot;[$CT] WARN R11:   IP/MAC and would collide the moment anyone starts it&quot;
+          log &quot;[$CT] WARN R11:   fix: put every net line back on bridge=$MOCKNET_BRIDGE&quot;
+        fi
+      fi
+    fi
+    csid=$(printf &#x27;%s\n&#x27; &quot;$tgtcfg&quot; | sed -n &#x27;s/^rootfs:[[:space:]]*\([^:]*\):.*/\1/p&#x27; | head -1)
+    if [[ &quot;$csid&quot; != &quot;${DEST_SID[$DEST]}&quot; ]]; then
+      log &quot;[$CT] GUARD R8: copy $TGT config points at &#x27;${csid:-&lt;none&gt;}&#x27; but this row&#x27;s dest &#x27;$DEST&#x27; means &#x27;${DEST_SID[$DEST]}&#x27;&quot;
+      log &quot;[$CT] GUARD R8:   the dest column changed after the copy was created; syncing now would fill&quot;
+      log &quot;[$CT] GUARD R8:   the new dataset while the config still boots the old one&quot;
+      log &quot;[$CT] GUARD R8:   fix: move the copy yourself (zfs send/recv + edit the config), or destroy&quot;
+      log &quot;[$CT] GUARD R8:   the old copy (config + dataset) and let the next run recreate it on &#x27;$DEST&#x27;&quot;
+      st_fail r8_dest_changed; continue
+    fi
+  fi
+
+  # --- R3: destination dataset exists AND is mounted ---
+  TDS=&quot;${DEST_DS[$DEST]}/subvol-$TGT-disk-0&quot;
+  ST_DS=&quot;$TDS&quot;
+  # R3 splits under DRY, and only there: `zfs list` is a read and still happens,
+  # `zfs create` is a write and does not. The mounted=yes half below is written
+  # ONCE and runs in both modes - a second copy of it inside a DRY branch would
+  # be the same literal text twice, and its mutation anchors on the first
+  # occurrence, so the copy would silently take the mutation and the real path
+  # would stop being tested.
+  DRY_NO_DS=0
+  if (( DRY )); then
+    if ! ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;zfs list $TDS &gt;/dev/null 2&gt;&amp;1&quot; &lt;/dev/null &gt;/dev/null 2&gt;&amp;1; then
+      log &quot;[$CT] DRY: would create dataset $TDS on $BKP_NODE (xattr=sa, acltype=posixacl)&quot;
+      DRY_NO_DS=1
+    fi
+  elif ! ssh $SSH_OPT &quot;$BKP_SSH&quot; \
+      &quot;zfs list $TDS &gt;/dev/null 2&gt;&amp;1 || zfs create -o xattr=sa -o acltype=posixacl $TDS&quot; \
+      &lt;/dev/null &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1; then
+    log &quot;[$CT] ERROR: cannot prepare dataset $TDS on backup - skip&quot;
+    st_fail dataset_create; continue
+  fi
+  if (( ! DRY_NO_DS )); then
+    read -r tmounted tmnt &lt; &lt;(ssh $SSH_OPT &quot;$BKP_SSH&quot; \
+        &quot;zfs get -H -o value mounted,mountpoint $TDS 2&gt;/dev/null | paste -sd&#x27; &#x27;&quot; &lt;/dev/null 2&gt;/dev/null)
+    if [[ &quot;${tmounted:-}&quot; != &quot;yes&quot; || -z &quot;${tmnt:-}&quot; || &quot;$tmnt&quot; == &quot;none&quot; ]]; then
+      log &quot;[$CT] GUARD R3: $TDS NOT MOUNTED on backup (mounted=${tmounted:-?}) - rsync would fill the backup ROOT fs - skip&quot;
+      st_fail r3_not_mounted; continue
+    fi
+    (( DRY )) &amp;&amp; log &quot;[$CT] DRY: dest dataset $TDS is present and mounted at $tmnt&quot;
+  fi
+
+  if (( DRY )); then
+    # what the copy config would say. R5 never rewrites one that exists, so the
+    # only interesting case is the first round for this CT.
+    if [[ -z &quot;$tgtcfg&quot; ]]; then
+      log &quot;[$CT] DRY: would create copy config $TGT on $BKP_NODE (dest=$DEST, onboot=0, stopped)&quot;
+      log &quot;[$CT] DRY:   rootfs: ${DEST_SID[$DEST]}:subvol-${TGT}-disk-0&quot;
+      (( MOCKNET )) &amp;&amp; log &quot;[$CT] DRY:   net kept from the source, moved onto $MOCKNET_BRIDGE tag ${MOCKNET_TAG:-&lt;from source&gt;}&quot;
+    else
+      log &quot;[$CT] DRY: copy config $TGT already exists on $BKP_NODE - R5 would leave it untouched&quot;
+    fi
+    log &quot;[$CT] DRY: source image $RAW on &#x27;$sid&#x27; would be read from the clone, not live&quot;
+    log &quot;[$CT] dry-run - nothing was written&quot;
+    st_ok; continue
+  fi
+  # --- R6: loop-mount ro,noload and pull ---
+  MNT=&quot;$MNT_BASE/$CT&quot;
+  mkdir -p &quot;$MNT&quot;
+  if mountpoint -q &quot;$MNT&quot;; then
+    umount &quot;$MNT&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1 || {
+      log &quot;[$CT] ERROR: stale mount at $MNT would not unmount - skip&quot;
+      st_fail stale_mount; continue; }
+  fi
+  if ! mount -o loop,ro,noload &quot;$RAW&quot; &quot;$MNT&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1; then
+    log &quot;[$CT] ERROR: loop-mount failed ($RAW) - skip&quot;
+    st_fail loop_mount; continue
+  fi
+  CUR_MNT=&quot;$MNT&quot;                # from here a kill must still bring it back down
+  used=$(df -h &quot;$MNT&quot; 2&gt;/dev/null | awk &#x27;NR==2{print $3}&#x27;)
+  log &quot;[$CT] SYNC -&gt; $TGT dest=$DEST (used ${used:-?}, bw=$BWLIMIT, src=$sid)&quot;
+  st_begin                      # publish &quot;in flight&quot; before the long part starts
+  # --timeout=300 catches an IO-stall on the receiver that keeps TCP alive
+  # (ServerAlive cannot see it). excludes = boot-time junk that is worthless
+  # in a DR copy and the main thing that trips ro,noload after a CT restart.
+  RS=(-aHAX --numeric-ids --delete --inplace &quot;--bwlimit=$BWLIMIT&quot; --timeout=300
+      &#x27;--exclude=/tmp/*&#x27; &#x27;--exclude=/run/*&#x27; &#x27;--exclude=/var/tmp/systemd-private-*&#x27;
+      -e &quot;ssh $SSH_DATA&quot;)
+  SF=$(mktemp &quot;${TMPDIR:-/tmp}/ctrep-stats.XXXXXX&quot; 2&gt;/dev/null) || SF=&quot;&quot;
+  [[ -n &quot;$SF&quot; ]] &amp;&amp; RS+=(--stats &quot;--log-file=$SF&quot; &#x27;--log-file-format=&#x27;)
+  rc=0; t0=$SECONDS
+  if [ -t 1 ]; then
+    rsync &quot;${RS[@]}&quot; --info=progress2 --no-inc-recursive &quot;$MNT&quot;/ &quot;$BKP_SSH:$tmnt/&quot; || rc=$?
+  else
+    rsync &quot;${RS[@]}&quot; &quot;$MNT&quot;/ &quot;$BKP_SSH:$tmnt/&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1 || rc=$?
+  fi
+  RS_SECS=$(( SECONDS - t0 )); ST_RC=$rc
+  umount &quot;$MNT&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1 &amp;&amp; CUR_MNT=&quot;&quot; \
+    || log &quot;[$CT] WARN: umount $MNT failed - cleanup trap will retry&quot;
+
+  # per-CT numbers, tty or cron alike. &quot;changed&quot; is the data rsync actually had
+  # to move - trending toward ~0 across rounds = the copy has converged; a jump
+  # = something big changed inside the CT.
+  if [[ -n &quot;$SF&quot; &amp;&amp; -s &quot;$SF&quot; ]]; then
+    RS_FILES=$(_rs_num &#x27;Number of .*files transferred&#x27; &quot;$SF&quot;)
+    RS_LITERAL=$(_rs_num &#x27;Literal data&#x27; &quot;$SF&quot;)
+    RS_SENT=$(_rs_num &#x27;Total bytes sent&#x27; &quot;$SF&quot;)
+    RS_TOTAL=$(_rs_num &#x27;Total file size&#x27; &quot;$SF&quot;)
+    for _n in RS_FILES RS_LITERAL RS_SENT RS_TOTAL; do
+      [[ &quot;${!_n}&quot; =~ ^[0-9]+$ ]] || printf -v &quot;$_n&quot; 0
+    done
+    avg=0; (( RS_SECS &gt; 0 )) &amp;&amp; avg=$(( RS_SENT / RS_SECS ))
+    log &quot;[$CT] stats: files=$RS_FILES changed=$(hsize &quot;$RS_LITERAL&quot;) wire=$(hsize &quot;$RS_SENT&quot;) time=${RS_SECS}s avg=$(hsize &quot;$avg&quot;)/s&quot;
+  fi
+  [[ -n &quot;$SF&quot; ]] &amp;&amp; rm -f &quot;$SF&quot;
+
+  # --- R5: judge the sync BEFORE any config work ---
+  if [[ $rc -ne 0 &amp;&amp; $rc -ne 24 ]]; then
+    if [[ $rc -eq 23 ]]; then
+      if [[ &quot;${PREV_RC:-}&quot; == &quot;23&quot; ]]; then
+        log &quot;[$CT] ERROR: rc=23 TWICE IN A ROW - not a transient any more&quot;
+        log &quot;[$CT] ERROR:   ro,noload cannot read metadata that is still only in the ext4 journal,&quot;
+        log &quot;[$CT] ERROR:   but two snapshots in a row means the image itself is damaged.&quot;
+        log &quot;[$CT] ERROR:   1) stop CT $CT on $srcnode&quot;
+        log &quot;[$CT] ERROR:   2) on THIS node, look first:  e2fsck -fn $IMG&quot;
+        log &quot;[$CT] ERROR:   3) repair only with the CT stopped:  e2fsck -fp $IMG&quot;
+        st_fail r5_rsync_repeat; continue
+      fi
+      log &quot;[$CT] HINT: rc=23 once is usually the ro,noload transient - files whose metadata was&quot;
+      log &quot;[$CT] HINT:   still in the ext4 journal when the snapshot was taken. The next run takes&quot;
+      log &quot;[$CT] HINT:   a fresh snapshot and normally picks them up; if it fails again, it says so.&quot;
+    fi
+    log &quot;[$CT] GUARD R5: sync FAILED (rc=$rc) - copy config NOT created&quot;
+    st_fail r5_rsync; continue
+  fi
+  log &quot;[$CT] OK -&gt; $TGT (rc=$rc)&quot;
+
+  # --- extra mountpoints are NOT replicated, by decision. The risk is not the
+  #     missing data, it is a copy that boots fine and serves an EMPTY dir. ---
+  mplist=$(printf &#x27;%s\n&#x27; &quot;$srccfg&quot; | grep -E &#x27;^mp[0-9]+:&#x27; || true)
+  if [[ -n &quot;$mplist&quot; ]]; then
+    while IFS= read -r mpline; do
+      [[ -z &quot;$mpline&quot; ]] &amp;&amp; continue
+      mpname=&quot;${mpline%%:*}&quot;
+      mppath=$(printf &#x27;%s\n&#x27; &quot;$mpline&quot; | sed -n &#x27;s/.*[,[:space:]]mp=\([^,]*\).*/\1/p&#x27;)
+      ST_MP+=(&quot;${mppath:-$mpname}&quot;)
+      log &quot;[$CT] WARN: $mpname -&gt; ${mppath:-&lt;no mp= found&gt;} is NOT replicated - empty dir on the copy&quot;
+    done &lt;&lt;&lt; &quot;$mplist&quot;
+  fi
+
+  # --- first success only: create the copy config (R5) ---
+  # R4 already ran, before the transfer - see above.
+  if [[ -z &quot;$tgtcfg&quot; ]]; then
+    SIZE=$(printf &#x27;%s\n&#x27; &quot;$srccfg&quot; | sed -n &#x27;s/^rootfs:.*size=\([^,]*\).*/\1/p&#x27;)
+    newcfg=$( printf &#x27;%s\n&#x27; &quot;$srccfg&quot; \
+                | grep -Ev &#x27;^(net[0-9]+|mp[0-9]+|rootfs|onboot|parent|snaptime|lock|unused[0-9]+):&#x27;
+              echo &quot;rootfs: ${DEST_SID[$DEST]}:subvol-${TGT}-disk-0,size=${SIZE:-8G}&quot;
+              echo &quot;onboot: 0&quot;
+              (( MOCKNET )) &amp;&amp; mocknet_lines &quot;$srccfg&quot; )
+    # Written, then read back and compared. A write cut short by a dropped
+    # connection or a full /etc/pve leaves a half config, and R5 never rewrites
+    # a config that exists - so the damage would be permanent and every later
+    # run would report this CT as healthy. Verified once, here, is cheap.
+    if printf &#x27;%s\n&#x27; &quot;$newcfg&quot; | ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;cat &gt; /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf&quot; \
+       &amp;&amp; [[ &quot;$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf&quot; &lt;/dev/null 2&gt;/dev/null)&quot; == &quot;$newcfg&quot; ]]; then
+      ST_CFG_PRESENT=1
+      (( MOCKNET )) &amp;&amp; ST_MOCKNET=1
+      log &quot;[$CT] INIT: created copy config $TGT on $BKP_NODE (dest=$DEST, onboot=0, stopped$( (( MOCKNET )) &amp;&amp; echo &quot;, net on $MOCKNET_BRIDGE tag ${MOCKNET_TAG:-&lt;from source&gt;}&quot; ))&quot;
+    else
+      log &quot;[$CT] ERROR: the config on $BKP_NODE does not match what was sent (truncated write)&quot;
+      log &quot;[$CT] ERROR:   the rootfs data is fine; only the config is bad&quot;
+      log &quot;[$CT] ERROR:   delete it and run again: rm /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf&quot;
+      st_fail cfg_write; continue
+    fi
+  fi
+  st_ok
+done
+
+end_iteration          # closes out the LAST CT; the EXIT trap then finds nothing
+
+# ---------- summary + healthcheck ----------
+hr
+log &quot;=== lane &#x27;$LANE&#x27; finished: ok=$ok skipped=$skipped failed=$failed ===&quot;
+# Said once at the end as well as once per CT: the per-CT lines scroll past,
+# and this is the line an operator reads before running it for real.
+(( DRY )) &amp;&amp; log &quot;dry-run only - nothing was written, here or on the backup node&quot;
+
+# A misspelled --storage or --ctid matches nothing, does nothing, and exits 0.
+# Under cron that looks exactly like a healthy run, so say it and fail.
+if (( matched == 0 )) &amp;&amp; [[ -n &quot;$LANE_STORAGE$ONLY_CTID&quot; ]]; then
+  log &quot;ERROR: no CT matched${LANE_STORAGE:+ --storage $LANE_STORAGE}${ONLY_CTID:+ --ctid $ONLY_CTID} - nothing was replicated&quot;
+  exit 1
+fi
+
+# A storage that is down took CTs out of replication, and every one of them is
+# counted as skipped - which on its own would exit 0 and read as a healthy
+# night. Name it, and do not exit 0 while it is true.
+_down=0
+for _p in &quot;${!DOWN_COUNT[@]}&quot;; do
+  log &quot;SOURCE DOWN: &#x27;${DOWN_SID[$_p]}&#x27; (${PREP_WHY[$_p]:-unusable}) - ${DOWN_COUNT[$_p]} CT not replicated this round&quot;
+  _down=1
+done
+if (( _down )); then
+  log &quot;SOURCE DOWN:   they resume by themselves when the storage is back - nothing to undo.&quot;
+  log &quot;SOURCE DOWN:   if the node holding it is gone for good, move those CTs and their&quot;
+  log &quot;SOURCE DOWN:   config follows them; the next round picks up their new home.&quot;
+fi
+
+if (( failed &gt; 0 )); then
+  log &quot;NEEDS ATTENTION -&gt; CT: ${FAILED_IDS[*]}&quot;
+  [[ -n &quot;$HEALTH_URL&quot; ]] &amp;&amp; { curl -fsS -m 10 &quot;$HEALTH_URL/fail&quot; &gt;/dev/null 2&gt;&amp;1 || true; }
+  exit 1
+fi
+if (( _down )); then
+  [[ -n &quot;$HEALTH_URL&quot; ]] &amp;&amp; { curl -fsS -m 10 &quot;$HEALTH_URL/fail&quot; &gt;/dev/null 2&gt;&amp;1 || true; }
+  exit 1
+fi
+[[ -n &quot;$HEALTH_URL&quot; ]] &amp;&amp; { curl -fsS -m 10 &quot;$HEALTH_URL&quot; &gt;/dev/null 2&gt;&amp;1 || true; }
+exit 0</pre></div>
+  </details>
+
+  <details class="src"><summary>โค้ดเต็ม: ctrep.conf (ตั้งค่า) — กดเปิด แล้วกดปุ่ม copy มุมขวาบน</summary>
+  <div class="code"><pre># =============================================================================
+#  ctrep.conf  -  tuning for ct-replica.sh   (sourced as shell, keep it simple)
+# -----------------------------------------------------------------------------
+#  This file exists so the engine can be regenerated/patched WITHOUT losing the
+#  values that were calibrated against the real hardware. Never move these back
+#  into the script.
+#
+#  Every value below is optional: the engine ships the same defaults. Anything
+#  you set here wins. Numeric values must be plain integers (no units).
+# =============================================================================
+
+# --- backup target -----------------------------------------------------------
+BKP_SSH=&quot;root@100.100.100.35&quot;
+BKP_NODE=&quot;bkp02&quot;
+
+# Destination map: key=dataset:storage-id  (space separated entries)
+#   key        : what the inventory&#x27;s dest column says (e.g. &quot;hdd&quot;, &quot;ssd&quot;)
+#   dataset    : PARENT dataset on the backup node; the engine creates
+#                subvol-&lt;id&gt;-disk-0 children under it (with xattr=sa and
+#                acltype=posixacl, which LXC needs)
+#   storage-id : the zfspool storage id the copy config&#x27;s rootfs references
+#
+# bkp02-setup.sh creates the datasets and the storage ids; only the POOLS
+# (replica-hdd = new 6x HDD raid10, replica-ssd = 870 EVO mirror) are made by
+# hand. Tiering concept: customer CTs that must start FAST in DR -&gt; ssd,
+# CTs where slow is acceptable -&gt; hdd.
+BKP_DESTS=&quot;hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd&quot;
+
+# Rows without a dest column, and auto-discovered CTs, land here.
+DEFAULT_DEST=&quot;hdd&quot;
+
+# --- sources -----------------------------------------------------------------
+# The only storages this tool is allowed to read from. A CT whose rootfs lives
+# anywhere else fails loudly (inventory mode) or is skipped (auto mode).
+SRC_STORAGES=&quot;tank-hdd-nas tank-ssd-nas&quot;
+
+# A non-ZFS source (e.g. a dir storage on XFS) has no snapshots, so there is
+# no point-in-time copy - the live image is read while the CT writes to it.
+# 0 = refuse (default, safe). 1 = allow, with a loud WARN every round.
+LIVE_FALLBACK=0
+
+# --- mock network ------------------------------------------------------------
+# The copy gets the source CT&#x27;s REAL net config - same IP, same MAC, everything
+# - moved onto an ISOLATED bridge. Duplicate IPs are harmless because that
+# bridge cannot reach a wire, so a copy can be booted for a drill while the
+# real CT is live. Go-live is then a one-field edit (bridge back to the real
+# one). GUARD R9 verifies the bridge has no uplink before EVERY run and refuses
+# the whole run if it ever gains one.
+#
+# The engine never starts a copy - it only makes one that WOULD work if a human
+# started it. onboot=0, always stopped.
+#
+# On the backup node, /etc/network/interfaces.d/vmbr99 (OVS, no uplink):
+#   auto vlan99
+#   iface vlan99 inet static
+#           address 192.168.99.1/24
+#           ovs_type OVSIntPort
+#           ovs_bridge vmbr99
+#           ovs_mtu 9000
+#           ovs_options tag=99
+#   auto vmbr99
+#   iface vmbr99 inet manual
+#           ovs_type OVSBridge
+#           ovs_ports vlan99
+#           ovs_mtu 9000
+#
+# MOCKNET_TAG=&quot;&quot; keeps each CT&#x27;s OWN VLAN tag and changes nothing but the
+# bridge - the copy&#x27;s net line is then byte-identical to production except for
+# that one field. Keeping the tag matters when customers sit on separate VLANs
+# with reusable IP ranges: forcing every copy onto one VLAN would make the
+# copies collide with EACH OTHER on the island. Isolation does not depend on
+# the tag - it comes from the bridge having no uplink (R9).
+# Set a number instead to force all copies onto one VLAN (only useful when the
+# whole fleet shares a single subnet).
+#
+# To reach a copy during a drill, add a temporary internal port on ITS vlan and
+# give the host an address in ITS subnet, then remove both afterwards:
+#   ovs-vsctl add-port vmbr99 t50 -- set interface t50 type=internal -- set port t50 tag=50
+#   ip addr add 10.100.1.254/24 dev t50 &amp;&amp; ip link set t50 up
+#   ...test...
+#   ip link set t50 down &amp;&amp; ovs-vsctl del-port vmbr99 t50
+# (untagged sources need the same without the &quot;set port ... tag=&quot; part)
+#
+# MOCKNET=0 makes copies with no network at all (the old behaviour).
+MOCKNET=1
+MOCKNET_BRIDGE=vmbr99
+MOCKNET_TAG=&quot;&quot;
+
+# --- identity ----------------------------------------------------------------
+# Copy VMID = src_ctid + OFFSET unless the inventory row sets its own tgt_ctid.
+OFFSET=8000
+
+# 1 = replicate every lxc in the cluster except exclude.tsv (inventory rows
+# still apply their tgt_ctid/dest overrides). 0 = inventory rows only.
+AUTO_DISCOVER=0
+
+# --- bandwidth / transport ---------------------------------------------------
+# BW_TOTAL_MB is the ceiling for the WHOLE tool, in MiB/s, across every lane.
+# Each lane gets BW_TOTAL_MB / LANES and keeps it for the whole run, so the
+# ceiling holds no matter which lanes happen to be running. Running one cron
+# per storage? Set LANES to how many of those schedules can overlap:
+#   */15 * * * * root /root/ct-replica/ct-replica.sh --storage tank-hdd-nas
+#   */15 * * * * root /root/ct-replica/ct-replica.sh --storage tank-ssd-nas
+#   -&gt; LANES=2
+BW_TOTAL_MB=230
+LANES=1
+BW_MIN_MB=20
+
+# rsync-transport cipher list. Default prefers AES-GCM (AES-NI accelerated,
+# ~2x chacha20 on wired links). Empty = let ssh negotiate.
+#SSH_CIPHERS=aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr
+
+# --- housekeeping ------------------------------------------------------------
+LOG_KEEP_DAYS=14
+RUNS_KEEP=200      # per-CT run history lines kept in state/&lt;src_ctid&gt;.runs.jsonl
+# HEALTH_URL=&quot;https://hc-ping.com/your-uuid&quot;</pre></div>
+  </details>
+
+  
+  <details class="src"><summary>โค้ดเต็ม: ct-failback.sh (ส่งข้อมูลกลับตอน DR — วางแล้ว chmod +x)</summary>
+  <div class="code"><pre>#!/usr/bin/env bash
+# =============================================================================
+#  ct-failback.sh  —  run on the STORAGE NODE (the same one ct-replica runs on)
+# -----------------------------------------------------------------------------
+#  The reverse of ct-replica: pulls copies that were PROMOTED on the backup
+#  node back into the production CTs&#x27; raw images on this node.
+#
+#  It is a PRESYNC tool, like ct-migrate. Run it as often as you like while the
+#  copies are still serving traffic; each round only moves what changed, so the
+#  cutover window shrinks to seconds instead of the whole rootfs. The &quot;changed=&quot;
+#  number per CT is the thing to watch: when it stops shrinking, you are ready.
+#
+#  usage:
+#    ct-failback.sh --list                  who is where, what state - read only
+#    ct-failback.sh --all                   presync every CT in the inventory
+#    ct-failback.sh --ctid 110              presync one CT
+#    ct-failback.sh --all --dry-run         show what would move, touch nothing
+#    ct-failback.sh --all --final           LAST delta, copies must be STOPPED
+#    ct-failback.sh --all --dest ssd        only CTs whose copy is on that pool
+#
+#  A real disaster promotes many CTs at once, so --all is the normal form and
+#  a per-CT guard failure SKIPS that CT instead of stopping the batch: one
+#  container nobody remembered to shut down must not strand the other twenty.
+#  Only conditions that are wrong for the whole run (bad config, missing PAUSE)
+#  refuse up front.
+#
+#  It reads ctrep.conf and inventory-replica.tsv from its own folder - the
+#  same pair ct-replica.sh reads, never ct-migrate.sh&#x27;s inventory.tsv - so the
+#  backup
+#  node, the dest pools and any custom tgt_ctid are exactly what ct-replica
+#  uses. Nothing is configured twice.
+#
+#  This tool does NOT do cutover. Stopping copies, starting production CTs,
+#  putting each copy&#x27;s network back on the mock bridge and removing PAUSE are
+#  done by hand - it prints the list when it finishes.
+#
+#  BEFORE YOU NEED THIS, run `ct-failback.sh --list` on an ordinary day. B1
+#  asks each production node whether its container is stopped, over ssh, by the
+#  pmxcfs node NAME. This host is outside the cluster on purpose, so it gets
+#  neither the cluster&#x27;s /etc/hosts nor its keys for free, and a failback whose
+#  ssh was never set up refuses every CT at B1. --list says so and exits 1.
+#
+#  exit code: 0 = all ok, 1 = at least one CT failed or was skipped,
+#             2 = refused before touching anything.
+# -----------------------------------------------------------------------------
+#  THE GUARDS (B1..B6). Failback is the one direction where a mistake destroys
+#  PRODUCTION data rather than a copy, so these refuse rather than warn.
+#
+#   B1  the production CT must be STOPPED on its own node. Its rootfs is a raw
+#       image; this tool loop-mounts that image here. Mounted twice - once by
+#       the running CT, once by us - is instant ext4 corruption, and it is the
+#       live customer container that gets corrupted. If the node cannot be
+#       reached to verify, that is also a refusal: unverified is not stopped.
+#
+#   B2  the copy&#x27;s state must match the mode, because the two modes rely on
+#       different things to keep ct-replica off the copy:
+#         presync -&gt; copy RUNNING. That is what makes ct-replica&#x27;s R2 skip it,
+#                    and it is also what makes the copy the newer data.
+#         final   -&gt; copy STOPPED *and* ct-replica&#x27;s PAUSE file present. Once
+#                    the copy stops, R2 stops protecting it, and the next cron
+#                    tick would overwrite the DR data with the stale original.
+#                    PAUSE is the only thing standing there, so it is checked
+#                    once for the whole run, before any CT is touched.
+#
+#   B3  the image must live on a mounted filesystem, never on the node root.
+#       Identical to ct-replica R1: an unmounted dataset leaves an ordinary
+#       empty directory behind, and writing &quot;into the image&quot; then fills the
+#       node&#x27;s root disk instead.
+#
+#   B4  the image must already exist. This restores INTO a container that is
+#       still configured and still owns its volume. A missing image means the
+#       CT was destroyed or the storage is wrong - that is a rebuild, a
+#       different operation, and guessing at it here would create a volume
+#       nobody asked for.
+#
+#   B5  the loop mount must be verified as a real mountpoint before rsync, and
+#       the unmount must succeed before any resize. Same reasoning as ct-migrate
+#       G1/G3, in the same order, for the same two disasters.
+#
+#   B6  ENOSPC grows the image instead of leaving a half-restored rootfs. Data
+#       written during DR can exceed the original quota; refusing there would
+#       strand the failback at the worst moment. Bounded, and it says loudly
+#       that the CT config&#x27;s size= no longer matches.
+# =============================================================================
+set -uo pipefail
+
+# A login shell without sbin in PATH hides pvesm exactly the way cron does;
+# keep this environment identical to ct-replica&#x27;s.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+BASE=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)&quot; &amp;&amp; pwd)&quot;
+CONF=&quot;$BASE/ctrep.conf&quot;
+INV=&quot;$BASE/inventory-replica.tsv&quot;
+
+# ---------- defaults (ctrep.conf wins; they are the same knobs) ----------
+BKP_SSH=&quot;root@100.100.100.35&quot;
+BKP_NODE=&quot;bkp02&quot;
+BKP_DESTS=&quot;hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd&quot;
+DEFAULT_DEST=&quot;hdd&quot;
+OFFSET=8000
+BW_TOTAL_MB=230
+LANES=1
+BW_MIN_MB=20
+LOG_KEEP_DAYS=14
+MNT_BASE=/mnt/ct-replica
+GROW_PCT=5               # grow step per ENOSPC retry
+GROW_MAX_RETRY=3
+SSH_CIPHERS=aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr
+# -------------------------------------------------------------------------
+
+ONLY_CTID=&quot;&quot;; ALL=0; LIST=0; FINAL=0; DRY=0; ONLY_DEST=&quot;&quot;; NO_SNAPSHOT=0
+# A value-taking flag whose value was lost to a copy-paste used to hang here
+# forever: `shift 2` fails when only one argument is left, the old `|| true`
+# swallowed that failure, and $# never reached zero. This one is typed by hand
+# during an incident, which is exactly when a hung command with no output is
+# worst. Refuse instead. &quot;$2&quot; is deliberately not &quot;${2:-}&quot;, so that deleting
+# the check below dies on set -u rather than spinning again.
+while (( $# )); do
+  case &quot;$1&quot; in
+    --ctid)    [[ $# -ge 2 ]] || { echo &quot;--ctid needs a value&quot; &gt;&amp;2; exit 2; }
+               ONLY_CTID=&quot;$2&quot;; shift 2;;
+    --dest)    [[ $# -ge 2 ]] || { echo &quot;--dest needs a value&quot; &gt;&amp;2; exit 2; }
+               ONLY_DEST=&quot;$2&quot;; shift 2;;
+    --all)     ALL=1; shift;;
+    --list)    LIST=1; shift;;
+    --final)   FINAL=1; shift;;
+    --dry-run) DRY=1; shift;;
+    # B7&#x27;s escape hatch. Typed by hand, during an incident, by somebody who has
+    # read the refusal and decided the risk is acceptable. Nobody reaches it by
+    # accident, and the run record says it was used.
+    --no-snapshot) NO_SNAPSHOT=1; shift;;
+    # Walks the comment block instead of counting lines: a fixed range used to
+    # stop short of the exit-code contract, which is the half of the header
+    # anything running under cron needs most. Strips the # the way tp does.
+    -h|--help) awk &#x27;NR&gt;1{ if (/^#/) { sub(/^#[ ]?/,&quot;&quot;); print } else exit }&#x27; &quot;${BASH_SOURCE[0]}&quot;; exit 0;;
+    *) echo &quot;unknown argument: $1&quot; &gt;&amp;2; exit 2;;
+  esac
+done
+if (( ! LIST )) &amp;&amp; (( ! ALL )) &amp;&amp; [[ ! &quot;$ONLY_CTID&quot; =~ ^[0-9]+$ ]]; then
+  echo &quot;usage: ct-failback.sh --list | --all | --ctid &lt;production_ctid&gt;&quot; &gt;&amp;2
+  echo &quot;       [--dest hdd|ssd] [--dry-run] [--final]&quot; &gt;&amp;2
+  exit 2
+fi
+
+if [[ -f &quot;$CONF&quot; ]]; then
+  # shellcheck source=/dev/null
+  . &quot;$CONF&quot; || { echo &quot;failed to read $CONF&quot; &gt;&amp;2; exit 2; }
+fi
+for _v in OFFSET BW_TOTAL_MB LANES BW_MIN_MB GROW_PCT GROW_MAX_RETRY LOG_KEEP_DAYS; do
+  [[ &quot;${!_v}&quot; =~ ^[0-9]+$ ]] || { echo &quot;ctrep.conf: $_v=&#x27;${!_v}&#x27; is not a plain integer&quot; &gt;&amp;2; exit 2; }
+done
+if [[ -n &quot;$SSH_CIPHERS&quot; &amp;&amp; ! &quot;$SSH_CIPHERS&quot; =~ ^[A-Za-z0-9@.,+-]+$ ]]; then
+  echo &quot;ctrep.conf: SSH_CIPHERS is not a plain cipher list&quot; &gt;&amp;2; exit 2
+fi
+
+# only the dataset half of BKP_DESTS matters here: the copy is read as a
+# directory over ssh, never through PVE, so its storage id is irrelevant.
+declare -A DEST_DS=()
+for _kv in $BKP_DESTS; do
+  _k=&quot;${_kv%%=*}&quot;; _rest=&quot;${_kv#*=}&quot;
+  DEST_DS[$_k]=&quot;${_rest%%:*}&quot;
+done
+if [[ -n &quot;$ONLY_DEST&quot; &amp;&amp; -z &quot;${DEST_DS[$ONLY_DEST]:-}&quot; ]]; then
+  echo &quot;--dest &#x27;$ONLY_DEST&#x27; is not a key in BKP_DESTS ($BKP_DESTS)&quot; &gt;&amp;2; exit 2
+fi
+
+_bw=$(( BW_TOTAL_MB / LANES )); (( _bw &lt; BW_MIN_MB )) &amp;&amp; _bw=$BW_MIN_MB
+BWLIMIT=&quot;${_bw}m&quot;
+
+SSH_COMMON=&quot;-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+-o GSSAPIAuthentication=no -o ServerAliveInterval=30 -o ServerAliveCountMax=6&quot;
+SSH_OPT=&quot;$SSH_COMMON -o ControlMaster=auto -o ControlPath=/run/ctback-$$-%r@%h.sock -o ControlPersist=120&quot;
+SSH_DATA=&quot;$SSH_COMMON -o ControlMaster=no -o ControlPath=none -o Compression=no&quot;
+[[ -n &quot;$SSH_CIPHERS&quot; ]] &amp;&amp; SSH_DATA=&quot;$SSH_DATA -c $SSH_CIPHERS&quot;
+
+mkdir -p &quot;$BASE/logs&quot; &quot;$BASE/state&quot; &quot;$MNT_BASE&quot;
+LOG=&quot;$BASE/logs/failback-$(date +%F).log&quot;
+if (( LOG_KEEP_DAYS &gt; 0 )); then
+  find &quot;$BASE/logs&quot; -maxdepth 1 -type f -name &#x27;failback-*.log&#x27; \
+       -mtime +&quot;$LOG_KEEP_DAYS&quot; -delete 2&gt;/dev/null || true
+fi
+log(){ printf &#x27;%s %s\n&#x27; &quot;$(date &#x27;+%F %T&#x27;)&quot; &quot;$*&quot; | tee -a &quot;$LOG&quot;; }
+
+# A daily log holds dozens of rounds and dozens of containers. Operations are
+# separated by a rule so the eye can find where one ends and the next begins
+# without reading timestamps - which is what somebody is actually doing at 2am,
+# scrolling for the container that failed. Deliberately no timestamp on the
+# rule itself: it is furniture, not an event.
+LOGSEP=&#x27;##############################################################################&#x27;
+hr(){ printf &#x27;%s\n&#x27; &quot;$LOGSEP&quot; | tee -a &quot;$LOG&quot;; }
+
+hsize(){
+  local b=${1:-0}
+  if   (( b &gt;= 1073741824 )); then printf &#x27;%d.%01dGiB&#x27; $(( b/1073741824 )) $(( (b%1073741824)*10/1073741824 ))
+  elif (( b &gt;= 1048576    )); then printf &#x27;%d.%01dMiB&#x27; $(( b/1048576 ))    $(( (b%1048576)*10/1048576 ))
+  elif (( b &gt;= 1024       )); then printf &#x27;%dKiB&#x27; $(( b/1024 ))
+  else                             printf &#x27;%dB&#x27; &quot;$b&quot;; fi
+}
+_rs_num(){ sed -n &quot;s/.*$1: *\([0-9,][0-9,]*\).*/\1/p&quot; &quot;$2&quot; 2&gt;/dev/null | tr -d &#x27;,&#x27; | tail -1; }
+
+# ---------- state: what this run did to this CT, so it can be read back ------
+# This engine wrote nothing at all until now. Every value below was already in
+# hand - it was simply never written down, so `tp status` could never show a
+# failback and an incident could not be reconstructed afterwards. A failback is
+# the run you are most likely to have to explain to somebody later.
+#
+# Its own prefix, like the other two: state/failback-&lt;ctid&gt;.json. A restore and
+# a replica round both concern the same container, and the second writer must
+# not erase the first one&#x27;s record.
+ST_PREFIX=&quot;failback-&quot;
+json_str(){ local s=&quot;${1//\\/\\\\}&quot;; s=&quot;${s//\&quot;/\\\&quot;}&quot;; printf &#x27;&quot;%s&quot;&#x27; &quot;$s&quot;; }
+json_num(){ [[ &quot;${1:-}&quot; =~ ^-?[0-9]+$ ]] &amp;&amp; printf &#x27;%s&#x27; &quot;$1&quot; || printf &#x27;0&#x27;; }
+
+st_write(){   # $1=ctid $2=status $3=reason $4=rc  - replaced atomically
+  local id=&quot;$1&quot; f t
+  [[ -n &quot;$id&quot; ]] || return 0
+  (( DRY )) &amp;&amp; return 0          # a dry run records nothing, like the other two
+  f=&quot;$BASE/state/$ST_PREFIX$id.json&quot;; t=&quot;$BASE/state/.$ST_PREFIX$id.json.$$&quot;
+  {
+    printf &#x27;{\n&#x27;
+    printf &#x27;  &quot;schema_version&quot;: 1,\n&#x27;
+    printf &#x27;  &quot;tool&quot;: &quot;failback&quot;,\n&#x27;
+    printf &#x27;  &quot;ctid&quot;: %s,\n&#x27;      &quot;$(json_str &quot;$id&quot;)&quot;
+    printf &#x27;  &quot;copy_vmid&quot;: %s,\n&#x27; &quot;$(json_str &quot;${CT_TGT:-}&quot;)&quot;
+    printf &#x27;  &quot;dest&quot;: %s,\n&#x27;      &quot;$(json_str &quot;${CT_DEST:-}&quot;)&quot;
+    printf &#x27;  &quot;prod_node&quot;: %s,\n&#x27; &quot;$(json_str &quot;${CT_NODE:-}&quot;)&quot;
+    printf &#x27;  &quot;storage&quot;: %s,\n&#x27;   &quot;$(json_str &quot;${CT_SID:-}&quot;)&quot;
+    printf &#x27;  &quot;image&quot;: %s,\n&#x27;     &quot;$(json_str &quot;${CT_IMG:-}&quot;)&quot;
+    printf &#x27;  &quot;last&quot;: {&quot;ts&quot;:%s,&quot;epoch&quot;:%s,&quot;mode&quot;:%s,&quot;status&quot;:%s,&quot;reason&quot;:%s,&quot;rc&quot;:%s,&quot;secs&quot;:%s,&quot;files&quot;:%s,&quot;literal_bytes&quot;:%s,&quot;bytes_received&quot;:%s}\n&#x27; \
+      &quot;$(json_str &quot;$(date &#x27;+%FT%T%z&#x27;)&quot;)&quot; &quot;$(json_num &quot;$(date +%s)&quot;)&quot; \
+      &quot;$(json_str &quot;$MODE&quot;)&quot; &quot;$(json_str &quot;$2&quot;)&quot; &quot;$(json_str &quot;$3&quot;)&quot; \
+      &quot;$(json_num &quot;$4&quot;)&quot; &quot;$(json_num &quot;${RS_SECS:-0}&quot;)&quot; &quot;$(json_num &quot;${RS_FILES:-0}&quot;)&quot; \
+      &quot;$(json_num &quot;${RS_LITERAL:-0}&quot;)&quot; &quot;$(json_num &quot;${RS_RECV:-0}&quot;)&quot;
+    printf &#x27;}\n&#x27;
+  } &gt; &quot;$t&quot; 2&gt;/dev/null &amp;&amp; mv -f &quot;$t&quot; &quot;$f&quot; 2&gt;/dev/null &amp;&amp; { st_history &quot;$id&quot;; return 0; }
+  rm -f &quot;$t&quot; 2&gt;/dev/null
+  log &quot;[$id] WARN: could not write state file $f&quot;
+  return 1
+}
+
+# One line per run, append-only, so &quot;has this CT been failed back before, and
+# how did it go&quot; is answerable months later. Trimmed rarely and atomically.
+st_history(){
+  local id=&quot;$1&quot;
+  local h=&quot;$BASE/state/$ST_PREFIX$id.runs.jsonl&quot; n
+  # one stderr redirect, not two: the second silently wins and the first is a
+  # lie the reader has to work out for themselves
+  sed -n &#x27;s/^  &quot;last&quot;: //p&#x27; &quot;$BASE/state/$ST_PREFIX$id.json&quot; &gt;&gt; &quot;$h&quot; 2&gt;/dev/null || true
+  n=$(wc -l &lt; &quot;$h&quot; 2&gt;/dev/null || echo 0)
+  if [[ &quot;$n&quot; =~ ^[0-9]+$ ]] &amp;&amp; (( n &gt; 200 )); then
+    tail -n 200 &quot;$h&quot; &gt; &quot;$h.tmp.$$&quot; 2&gt;/dev/null \
+      &amp;&amp; mv -f &quot;$h.tmp.$$&quot; &quot;$h&quot; 2&gt;/dev/null || rm -f &quot;$h.tmp.$$&quot; 2&gt;/dev/null
+  fi
+}
+
+
+# ---------- the CT list, from the same inventory ct-replica reads ----------
+declare -a CTS=(); declare -A TGT_MAP=() DEST_MAP=(); declare -a UNREACHABLE=()
+if [[ -f &quot;$INV&quot; ]]; then
+  while IFS= read -r line || [[ -n &quot;${line:-}&quot; ]]; do
+    line=&quot;${line%%#*}&quot;; read -r c rest &lt;&lt;&lt;&quot;$line&quot; || true
+    [[ &quot;${c:-}&quot; =~ ^[0-9]+$ ]] || continue
+    t=&quot;&quot;; dd=&quot;&quot;
+    for f in ${rest:-}; do
+      if   [[ &quot;$f&quot; =~ ^[0-9]+$ ]];      then t=&quot;$f&quot;
+      elif [[ -n &quot;${DEST_DS[$f]:-}&quot; ]]; then dd=&quot;$f&quot;
+      fi
+    done
+    TGT_MAP[$c]=${t:-$(( c + OFFSET ))}
+    DEST_MAP[$c]=${dd:-$DEFAULT_DEST}
+    CTS+=(&quot;$c&quot;)
+  done &lt; &quot;$INV&quot;
+fi
+if [[ -n &quot;$ONLY_CTID&quot; ]]; then
+  # a CT that is not in the inventory is still failback-able: it may have been
+  # removed from replication already. Fall back to the derived defaults.
+  [[ -n &quot;${TGT_MAP[$ONLY_CTID]:-}&quot; ]] || { TGT_MAP[$ONLY_CTID]=$(( ONLY_CTID + OFFSET )); DEST_MAP[$ONLY_CTID]=$DEFAULT_DEST; }
+  CTS=(&quot;$ONLY_CTID&quot;)
+fi
+if (( ! ${#CTS[@]} )); then
+  # Already an error rather than a quiet exit 0, but say which of the two it is:
+  # a missing file is a deployment mistake, an empty one is a choice.
+  if [[ -f &quot;$INV&quot; ]]; then log &quot;ERROR: $INV names no CT, and no --ctid was given - nothing to do&quot;
+  else                     log &quot;ERROR: no inventory at $INV (and no --ctid) - NOTHING was run&quot;
+                           log &quot;ERROR:   this is ct-replica&#x27;s file, not ct-migrate&#x27;s inventory.tsv&quot;
+  fi
+  exit 2
+fi
+
+MODE=presync; (( FINAL )) &amp;&amp; MODE=final; (( DRY )) &amp;&amp; MODE=&quot;$MODE/dry-run&quot;; (( LIST )) &amp;&amp; MODE=list
+hr
+log &quot;=== $(hostname) failback mode=$MODE bw=$BWLIMIT candidates: ${CTS[*]} ===&quot;
+
+_missing=()
+for _c in pvesm zfs ssh rsync flock mount umount mountpoint e2fsck resize2fs truncate mktemp; do
+  command -v &quot;$_c&quot; &gt;/dev/null 2&gt;&amp;1 || _missing+=(&quot;$_c&quot;)
+done
+if (( ${#_missing[@]} )); then
+  log &quot;ERROR: required command(s) not found: ${_missing[*]} (PATH=$PATH) - NOTHING was run&quot;; exit 2
+fi
+
+# ---------- B2, whole-run half: PAUSE must exist before any final delta -----
+# The dry run checks this too. Every other DRY gate in this file skips a WRITE;
+# this one used to skip the CHECK, which is the one thing a dry run must never
+# do - it printed a clean plan for a run that was going to refuse, so the
+# operator learned about the missing PAUSE from the real --final instead, in
+# the cutover window. A dry run that cannot be trusted about tonight is worth
+# less than no dry run at all. It reports and continues; only the real run
+# stops.
+if (( FINAL )) &amp;&amp; [[ ! -f &quot;$BASE/PAUSE&quot; ]]; then
+  if (( DRY )); then
+    log &quot;GUARD B2: DRY: --final would REFUSE - ct-replica is not paused ($BASE/PAUSE is missing)&quot;
+    log &quot;GUARD B2:   the plan below is what would happen once you have run:  touch $BASE/PAUSE&quot;
+  else
+    log &quot;GUARD B2: --final without ct-replica paused - NOTHING was run&quot;
+    log &quot;GUARD B2:   R2 only shields a copy while it RUNS. With the copies down, the next cron&quot;
+    log &quot;GUARD B2:   tick (every 15 min) overwrites the DR data with the stale production images.&quot;
+    log &quot;GUARD B2:   fix, then run again:  touch $BASE/PAUSE&quot;
+    exit 2
+  fi
+fi
+
+# ---------- per-CT plumbing ----------
+CUR_MNT=&quot;&quot;
+# CUR_MNT is cleared ONLY when the image is really down. It used to be cleared
+# unconditionally, including on the umount-failure path - which quietly disarmed
+# the B5 gate in the ENOSPC loop below, because that gate is &quot;is CUR_MNT still
+# set&quot;. truncate, e2fsck and resize2fs then ran against a mounted customer
+# image and the run reported ok. This is ct-migrate&#x27;s G3, relearned here.
+cleanup_ct(){
+  [[ -n &quot;$CUR_MNT&quot; ]] || return 0
+  sync
+  if mountpoint -q &quot;$CUR_MNT&quot; 2&gt;/dev/null; then
+    if ! umount &quot;$CUR_MNT&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1; then
+      log &quot;WARN: $CUR_MNT is STILL MOUNTED - do NOT start that CT until it is down&quot;
+      return 1                      # leaves CUR_MNT set: nothing may resize now
+    fi
+  fi
+  CUR_MNT=&quot;&quot;
+  return 0
+}
+CT_LOCK=&quot;&quot;
+take_ct_lock(){   # keep two invocations off the same CT, same idea as R10
+  exec 8&gt;&quot;$BASE/.failback-$1.lock&quot; 2&gt;/dev/null || return 1
+  if flock -n 8; then CT_LOCK=&quot;$1&quot;; return 0; fi
+  exec 8&gt;&amp;-; return 1
+}
+release_ct_lock(){ [[ -n &quot;$CT_LOCK&quot; ]] || return 0; exec 8&gt;&amp;-; CT_LOCK=&quot;&quot;; }
+cleanup(){
+  cleanup_ct; release_ct_lock
+  for s in /run/ctback-$$-*.sock; do
+    [[ -S &quot;$s&quot; ]] &amp;&amp; ssh -O exit -o ControlPath=&quot;$s&quot; x &gt;/dev/null 2&gt;&amp;1
+  done
+}
+trap cleanup EXIT
+
+# resolve identity + both states for one CT; sets the CT_* globals.
+# returns 1 when the CT cannot be resolved at all.
+CT_TGT=&quot;&quot;; CT_DEST=&quot;&quot;; CT_NODE=&quot;&quot;; CT_SID=&quot;&quot;; CT_VOL=&quot;&quot;; CT_IMG=&quot;&quot;
+CT_PSTAT=&quot;&quot;; CT_CSTAT=&quot;&quot;; CT_SRCDS=&quot;&quot;
+probe_ct(){
+  local ct=&quot;$1&quot; cfgpath srccfg
+  CT_TGT=&quot;${TGT_MAP[$ct]}&quot;; CT_DEST=&quot;${DEST_MAP[$ct]:-$DEFAULT_DEST}&quot;
+  CT_NODE=&quot;&quot;; CT_SID=&quot;&quot;; CT_VOL=&quot;&quot;; CT_IMG=&quot;&quot;; CT_PSTAT=&quot;&quot;; CT_CSTAT=&quot;&quot;
+  CT_SRCDS=&quot;${DEST_DS[$CT_DEST]}/subvol-$CT_TGT-disk-0&quot;
+  cfgpath=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;ls /etc/pve/nodes/*/lxc/$ct.conf 2&gt;/dev/null&quot; &lt;/dev/null 2&gt;/dev/null | head -1)
+  [[ -n &quot;$cfgpath&quot; ]] || return 1
+  CT_NODE=&quot;${cfgpath#/etc/pve/nodes/}&quot;; CT_NODE=&quot;${CT_NODE%%/*}&quot;
+  [[ &quot;$CT_NODE&quot; != &quot;$BKP_NODE&quot; ]] || return 1
+  srccfg=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;cat $cfgpath&quot; &lt;/dev/null 2&gt;/dev/null | sed &#x27;/^\[/,$d&#x27;)
+  CT_SID=$(printf &#x27;%s\n&#x27; &quot;$srccfg&quot; | sed -n &#x27;s/^rootfs:[[:space:]]*\([^:]*\):.*/\1/p&#x27; | head -1)
+  CT_VOL=$(printf &#x27;%s\n&#x27; &quot;$srccfg&quot; | sed -n &#x27;s/^rootfs:[[:space:]]*[^:]*:\([^,]*\).*/\1/p&#x27; | head -1)
+  [[ -n &quot;$CT_SID&quot; &amp;&amp; -n &quot;$CT_VOL&quot; ]] || return 1
+  CT_IMG=$(pvesm path &quot;$CT_SID:$CT_VOL&quot; 2&gt;/dev/null) || CT_IMG=&quot;&quot;
+  CT_PSTAT=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;pvesh get /nodes/$CT_NODE/lxc/$ct/status/current --output-format yaml 2&gt;/dev/null&quot; &lt;/dev/null 2&gt;/dev/null | awk &#x27;/^status:/ {print $2}&#x27;)
+  CT_CSTAT=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;pct status $CT_TGT 2&gt;/dev/null&quot; &lt;/dev/null 2&gt;/dev/null | awk &#x27;{print $2}&#x27;)
+  return 0
+}
+
+run_back(){   # -&gt; rsync rc; fills RS_*
+  local sf rc t0 mnt=&quot;$1&quot;
+  sf=$(mktemp &quot;${TMPDIR:-/tmp}/ctback-stats.XXXXXX&quot; 2&gt;/dev/null) || sf=&quot;&quot;
+  local opts=(&quot;${RS[@]}&quot;)
+  [[ -n &quot;$sf&quot; ]] &amp;&amp; opts+=(--stats &quot;--log-file=$sf&quot; &#x27;--log-file-format=&#x27;)
+  t0=$SECONDS
+  if [ -t 1 ]; then
+    rsync &quot;${opts[@]}&quot; --info=progress2 --no-inc-recursive &quot;$BKP_SSH:$CT_SRCMNT/&quot; &quot;$mnt/&quot;
+  else
+    rsync &quot;${opts[@]}&quot; &quot;$BKP_SSH:$CT_SRCMNT/&quot; &quot;$mnt/&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1
+  fi
+  rc=$?
+  RS_SECS=$(( SECONDS - t0 )); RS_FILES=0; RS_LITERAL=0; RS_RECV=0
+  if [[ -n &quot;$sf&quot; &amp;&amp; -s &quot;$sf&quot; ]]; then
+    RS_FILES=$(_rs_num &#x27;Number of .*files transferred&#x27; &quot;$sf&quot;)
+    RS_LITERAL=$(_rs_num &#x27;Literal data&#x27; &quot;$sf&quot;)
+    RS_RECV=$(_rs_num &#x27;Total bytes received&#x27; &quot;$sf&quot;)     # we are the receiver now
+    local n; for n in RS_FILES RS_LITERAL RS_RECV; do [[ &quot;${!n}&quot; =~ ^[0-9]+$ ]] || printf -v &quot;$n&quot; 0; done
+  fi
+  [[ -n &quot;$sf&quot; ]] &amp;&amp; rm -f &quot;$sf&quot;
+  return $rc
+}
+
+# one CT, end to end. 0 = ok, 1 = failed, 2 = skipped by a guard.
+failback_one(){
+  local ct=&quot;$1&quot; holder ds snap attempt cur new rc newsize
+  local TGT=&quot;$CT_TGT&quot; DEST=&quot;$CT_DEST&quot;
+
+  # --- B1 ---
+  if [[ -z &quot;$CT_PSTAT&quot; ]]; then
+    log &quot;[$ct] GUARD B1: cannot reach $CT_NODE via cluster API to check the CT - &#x27;unverified&#x27; is not &#x27;stopped&#x27;&quot;
+    log &quot;[$ct] GUARD B1:   writing into the image of a CT that turns out to be running corrupts&quot;
+    log &quot;[$ct] GUARD B1:   the LIVE container. Ensure node $CT_NODE is online in the cluster, then run again.&quot;
+    return 2
+  fi
+  if [[ &quot;$CT_PSTAT&quot; != &quot;stopped&quot; ]]; then
+    log &quot;[$ct] GUARD B1: production CT is &#x27;$CT_PSTAT&#x27; on $CT_NODE, must be stopped&quot;
+    log &quot;[$ct] GUARD B1:   (Stop it via GUI, or run: ssh $BKP_SSH pvesh create /nodes/$CT_NODE/lxc/$ct/status/stop)&quot;
+    return 2
+  fi
+  # --- B2, per-CT half ---
+  if (( FINAL )); then
+    if [[ &quot;$CT_CSTAT&quot; != &quot;stopped&quot; ]]; then
+      log &quot;[$ct] GUARD B2: --final needs copy $TGT stopped (it is &#x27;${CT_CSTAT:-unknown}&#x27;)&quot;
+      log &quot;[$ct] GUARD B2:   ssh $BKP_SSH pct shutdown $TGT&quot;
+      return 2
+    fi
+  else
+    if [[ &quot;$CT_CSTAT&quot; != &quot;running&quot; ]]; then
+      log &quot;[$ct] GUARD B2: presync expects copy $TGT RUNNING (it is &#x27;${CT_CSTAT:-unknown}&#x27;)&quot;
+      log &quot;[$ct] GUARD B2:   while it runs, ct-replica R2 skips it and it stays the newest data.&quot;
+      log &quot;[$ct] GUARD B2:   already stopped for cutover? use --final (with PAUSE in place).&quot;
+      st_write &quot;$ct&quot; skipped b2_copy_not_running -1
+      return 2
+    fi
+  fi
+  # --- B3 / B4 ---
+  if [[ -z &quot;$CT_IMG&quot; || &quot;$CT_IMG&quot; != /*/images/* ]]; then
+    log &quot;[$ct] ERROR: storage &#x27;$CT_SID&#x27; unknown on THIS node, or not a dir storage (got &#x27;${CT_IMG:-none}&#x27;)&quot;
+    st_write &quot;$ct&quot; failed storage_unknown -1
+    return 1
+  fi
+  # B4 before B3, deliberately. findmnt -T on a path that does not exist exits
+  # 1 with no output, which B3 reads as &quot;the dataset is not mounted&quot; - so a
+  # missing image used to be reported as a mount problem and the operator was
+  # sent to run `zfs mount -a` against a filesystem that was fine.
+  if [[ ! -f &quot;$CT_IMG&quot; ]]; then
+    log &quot;[$ct] GUARD B4: no image at $CT_IMG&quot;
+    log &quot;[$ct] GUARD B4:   this restores INTO an existing volume; a missing one is a rebuild,&quot;
+    log &quot;[$ct] GUARD B4:   which is a different operation and not this tool&#x27;s to guess at.&quot;
+    st_write &quot;$ct&quot; failed b4_no_image -1
+    return 1
+  fi
+  holder=$(findmnt -no TARGET -T &quot;$CT_IMG&quot; 2&gt;/dev/null | head -1)
+  if [[ -z &quot;$holder&quot; || &quot;$holder&quot; == &quot;/&quot; ]]; then
+    log &quot;[$ct] GUARD B3: $CT_IMG sits on the ROOT filesystem (holder: ${holder:-unresolvable})&quot;
+    log &quot;[$ct] GUARD B3:   the backing dataset is not mounted - restoring now would fill the node root&quot;
+    log &quot;[$ct] GUARD B3:   check: findmnt -T $CT_IMG ; zfs mount -a&quot;
+    st_write &quot;$ct&quot; failed b3_root_fs -1
+    return 1
+  fi
+  CT_SRCMNT=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;zfs get -H -o value mountpoint $CT_SRCDS 2&gt;/dev/null&quot; &lt;/dev/null 2&gt;/dev/null)
+  if [[ -z &quot;$CT_SRCMNT&quot; || &quot;$CT_SRCMNT&quot; == &quot;none&quot; ]]; then
+    log &quot;[$ct] ERROR: cannot resolve the mountpoint of $CT_SRCDS on $BKP_NODE&quot;
+    st_write &quot;$ct&quot; failed src_mountpoint -1
+    return 1
+  fi
+
+  # --- safety net, only before the first write of the final round ---
+  if (( FINAL )) &amp;&amp; (( ! DRY )); then
+    ds=$(findmnt -no SOURCE -T &quot;$CT_IMG&quot; 2&gt;/dev/null | head -1)
+    if [[ -n &quot;$ds&quot; ]] &amp;&amp; zfs list -H &quot;$ds&quot; &gt;/dev/null 2&gt;&amp;1; then
+      snap=&quot;$ds@ctback-$ct-$(date +%Y%m%d-%H%M%S)&quot;
+      if zfs snapshot &quot;$snap&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1; then
+        log &quot;[$ct] safety net: $snap&quot;
+        log &quot;[$ct] safety net:   to recover the pre-failback image, COPY it out - do NOT roll the&quot;
+        log &quot;[$ct] safety net:   dataset back, that reverts every other CT on it too:&quot;
+        log &quot;[$ct] safety net:   ${holder}/.zfs/snapshot/${snap#*@}${CT_IMG#&quot;$holder&quot;}&quot;
+      elif (( NO_SNAPSHOT )); then
+        log &quot;[$ct] WARN: no undo point for this CT - --no-snapshot was given&quot;
+      else
+        log &quot;[$ct] GUARD B7: could not snapshot $ds - NOTHING was written for CT $ct&quot;
+        log &quot;[$ct] GUARD B7:   --final overwrites the production image, and that snapshot&quot;
+        log &quot;[$ct] GUARD B7:   is the only way back from it. Every other guard in this file&quot;
+        log &quot;[$ct] GUARD B7:   refuses rather than warns; this one used to be the exception.&quot;
+        log &quot;[$ct] GUARD B7:   usually a full pool or a busy dataset: zpool list ; zfs list -t snapshot $ds&quot;
+        log &quot;[$ct] GUARD B7:   fix it, or decide the risk is acceptable and say so:&quot;
+        log &quot;[$ct] GUARD B7:     ./ct-failback.sh --ctid $ct --final --no-snapshot&quot;
+        st_write &quot;$ct&quot; failed no_undo_point -1
+        return 1
+      fi
+    elif (( ! NO_SNAPSHOT )); then
+      # Not on ZFS, so there is no snapshot to take and nothing to refuse - but
+      # the operator should know they are working without an undo point.
+      log &quot;[$ct] NOTE: $CT_IMG is not on ZFS - no undo point is possible here&quot;
+    fi
+  fi
+
+  # --- B5: mount read-write, verified ---
+  local MNT=&quot;$MNT_BASE/failback-$ct&quot;
+  mkdir -p &quot;$MNT&quot;
+  if mountpoint -q &quot;$MNT&quot;; then
+    umount &quot;$MNT&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1 || { log &quot;[$ct] ERROR: stale mount at $MNT would not unmount&quot;; return 1; }
+  fi
+  # A dry run mounts read-only. A real one cannot: this tool restores INTO the
+  # image. Mounting ext4 read-write replays the journal and updates the
+  # superblock, so the old unconditional `-o loop` made &quot;dry-run - nothing was
+  # written&quot; false at the byte level, against a customer&#x27;s production image, at
+  # the one moment B1 has established nobody is watching it. ct-replica.sh has
+  # mounted ro,noload since R6; this is that lesson carried across at last.
+  # rsync -n only reads the destination, so the delta it reports is unchanged.
+  MOPT=loop; (( DRY )) &amp;&amp; MOPT=loop,ro,noload
+  if ! mount -o &quot;$MOPT&quot; &quot;$CT_IMG&quot; &quot;$MNT&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1; then
+    log &quot;[$ct] ERROR: loop-mount failed ($CT_IMG)&quot;
+    st_write &quot;$ct&quot; failed loop_mount -1; return 1
+  fi
+  if ! mountpoint -q &quot;$MNT&quot;; then
+    log &quot;[$ct] GUARD B5: $MNT is not a mountpoint after mount - refusing to write into a plain directory&quot;
+    return 1
+  fi
+  CUR_MNT=&quot;$MNT&quot;
+
+  log &quot;[$ct] RESTORE &lt;= $BKP_SSH:$CT_SRCMNT/  =&gt;  image $CT_IMG (copy $TGT, dest=$DEST)&quot;
+  run_back &quot;$MNT&quot;; rc=$?
+  cleanup_ct
+
+  # --- B6: ENOSPC -&gt; grow, bounded, only ever on an unmounted image ---
+  attempt=0
+  while [[ $rc -eq 11 &amp;&amp; $attempt -lt $GROW_MAX_RETRY ]] &amp;&amp; (( ! DRY )); do
+    if [[ -n &quot;$CUR_MNT&quot; ]]; then log &quot;[$ct] GUARD B5: still mounted after ENOSPC - refusing to resize&quot;; break; fi
+    attempt=$(( attempt + 1 ))
+    cur=$(stat -c%s &quot;$CT_IMG&quot;); new=$(( cur / 100 * (100 + GROW_PCT) ))
+    log &quot;[$ct] B6: out of space - grow $attempt/$GROW_MAX_RETRY: $(hsize &quot;$cur&quot;) -&gt; $(hsize &quot;$new&quot;)&quot;
+    truncate -s &quot;$new&quot; &quot;$CT_IMG&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1
+    e2fsck -fp &quot;$CT_IMG&quot;         &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1
+    resize2fs &quot;$CT_IMG&quot;          &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1
+    mount -o loop &quot;$CT_IMG&quot; &quot;$MNT&quot; &gt;&gt;&quot;$LOG&quot; 2&gt;&amp;1 || { log &quot;[$ct] ERROR: remount failed during grow&quot;; break; }
+    mountpoint -q &quot;$MNT&quot; || { log &quot;[$ct] GUARD B5: $MNT not a mountpoint after remount&quot;; break; }
+    CUR_MNT=&quot;$MNT&quot;
+    run_back &quot;$MNT&quot;; rc=$?
+    cleanup_ct
+  done
+  if (( attempt )); then
+    newsize=&quot;$(( ( $(stat -c%s &quot;$CT_IMG&quot;) + 1073741823 ) / 1073741824 ))G&quot;
+    log &quot;[$ct] NOTE: image grown to $newsize - the CT config still says the old size&quot;
+    log &quot;[$ct] NOTE:   fix the rootfs line on $CT_NODE when convenient:&quot;
+    log &quot;[$ct] NOTE:   rootfs: $CT_SID:$CT_VOL,size=$newsize&quot;
+  fi
+
+  log &quot;[$ct] stats: files=${RS_FILES:-0} changed=$(hsize &quot;${RS_LITERAL:-0}&quot;) wire=$(hsize &quot;${RS_RECV:-0}&quot;) time=${RS_SECS:-0}s&quot;
+
+  if (( DRY )); then log &quot;[$ct] dry-run - nothing was written&quot;; return 0; fi
+  if [[ $rc -ne 0 &amp;&amp; $rc -ne 24 ]]; then
+    [[ $rc -eq 23 ]] &amp;&amp; log &quot;[$ct] HINT: rc=23 = some files on the copy could not be read; rerun, and if the SAME files fail twice, check the copy&#x27;s dataset&quot;
+    log &quot;[$ct] ERROR: restore FAILED (rsync rc=$rc) - do NOT start CT $ct&quot;
+    st_write &quot;$ct&quot; failed rsync &quot;$rc&quot;
+    return 1
+  fi
+  log &quot;[$ct] OK &lt;= $TGT (rc=$rc)&quot;
+  st_write &quot;$ct&quot; ok &quot;&quot; &quot;$rc&quot;
+  return 0
+}
+
+# ---------- list mode: read-only triage ----------
+if (( LIST )); then
+  printf &#x27;%-7s %-7s %-5s %-14s %-11s %-11s %s\n&#x27; CT COPY DEST PROD-NODE PROD COPY-STATE IMAGE | tee -a &quot;$LOG&quot;
+  for ct in &quot;${CTS[@]}&quot;; do
+    if ! probe_ct &quot;$ct&quot;; then
+      printf &#x27;%-7s %-7s %-5s %-14s %-11s %-11s %s\n&#x27; \
+        &quot;$ct&quot; &quot;${TGT_MAP[$ct]}&quot; &quot;${DEST_MAP[$ct]:-?}&quot; &quot;?&quot; &quot;?&quot; &quot;?&quot; &quot;cannot resolve&quot; | tee -a &quot;$LOG&quot;
+      continue
+    fi
+    [[ -n &quot;$ONLY_DEST&quot; &amp;&amp; &quot;$CT_DEST&quot; != &quot;$ONLY_DEST&quot; ]] &amp;&amp; continue
+    printf &#x27;%-7s %-7s %-5s %-14s %-11s %-11s %s\n&#x27; \
+      &quot;$ct&quot; &quot;$CT_TGT&quot; &quot;$CT_DEST&quot; &quot;$CT_NODE&quot; &quot;${CT_PSTAT:-unreachable}&quot; &quot;${CT_CSTAT:-unknown}&quot; &quot;${CT_IMG:-?}&quot; | tee -a &quot;$LOG&quot;
+    [[ -z &quot;$CT_PSTAT&quot; ]] &amp;&amp; UNREACHABLE+=(&quot;$ct:$CT_NODE&quot;)
+  done
+  # This is the whole reason --list exists: to be run on an ordinary Tuesday,
+  # not during the incident. B1 asks the production node whether the container
+  # is stopped, and it asks over ssh, by the pmxcfs node NAME. This machine is
+  # deliberately outside the cluster, so it gets neither /etc/hosts nor the
+  # cluster&#x27;s keys for free - and the day you find that out must not be the day
+  # the copies are already serving customers.
+  if (( ${#UNREACHABLE[@]} )); then
+    log &quot;&quot;
+    log &quot;PROD unreachable for ${#UNREACHABLE[@]} CT - a failback would refuse at GUARD B1:&quot;
+    for u in &quot;${UNREACHABLE[@]}&quot;; do log &quot;  CT ${u%%:*} lives on ${u#*:}&quot;; done
+    log &quot;  this host needs root ssh to each of those nodes, BY NAME, before you need it:&quot;
+    for u in &quot;${UNREACHABLE[@]}&quot;; do log &quot;    ssh -o BatchMode=yes root@${u#*:} true&quot;; done
+    log &quot;  if that says &#x27;could not resolve hostname&#x27;, add the node to /etc/hosts here;&quot;
+    log &quot;  if it asks for a password, ssh-copy-id root@&lt;node&gt; from here.&quot;
+    exit 1
+  fi
+  exit 0
+fi
+
+# ---------- main loop ----------
+RS=(-aHAX --numeric-ids --delete --inplace &quot;--bwlimit=$BWLIMIT&quot; --timeout=300
+    &#x27;--exclude=/tmp/*&#x27; &#x27;--exclude=/run/*&#x27; &#x27;--exclude=/var/tmp/systemd-private-*&#x27;
+    -e &quot;ssh $SSH_DATA&quot;)
+(( DRY )) &amp;&amp; RS+=(-n)
+
+ok=0; skipped=0; failed=0; matched=0; FAILED_IDS=(); DONE_IDS=()
+for ct in &quot;${CTS[@]}&quot;; do
+  cleanup_ct; release_ct_lock
+  # One rule per container, at the top of its block. A disaster runs --all
+  # over twenty CTs and every per-CT guard SKIPS rather than stopping the
+  # batch, so the log is long and the reader is hunting for the two that
+  # did not come back.
+  hr
+  if ! take_ct_lock &quot;$ct&quot;; then
+    log &quot;[$ct] NOTE: another failback owns this CT right now - skip&quot;
+    skipped=$(( skipped + 1 )); continue
+  fi
+  if ! probe_ct &quot;$ct&quot;; then
+    log &quot;[$ct] ERROR: cannot resolve this CT in the cluster (wrong id, or it lives on $BKP_NODE) - skip&quot;
+    # The copy id is the number on the screen during a DR, so it is the number
+    # that gets typed. Say which one this tool wants instead of making somebody
+    # work it out at 3am.
+    for _s in &quot;${!TGT_MAP[@]}&quot;; do
+      [[ &quot;${TGT_MAP[$_s]}&quot; == &quot;$ct&quot; ]] || continue
+      log &quot;[$ct] ERROR:   $ct is the COPY of CT $_s. This tool is driven by the SOURCE id:&quot;
+      log &quot;[$ct] ERROR:     ./$(basename &quot;${BASH_SOURCE[0]}&quot;) --ctid $_s${FINAL:+ --final}&quot;
+      break
+    done
+    failed=$(( failed + 1 )); FAILED_IDS+=(&quot;$ct&quot;); continue
+  fi
+  if [[ -n &quot;$ONLY_DEST&quot; &amp;&amp; &quot;$CT_DEST&quot; != &quot;$ONLY_DEST&quot; ]]; then continue; fi
+  matched=$(( matched + 1 ))
+  failback_one &quot;$ct&quot;; r=$?
+  case $r in
+    0) ok=$(( ok + 1 )); DONE_IDS+=(&quot;$ct&quot;);;
+    2) skipped=$(( skipped + 1 ));;
+    *) failed=$(( failed + 1 )); FAILED_IDS+=(&quot;$ct&quot;);;
+  esac
+done
+cleanup_ct; release_ct_lock
+
+hr
+log &quot;=== failback finished: ok=$ok skipped=$skipped failed=$failed ===&quot;
+(( failed )) &amp;&amp; log &quot;NEEDS ATTENTION -&gt; CT: ${FAILED_IDS[*]}&quot;
+
+# A --dest nobody uses matches nothing, does nothing and would exit 0 - which
+# during a failback reads as &quot;all done&quot;. Say it instead.
+if (( matched == 0 )) &amp;&amp; [[ -n &quot;$ONLY_DEST&quot; ]]; then
+  log &quot;ERROR: no CT in $INV has dest &#x27;$ONLY_DEST&#x27; - nothing was failed back&quot;
+  exit 1
+fi
+
+if (( DRY )); then
+  log &quot;dry-run only - nothing was written&quot;
+elif (( FINAL )) &amp;&amp; (( ok )); then
+  log &quot;next, by hand, for: ${DONE_IDS[*]}&quot;
+  log &quot;  1) start each production CT:   ssh root@&lt;its node&gt; pct start &lt;ctid&gt;&quot;
+  log &quot;  2) put each copy&#x27;s network back on the mock bridge (ct-replica R11 nags until you do)&quot;
+  log &quot;  3) rm $BASE/PAUSE&quot;
+  log &quot;  4) $BASE/ct-replica.sh          # first round back, must end failed=0&quot;
+elif (( ok )); then
+  log &quot;presync done. run it again until &#x27;changed=&#x27; stops shrinking, then cut over:&quot;
+  log &quot;  1) touch $BASE/PAUSE&quot;
+  log &quot;  2) shut down each copy:  ssh $BKP_SSH pct shutdown &lt;copy id&gt;&quot;
+  _again=&quot;$0&quot;
+  [[ -n &quot;$ONLY_CTID&quot; ]] &amp;&amp; _again=&quot;$_again --ctid $ONLY_CTID&quot;
+  (( ALL ))             &amp;&amp; _again=&quot;$_again --all&quot;
+  [[ -n &quot;$ONLY_DEST&quot; ]] &amp;&amp; _again=&quot;$_again --dest $ONLY_DEST&quot;
+  log &quot;  3) $_again --final&quot;
+fi
+
+(( failed || skipped )) &amp;&amp; exit 1
+exit 0</pre></div>
+  </details>
+
+  <details class="src"><summary>โค้ดเต็ม: inventory-replica.sample.tsv (ตัวอย่างรายชื่อ CT — copy เป็น inventory-replica.tsv) — กดเปิด แล้วกดปุ่ม copy มุมขวาบน</summary>
+  <div class="code"><pre># inventory.tsv - whitespace/tab separated; &#x27;#&#x27; starts a comment (inline too)
+#
+# columns:  src_ctid  [fields in ANY order]
+#   src_ctid : CT to replicate. Must exist somewhere in the cluster; the
+#              engine finds its node and its SOURCE storage from /etc/pve.
+#   then each extra field is classified by what it IS:
+#     a NUMBER              -&gt; tgt_ctid  (default: src_ctid + OFFSET)
+#     a key from BKP_DESTS  -&gt; dest      (default: DEFAULT_DEST) - hdd / ssd
+#     anything else         -&gt; SOURCE storage assertion: the engine derives
+#                              the real storage from the CT&#x27;s own rootfs
+#                              line; if the assertion differs, the row FAILS
+#                              LOUDLY instead of silently syncing a CT that
+#                              someone moved.
+#   an unclassifiable field, a repeated field kind, a duplicate src_ctid, or
+#   two rows resolving to the same target VMID refuse the WHOLE file - the
+#   engine runs nothing (exit 2) until the inventory is fixed.
+#
+#   What you never write here: node names, paths, sizes - all derived live
+#   from PVE, so there is nothing to keep in sync by hand.
+#
+# dest picks which backup pool receives the copy (see BKP_DESTS in ctrep.conf):
+#   hdd -&gt; replica-hdd/ct (capacity)     ssd -&gt; replica-ssd/ct (fast DR start)
+# Changing dest AFTER the copy exists trips GUARD R8 on purpose - move or
+# destroy the old copy first, the engine will not silently split it.
+#
+# lanes: run one cron per SOURCE storage; the engine sorts each CT into its
+# lane by the CT&#x27;s real storage - a row does not choose its lane, its rootfs
+# does:
+#   ct-replica.sh --storage tank-hdd-nas
+#   ct-replica.sh --storage tank-ssd-nas
+#
+# examples:
+105   ssd
+112   9112
+113   8113   tank-ssd-nas   ssd
+114                        # -&gt; tgt 8114, dest DEFAULT_DEST</pre></div>
+  </details>
+
+</section>
+
+<section id="s8">
+  <div class="eyebrow"><span class="num">8</span><h2>เช็ค 5 ข้อก่อนถือว่าระบบพร้อม</h2></div>
+
+  <table>
+    <tr><th>เช็คอะไร</th><th>คำสั่ง / วิธีดู</th><th>ต้องได้</th></tr>
+    <tr><td>cluster ครบ</td><td class="m">pvecm status</td><td>Quorate: Yes + ธง A,V,NMW ทุกเครื่อง</td></tr>
+    <tr><td>storage กลางถึงทุกเครื่อง</td><td class="m">pvesm status</td><td>tank-hdd-nas active ทุก node</td></tr>
+    <tr><td>CT ทดสอบเปิดได้</td><td class="m">pct start 105</td><td>เปิดติด ใช้งานได้</td></tr>
+    <tr><td>สำเนากด snapshot ได้</td><td>GUI บน {backup_node} → CT 8105 → Snapshots → Take Snapshot</td><td>สำเร็จ ไม่มี error</td></tr>
+    <tr><td>backup ทำงาน</td><td>GUI → Datacenter → Backup → เลือก job → Run now</td><td>จบด้วย OK ทุก guest</td></tr>
+  </table>
+
+  <div class="tip">
+    <p><b>ข้อ 4 คือหัวใจของระบบ</b> ถ้ากด snapshot บนสำเนาจาก GUI ได้ แปลว่าทั้งสายสำเนาถูกต้อง
+    ครบทั้ง 5 ข้อ = ประกาศใช้งานได้</p>
+  </div>
+</section>
+
+<footer>
+  ติดตั้งครั้งเดียวจบ · ระบบสำเนา: ct-replica-setup.html + ct-replica-manual.html<br>
+  ฉบับละเอียดสำหรับผู้ดูแลระบบ: pve-hybrid-setup.html (production) / pve-hybrid-lab3.html (lab)
+</footer>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp';
+    btn.type = 'button';
+    btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.p').forEach(function(el){ el.remove(); });
+      var text = clone.textContent;
+      var done = function(){
+        btn.textContent = 'copied';
+        setTimeout(function(){ btn.textContent = 'copy'; }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else { fallback(); }
+      function fallback(){
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'select manually'; }
+        document.body.removeChild(ta);
+      }
+    });
+    box.appendChild(btn);
+  });
+})();
+</script>
+</body>
+</html>

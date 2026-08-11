@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+. "$SIMLIB"
+sub="$1"; shift
+case "$sub" in
+  path)
+    vol="$1"; st="${vol%%:*}"; rest="${vol#*:}"; vmid="${rest%%/*}"; name="${rest#*/}"
+    pf="$SIMROOT/storage/$st.path"
+    [[ -f "$pf" ]] || { echo "storage '$st' does not exist" >&2; exit 255; }
+    p=$(cat "$pf")
+    # a block-backed storage does not have an images/ layout - the engine must reject it
+    [[ "$p" == /dev/* ]] && { echo "$p/vm-$vmid-disk-0.raw"; exit 0; }
+    echo "$p/images/$vmid/$name"; exit 0;;
+  alloc)
+    st="$1"; vmid="$2"; name="$3"; size="$4"
+    # a full pool, a quota, an NFS hiccup: alloc says so and creates nothing
+    [[ -f "$SIMROOT/alloc.fail" ]] && { echo "pvesm alloc: fake failure" >&2; exit 255; }
+    p=$(cat "$SIMROOT/storage/$st.path" 2>/dev/null) || { echo "no such storage" >&2; exit 255; }
+    # the invariant is not "the pool is a mountpoint" - a dir storage may live in
+    # a subdirectory of one. It is "the pool is not on the root filesystem".
+    [[ "$(fs_holder "$p")" == "/" ]] && \
+      violation "pvesm alloc into a pool on the ROOT filesystem: $p (this is the root-disk-fills incident)"
+    dry_forbids "pvesm alloc $st $vmid $size"
+    mkdir -p "$p/images/$vmid"
+    /usr/bin/truncate -s "${size%[Gg]}G" "$p/images/$vmid/$name"
+    trace "alloc $st $vmid $size"; exit 0;;
+  status)
+    st=""; for ((i=1;i<=$#;i++)); do [[ "${!i}" == "--storage" ]] && { j=$((i+1)); st="${!j}"; }; done
+    s=$(cat "$SIMROOT/nodes/$SIM_HOST/storage/$st" 2>/dev/null) || { echo "storage '$st' does not exist" >&2; exit 255; }
+    echo "Name             Type     Status           Total            Used       Available        %"
+    echo "$st               nfs   $s      10737418240      1073741824      9663676416    10.00%"; exit 0;;
+esac
+exit 0

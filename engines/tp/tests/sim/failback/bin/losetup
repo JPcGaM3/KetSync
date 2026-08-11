@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# The engine does not call losetup today - it lets mount -o loop pick a device.
+# The fake is here so that a future edit which starts driving loop devices by
+# hand is recorded in the trace instead of quietly working.
+# shellcheck source=tests/sim/failback/lib.sh
+. "$SIMLIB"; trace "losetup $*"; loop_of "${*: -1}"; exit 0

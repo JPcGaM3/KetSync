@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>แปลง CT เป็น VM (c2v)</title>
+<style>
+  :root{
+    --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
+    --bg:#fbfaf8; --surface:#ffffff; --line:#e8e5de; --line2:#d9d5cc;
+    --accent:#0f766e; --accent-soft:#e6f1ef;
+    --warn:#a45309; --warn-soft:#fdf3e3;
+    --crit:#b02020; --crit-soft:#fceded;
+    --code-bg:#f5f4f0;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai","Sarabun",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+
+  .topbar{position:sticky;top:0;z-index:10;background:var(--bg);
+          border-bottom:1px solid var(--line)}
+  .topbar .in{max-width:820px;margin:0 auto;padding:11px 24px;display:flex;
+              align-items:center;gap:16px;flex-wrap:wrap}
+  .topbar .name{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent)}
+  .topbar a{font-size:14px;color:var(--muted);text-decoration:none;padding:2px 0;
+            border-bottom:1.5px solid transparent}
+  .topbar a:hover{color:var(--ink);border-bottom-color:var(--accent)}
+  .topbar a.away{margin-left:auto;font-family:var(--mono);font-size:13px}
+
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 90px}
+  header.doc{padding-bottom:26px;border-bottom:2px solid var(--ink);margin-bottom:8px}
+  h1{font-size:31px;line-height:1.35;margin:0 0 8px;font-weight:700}
+  header.doc p{color:var(--muted);margin:0;font-size:16.5px}
+  .where{display:inline-block;margin-top:16px;font-size:14px;background:var(--accent-soft);
+         color:var(--accent);border:1px solid #c6ddd9;border-radius:999px;padding:4px 14px}
+
+  section{margin-top:46px;scroll-margin-top:70px}
+  .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+  .num{font-family:var(--mono);font-size:13px;font-weight:600;color:#fff;background:var(--accent);
+       border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+  h2{font-size:22px;margin:0;font-weight:700}
+  h3{font-size:17px;margin:30px 0 6px;font-weight:700}
+  /* a step that splits per release gets one h4 per release under a shared h3 */
+  h4{font-size:15px;margin:20px 0 6px;font-weight:700}
+  p{margin:0 0 14px}
+  .lead{color:var(--muted);margin-bottom:16px}
+  .part{margin-top:64px;padding:14px 0 0;border-top:3px solid var(--ink)}
+  .part .label{font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase;
+               color:var(--accent);margin-bottom:2px}
+  .part h2{font-size:26px}
+
+  ol.steps{counter-reset:s;margin:10px 0 16px;padding:0;list-style:none}
+  ol.steps li{position:relative;padding-left:42px;margin:14px 0}
+  ol.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:3px;
+    width:27px;height:27px;background:var(--accent);color:#fff;border-radius:50%;
+    font-family:var(--mono);font-size:13px;font-weight:600;
+    display:flex;align-items:center;justify-content:center}
+  ul.clean{margin:8px 0 16px;padding:0;list-style:none}
+  ul.clean li{position:relative;padding-left:20px;margin:9px 0}
+  ul.clean li::before{content:"";position:absolute;left:2px;top:12px;width:6px;height:6px;
+                      background:var(--accent);border-radius:50%}
+
+  .code{position:relative;margin:14px 0 18px}
+  /* wrap instead of scroll: a hidden half-command is worse than an ugly wrap */
+  pre{background:var(--code-bg);border:1px solid var(--line2);border-radius:10px;
+      padding:15px 68px 15px 17px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;
+      font-family:var(--mono);font-size:13.5px;line-height:1.75;color:#22262c}
+  pre .p{color:var(--accent);user-select:none}
+  pre .c{color:var(--faint)}
+  .code .cp{position:absolute;top:8px;right:8px;font-family:var(--sans);font-size:12px;
+    color:var(--muted);background:var(--surface);border:1px solid var(--line2);
+    border-radius:7px;padding:3px 11px;cursor:pointer;line-height:1.5}
+  .code .cp:hover{color:var(--accent);border-color:var(--accent)}
+  .out{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line2);
+       border-radius:0 10px 10px 0;padding:13px 16px;margin:14px 0 18px;
+       white-space:pre-wrap;overflow-wrap:anywhere;
+       font-family:var(--mono);font-size:12.8px;line-height:1.8;color:#4b515b}
+  .out .g{color:var(--accent);font-weight:600}
+  .out .r{color:var(--crit);font-weight:600}
+  .out .y{color:var(--warn);font-weight:600}
+  code.inl{font-family:var(--mono);font-size:.87em;background:#eef0ec;border:1px solid var(--line2);
+           border-radius:4px;padding:1px 6px;color:#0c4f48;white-space:nowrap}
+  kbd{font-family:var(--mono);font-size:.85em;background:var(--surface);border:1px solid var(--line2);
+      border-bottom-width:2px;border-radius:5px;padding:2px 7px;color:var(--ink);white-space:nowrap}
+
+  .tip,.warn,.stop{border-left:3px solid;border-radius:0 9px 9px 0;padding:13px 17px;
+                   margin:16px 0;font-size:15px}
+  .tip{border-color:var(--accent);background:var(--accent-soft)}
+  .warn{border-color:var(--warn);background:var(--warn-soft)}
+  .stop{border-color:var(--crit);background:var(--crit-soft)}
+  .tip b{color:var(--accent)} .warn b{color:var(--warn)} .stop b{color:var(--crit)}
+  .tip p:last-child,.warn p:last-child,.stop p:last-child{margin-bottom:0}
+
+  /* which guest a block is for. from the rescue prompt onwards CentOS 6 and 7
+     share almost nothing, so every step that differs says so on its own line */
+  .rel{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:600;
+       border-radius:5px;padding:1px 8px;margin-right:9px;vertical-align:2px}
+  .el6{background:#f0eaf7;color:#5b3d8a;border:1px solid #d8cbe9}
+  .el7{background:var(--accent-soft);color:var(--accent);border:1px solid #c6ddd9}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0 18px;font-size:14.5px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:13px;color:var(--muted);font-weight:600;border-bottom:1.5px solid var(--line2)}
+  td.m,td .m{font-family:var(--mono);font-size:13px;white-space:nowrap;color:#0c4f48}
+  tr:hover td{background:#fdfdfb}
+
+  footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);
+         font-size:13.5px;color:var(--faint);line-height:1.9}
+  @media(max-width:640px){
+    body{font-size:15.5px}
+    .wrap{padding:28px 18px 70px}
+    h1{font-size:25px}
+    table{font-size:13.5px}
+    th,td{padding:8px 8px}
+    td.m,td .m{white-space:normal}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="in">
+    <span class="name">c2v</span>
+    <a href="#s0">0. เตรียมของ</a>
+    <a href="#s2">1. เฟสแรก</a>
+    <a href="#s3">2. เฟสสอง</a>
+    <a href="#s4b">3. ลองไอพี</a>
+    <a href="#s5">4. ย้ายจริง</a>
+    <a href="#all">คำสั่งรวด</a>
+    <a href="#trouble">เจอปัญหา</a>
+    <a href="c2v-deb.html" class="away">Debian / Ubuntu →</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="doc">
+  <h1>แปลง CT เป็น VM</h1>
+  <p>สำหรับ CT ที่เก่าเกินกว่าจะรันเป็น container บน PVE 9 ได้ — CentOS 6 และ CentOS 7 — ทำทีละตัว ตัวละประมาณหนึ่งชั่วโมง</p>
+  <div class="where">เฟส 1 พิมพ์บน node ใหม่ &nbsp;·&nbsp; เฟส 2 พิมพ์ในหน้าจอของ VM เอง</div>
+</header>
+
+<section id="s0">
+  <div class="eyebrow"><span class="num">0</span><h2>ก่อนเริ่ม</h2></div>
+
+  <p class="lead">เอกสารนี้เป็นลำดับคำสั่งล้วน ตัวอย่างทั้งหมดใช้ค่าสมมติชุดนี้ ให้เปลี่ยนเป็นของจริงก่อนพิมพ์</p>
+
+  <table>
+    <tr><th>ค่า</th><th>ตัวอย่างในเอกสารนี้</th><th>คืออะไร</th></tr>
+    <tr><td class="m">--old-node</td><td class="m">10.100.1.11</td><td>เครื่องเก่าที่ CT อยู่ตอนนี้</td></tr>
+    <tr><td class="m">--old-ctid</td><td class="m">100</td><td>เลข CT บนเครื่องเก่า</td></tr>
+    <tr><td class="m">--vmid</td><td class="m">9100</td><td>เลข VM ที่จะสร้างใหม่ ต้องยังว่าง</td></tr>
+    <tr><td class="m">--storage</td><td class="m">tank-hdd-nas</td><td>ที่เก็บ disk ของ VM</td></tr>
+    <tr><td class="m">--iso</td><td class="m">local:iso/CentOS-7-x86_64-DVD-2009.iso</td><td>แผ่นติดตั้ง เอาไว้ใช้ในเฟส 2 <b>ต้องตรงรุ่นของ CT</b></td></tr>
+  </table>
+
+  <div class="stop">
+    <p><b>storage ต้องเป็นแบบไฟล์ ไม่ใช่ LVM หรือ ZFS</b> เพราะขั้นตอนนี้ต้อง mount ไฟล์ image ตรงๆ ถ้าใส่ storage แบบ block โปรแกรมจะไม่ทำงานและบอกให้เปลี่ยน ทำเสร็จแล้วค่อย <code class="inl">qm move-disk</code> ไป LVM หรือ ZFS ทีหลังได้</p>
+  </div>
+
+  <h3>เช็กก่อนว่า CT ตัวนี้เป็นรุ่นอะไร</h3>
+
+  <p>ทั้งเอกสารนี้แยกเป็นสองทางตั้งแต่เฟส 2 เป็นต้นไป ต้องรู้ก่อนว่าจะเดินทางไหน ถามตัว CT เอง อย่าเดาจากชื่อเครื่อง พิมพ์บนเครื่องเก่า</p>
+  <div class="code"><pre><span class="p">$ </span>pct exec 100 -- cat /etc/redhat-release</pre></div>
+
+  <p>คำตอบจะเป็นประมาณ <code class="inl">CentOS release 6.10 (Final)</code> หรือ <code class="inl">CentOS Linux release 7.9.2009 (Core)</code> ตัวเลขตัวแรกหลังคำว่า release คือสิ่งเดียวที่ต้องจำ</p>
+
+  <div class="warn">
+    <p><b>ถ้าไฟล์นั้นไม่มี แปลว่ามาผิดเล่ม</b> ให้ถามอีกไฟล์แทนด้วย <code class="inl">pct exec 100 -- cat /etc/os-release</code> ถ้าได้ <code class="inl">ID=debian</code> หรือ <code class="inl">ID=ubuntu</code> ให้ไปที่ <a href="c2v-deb.html">c2v-deb.html</a> ทางนั้นไม่ต้องใช้แผ่นติดตั้ง และเฟส 2 พิมพ์บน node ใหม่ได้เลย ไม่ต้องเข้าหน้าจอของ VM</p>
+  </div>
+
+  <div class="stop">
+    <p><b>แผ่นติดตั้งต้องเป็นรุ่นเดียวกับ CT</b> เฟส 2 ลง kernel กับ boot loader จากแผ่น ด้วย <code class="inl">rpm</code> ของตัว CT เอง CT รุ่น 6 ต้องใช้แผ่น 6.x รุ่น 7 ต้องใช้แผ่น 7.x สลับกันไม่ได้</p>
+  </div>
+
+  <h3>เช็กว่ามีแผ่นติดตั้งแล้วหรือยัง</h3>
+  <div class="code"><pre><span class="p">$ </span>pvesm list local --content iso</pre></div>
+
+  <p>ถ้ายังไม่มี ให้โหลดลงเครื่อง หรือถ้าเครื่องออกเน็ตไม่ได้ก็อัปโหลดผ่านหน้าเว็บ PVE ที่ <code class="inl">local &gt; ISO Images</code> เอาบรรทัดที่ตรงกับรุ่นของ CT บรรทัดเดียว</p>
+  <div class="code"><pre><span class="p">$ </span>cd /var/lib/vz/template/iso
+<span class="p">$ </span>wget https://vault.centos.org/6.10/isos/x86_64/CentOS-6.10-x86_64-bin-DVD1.iso
+<span class="p">$ </span>wget https://vault.centos.org/7.9.2009/isos/x86_64/CentOS-7-x86_64-DVD-2009.iso</pre></div>
+
+  <div class="tip">
+    <p><b>ต้องเป็นแผ่นเต็มเท่านั้น</b> รุ่น 6 คือแผ่นที่ชื่อลงท้ายว่า DVD1 ประมาณ 4.0G รุ่น 7 คือ DVD-2009 ประมาณ 4.4G แผ่น minimal มีแพ็กเกจไม่ครบ และที่ร้ายกว่าคือ <code class="inl">yum</code> ไม่ถือว่าเป็นความผิดพลาดเมื่อหาชื่อที่สั่งลงเจอไม่ครบ มันจะจบแบบเรียบร้อยแล้วไปพังตอนบูตแทน</p>
+  </div>
+</section>
+
+<section id="s1">
+  <div class="eyebrow"><span class="num">1</span><h2>งานนี้มี 2 เฟส</h2></div>
+
+  <p class="lead">CT ไม่มีของอยู่ 3 อย่างที่ VM ต้องมี คือ kernel, ตัว boot loader และ initramfs ที่รู้จัก virtio เฟสแรกก๊อบข้อมูล เฟสสองใส่ 3 อย่างนั้น</p>
+
+  <table>
+    <tr><th></th><th>ทำอะไร</th><th>พิมพ์ที่ไหน</th><th>ใช้เวลา</th></tr>
+    <tr><td class="m">c2v-prepare.sh</td><td>สร้าง VM เปล่า แบ่ง partition ก๊อบไฟล์ทั้งหมดจาก CT</td><td>node ใหม่</td><td>ตามขนาดข้อมูล</td></tr>
+    <tr><td class="m">c2v-inside.sh</td><td>ลง kernel + grub ทำให้ boot ได้</td><td>ในหน้าจอ VM ตอน rescue</td><td>ประมาณ 10 นาที</td></tr>
+  </table>
+
+  <p>เหตุผลที่แยกเป็นสองตัว คือเฟส 2 รันบน PVE 9 ไม่ได้ ทั้งสองรุ่นแต่คนละเหตุผล</p>
+
+  <table>
+    <tr><th>รุ่นของ CT</th><th>ทำไมรันบน host ไม่ได้</th></tr>
+    <tr><td><span class="rel el6">CentOS 6</span></td><td>คำสั่ง <code class="inl">rpm</code> <code class="inl">dracut</code> <code class="inl">grub</code> ในตัวมันเป็นโปรแกรมของ glibc 2.12 ซึ่ง segfault ทันทีบน kernel ใหม่</td></tr>
+    <tr><td><span class="rel el7">CentOS 7</span></td><td>รันได้ แต่ไม่มีประโยชน์ เพราะ host ไม่มี <code class="inl">rpm</code> กับ <code class="inl">yum</code> จะเอาที่ไหนลง kernel ให้ และ <code class="inl">grub2</code> บน host เป็นของ Debian เขียน core.img ที่วิ่งไปหา <code class="inl">/boot/grub</code> พร้อมชุด module ของ Debian ส่วนตัว CT รอที่ <code class="inl">/boot/grub2</code></td></tr>
+  </table>
+
+  <p>ทั้งสองทางลงเอยเหมือนกัน คือต้องรันในตัวมันเอง ผ่านแผ่นติดตั้งของรุ่นตัวเองเท่านั้น</p>
+
+  <div class="tip">
+    <p><b>CT ตัวเก่าไม่ถูกแตะต้องเลย</b> ทั้งสองเฟสเป็นการอ่านอย่างเดียว ระหว่างทำ CT เก่ายังรันตามปกติ และตัวโปรแกรมไม่เคยสั่งเปิดหรือปิดอะไรเอง</p>
+  </div>
+</section>
+
+<section id="s2">
+  <div class="eyebrow"><span class="num">2</span><h2>เฟส 1 — ก๊อบข้อมูล</h2></div>
+
+  <p class="lead">ลองเปล่าก่อนหนึ่งรอบ ยังไม่มีอะไรถูกสร้าง</p>
+
+  <div class="code"><pre><span class="p">$ </span>cd ~/ct-migrate
+<span class="p">$ </span>./tools/c2v-prepare.sh \
+    --old-node 10.100.1.11 \
+    --old-ctid 100 \
+    --vmid 9100 \
+    --storage tank-hdd-nas \
+    --iso local:iso/CentOS-7-x86_64-DVD-2009.iso \
+    --dry-run</pre></div>
+
+  <p>ถ้าไม่มี ERROR ให้ถอด <code class="inl">--dry-run</code> ออกแล้วรันจริง เติม <code class="inl">--bwlimit 500000</code> ถ้าไม่อยากให้กิน bandwidth หมด</p>
+
+  <div class="code"><pre><span class="p">$ </span>./tools/c2v-prepare.sh \
+    --old-node 10.100.1.11 \
+    --old-ctid 100 \
+    --vmid 9100 \
+    --storage tank-hdd-nas \
+    --iso local:iso/CentOS-7-x86_64-DVD-2009.iso \
+    --bwlimit 500000</pre></div>
+
+  <p>จบแล้วต้องเห็นบรรทัดพวกนี้</p>
+  <div class="out">memory 8192M (from CT 100)
+cores 4 (from CT 100)
+bridge map: /root/ct-migrate/bridgemap.tsv (10.100.1.11 -&gt; pve9a)
+the CT has 2 interface(s); the commands for them are printed at the end
+size 32G  (quota 32G, usage x185% = 21G)
+qm create 9100 (no network, onboot=0)
+pvesm alloc tank-hdd-nas:9100/vm-9100-disk-0.raw (32G, raw)
+parted: msdos label + one primary partition
+mkfs.ext4 (EL6-compatible feature set), label=c7root
+rsync &lt;= root@10.100.1.11:/proc/28714/root/
+write /etc/fstab (rescue mode cannot find the system without it)
+replace /etc/mtab (a CT ships it as a symlink into /proc, which crashes rescue mode)
+plant phase 2 at /root/c2v-inside.sh [2026-08-03c]
+attach rescue ISO to VM 9100 (no bootloader on the disk yet)
+<span class="g">=== phase 1 done ===</span></div>
+
+  <p>ต่อจากบรรทัดสุดท้าย โปรแกรมจะพิมพ์ขั้นตอนของเฟส 2 ให้ดูด้วย โดยอ่านรุ่นจากไฟล์ในตัว image ที่เพิ่งก๊อบเสร็จ บรรทัดที่ขึ้นต้นว่า <code class="inl">Guest is</code> คือรุ่นที่มันอ่านได้ ถ้าไม่ตรงกับที่เช็กไว้ในขั้น 0 แปลว่าใส่เลข CT ผิดตัว</p>
+
+  <div class="tip">
+    <p><b>c7root เป็นแค่ป้ายชื่อ</b> ไม่มีอะไรในโปรแกรมอ่านรุ่นจากชื่อนี้ มันคือชื่อ partition ที่ทั้งสองเฟสต้องเรียกตรงกันเท่านั้น เฟส 1 ตั้งชื่อตอน format เฟส 2 เอาชื่อเดียวกันนี้ไปเขียนใน grub ถ้าสองที่ไม่ตรงกัน เครื่องจะบูตไปตกที่หน้าจอ dracut และ<b>ห้ามเปลี่ยนทีหลัง</b>ถ้า image ถูกสร้างไปแล้ว เพราะรอบหลังโปรแกรมไม่ format ซ้ำ ป้ายเดิมจึงยังอยู่ แต่เฟส 2 จะเขียน grub ตามชื่อใหม่ที่ไม่มีใครตอบ</p>
+    <p>image เก่าที่สร้างไว้ตอนที่ค่าตั้งต้นยังเป็น <code class="inl">c6root</code> ถ้าจะ sync ทับของเดิม ต้องใส่ <code class="inl">--label c6root</code> ต่อท้ายคำสั่งด้วย ถ้าลืม โปรแกรมจะหยุดแล้วบอกชื่อที่ถูกให้เอง ไม่ format ทับ</p>
+  </div>
+
+  <div class="warn">
+    <p><b>ถ้าขึ้น WARN เรื่อง mountpoint</b> แปลว่า CT ตัวนี้มี disk ก้อนที่สองต่ออยู่ ข้อมูลในนั้น<b>ไม่ถูกก๊อบ</b> จะกลายเป็นโฟลเดอร์ว่างใน VM ต้องย้ายเองทีหลัง หรือต่อเป็น disk ลูกที่สองให้ VM</p>
+  </div>
+
+  <p>รันซ้ำกี่รอบก็ได้ รอบหลังจะก๊อบเฉพาะส่วนที่เปลี่ยน ข้อแม้เดียวคือ <b>VM ต้องหยุดอยู่</b> ถ้า VM รันอยู่โปรแกรมจะไม่ยอมทำและบอกให้ไปสั่งหยุดก่อน</p>
+
+  <h3>cpu กับ ram ไม่ต้องใส่เอง</h3>
+
+  <p>สองค่านี้อ่านมาจาก <code class="inl">pct config</code> ของ CT ตัวนั้นให้เลย ไม่ต้องไปเปิดดูแล้วพิมพ์ตาม ถ้าอยากได้ไม่เท่าเดิมค่อยใส่ <code class="inl">--memory</code> หรือ <code class="inl">--cores</code> ทับ ใส่แล้วมันจะบอกว่า <code class="inl">forced by</code> ให้เห็นชัดๆ ว่าเลขนี้มาจากมือเรา ไม่ได้มาจาก CT</p>
+
+  <p>มีสองกรณีที่อ่านมาตรงๆ ไม่ได้ ทั้งสองกรณีจะขึ้น WARN ให้เห็น</p>
+
+  <p>อย่างแรกคือ CT ที่ไม่มีบรรทัด <code class="inl">cores:</code> เลย ตัวนั้นไม่ได้ถูกจำกัด คือใช้ core ทั้งเครื่องเท่าที่ node มี ซึ่งไม่ใช่ตัวเลขที่เอามาใส่ VM ได้ ต้องเลือกเองว่าจะให้เท่าไหร่ ค่าที่มันตั้งให้คือ 2 ซึ่งเป็นแค่ตัวเลขที่ทำให้เดินต่อได้ ไม่ใช่ตัวเลขที่ถูก</p>
+
+  <p>อย่างที่สองคือ CT ที่ ram น้อยกว่า 1024M มันจะดันขึ้นเป็น 1024M ให้ ไม่ใช่เพราะเดาว่างานต้องใช้เท่านั้น แต่เพราะเฟส 2 ต้องรัน <code class="inl">yum</code> กับ <code class="inl">dracut</code> อยู่ในตัว guest เอง แล้วเท่าที่ container พอใจมันไม่พอ ถ้ายืนยันว่าจะเอาน้อยกว่านั้นจริงๆ ใส่ <code class="inl">--memory</code> ทับได้ มันไม่ดันซ้ำ</p>
+
+  <h3>ชื่อสะพานของสองเครื่องไม่เหมือนกัน</h3>
+
+  <p><b><code class="inl">vmbr1</code> ของเครื่องเก่ากับ <code class="inl">vmbr1</code> ของเครื่องใหม่ เป็นแค่ชื่อที่เขียนเหมือนกัน ไม่ได้แปลว่าเป็นวงเดียวกัน</b> และไม่มีอะไรในไฟล์ตั้งค่าฝั่งไหนบอกได้ว่าใช่หรือไม่ใช่ การก๊อบชื่อข้ามมาเฉยๆ จึงเป็นการแทนค่าอย่างเดียวที่ทำให้เครื่องไปโผล่ผิดวงโดยที่ทุกอย่างดูถูกต้องหมด</p>
+
+  <p>บอกให้มันรู้ด้วยไฟล์ <code class="inl">bridgemap.tsv</code> วางไว้ที่โฟลเดอร์เดียวกับตัวโปรแกรม ก๊อบจาก <code class="inl">bridgemap.tsv.example</code> มาแก้ สี่ช่องต่อบรรทัด คั่นด้วย tab หรือเว้นวรรคก็ได้</p>
+  <div class="code"><pre>pve6a	vmbr0	pve9a	vmbr0
+pve6a	vmbr1	pve9a	vmbr2</pre></div>
+
+  <p>อ่านว่า สะพานชื่อ <code class="inl">vmbr1</code> บนเครื่อง <code class="inl">pve6a</code> เครื่อง <code class="inl">pve9a</code> เรียกมันว่า <code class="inl">vmbr2</code> ใส่ <code class="inl">*</code> ได้ในสามช่องแรก บรรทัดที่ตรงก่อนชนะ เพราะฉะนั้นบรรทัดเจาะจงต้องอยู่บนบรรทัดกว้างๆ</p>
+
+  <p>สะพานที่ไม่มีบรรทัดรองรับ จะถูกก๊อบชื่อเดิมข้ามมาแล้ว<b>ติดป้าย <code class="inl">UNMAPPED</code></b> ไว้ให้เห็น พร้อมพิมพ์บรรทัดที่ต้องเติมลงไฟล์ให้ด้วย มันไม่เดาให้ เพราะเดาผิดแล้วจะไม่มีอะไรฟ้องจนกว่าจะมีคนถามหาเครื่องนี้แล้วไม่มีใครตอบ</p>
+
+  <p>ไฟล์นี้ไม่เปลี่ยนอะไรด้วยตัวเอง มันมีผลแค่กับบรรทัด <code class="inl">qm set</code> ที่พิมพ์ไว้ให้ตอนจบเท่านั้น คนยังเป็นคนพิมพ์คำสั่งพวกนั้นเองอยู่ดี</p>
+
+  <div class="warn">
+    <p><b>บรรทัด <code class="inl">*</code> ในช่องสะพาน มีไว้ทำ lab เท่านั้น</b> แบบนี้จะส่งการ์ดทุกใบไปลงสะพานเดียว ซึ่งเป็นวิธีที่ทำให้ยัดไอพีจริงของ CT ใส่ VM ได้ทั้งที่ CT ยังเปิดอยู่</p>
+    <div class="code"><pre>*	*	*	vmbr99</pre></div>
+    <p>มันจะเตือนเรื่องบรรทัดนี้ทุกรอบที่รัน ตั้งใจให้รำคาญ เพราะรอบที่ไม่มีใครทันสังเกตว่าบรรทัดนี้ยังอยู่ คือรอบที่เครื่องจริงขึ้นมาอยู่บนสะพานที่ไม่มีอะไรอยู่ปลายทาง <b>ลบทิ้งก่อนย้ายจริง</b></p>
+  </div>
+</section>
+
+<section id="s3">
+  <div class="eyebrow"><span class="num">3</span><h2>เฟส 2 — ทำให้ boot ได้</h2></div>
+
+  <p class="lead">เปิด VM ขึ้นมา มันจะ boot เข้าแผ่นติดตั้งที่ต่อไว้ให้แล้ว</p>
+
+  <div class="code"><pre><span class="p">$ </span>qm start 9100</pre></div>
+
+  <p>เปิดหน้าจอผ่านหน้าเว็บ PVE เลือก VM 9100 แล้วกด <b>Console</b> ตรงนี้ต้องใช้หน้าเว็บ ใช้ <code class="inl">qm terminal</code> ไม่ได้ เพราะเมนูของแผ่นติดตั้งออกทางจอภาพอย่างเดียว</p>
+
+  <p>ตรงนี้เป็นจุดที่สองรุ่นแยกทางกัน หน้าจอกู้ระบบของ CentOS 6 กับ 7 คนละโปรแกรมกันคนละหน้าตากัน ดูตรงที่เฟส 1 พิมพ์ทิ้งไว้ให้ตอนจบ บรรทัด <code class="inl">Guest is</code> หรือถ้าเลื่อนหายไปแล้วก็ดูจากหน้าจอที่ขึ้นมาเองก็ได้</p>
+
+  <h3><span class="rel el6">CentOS 6</span>หน้าจอฟ้า พิมพ์เอง</h3>
+
+  <p>พอเห็นหน้าจอฟ้า ให้พิมพ์บรรทัดนี้ที่ <code class="inl">boot:</code> แล้วกด Enter</p>
+  <div class="code"><pre>linux rescue</pre></div>
+
+  <p>มันจะถามไปเรื่อยๆ ตอบตามนี้</p>
+  <table>
+    <tr><th>ถามว่า</th><th>ตอบ</th></tr>
+    <tr><td>ภาษา / คีย์บอร์ด</td><td class="m">English / us</td></tr>
+    <tr><td>Setup networking?</td><td class="m">No</td></tr>
+    <tr><td>Rescue method</td><td class="m">Local CD/DVD</td></tr>
+    <tr><td>จะให้หาระบบที่ติดตั้งไว้ไหม</td><td class="m">Continue</td></tr>
+    <tr><td>เจอแล้ว mount ไว้ที่ /mnt/sysimage</td><td class="m">OK</td></tr>
+  </table>
+
+  <h3><span class="rel el7">CentOS 7</span>เมนูดำ เลือกเอา</h3>
+
+  <p>ไม่มีที่ให้พิมพ์ ให้เลื่อนแถบเลือกตามนี้</p>
+  <div class="code"><pre>Troubleshooting  &gt;  Rescue a CentOS system  &gt;  1) Continue</pre></div>
+
+  <p>รอสักครู่ มันจะบอกว่าเจอระบบแล้ว mount ไว้ที่ <code class="inl">/mnt/sysimage</code> กด Enter ผ่านไปสองครั้งจนได้ <code class="inl">sh-4.2#</code></p>
+
+  <div class="stop">
+    <p><b>ทั้งสองรุ่นต้องเลือก Continue ไม่ใช่ Read-Only และไม่ใช่ Skip</b> ถ้าเลือกอ่านอย่างเดียว เฟส 2 จะเขียนอะไรไม่ได้เลย ส่วน Skip ไม่ mount ให้ทั้งอัน ในรุ่น 7 ข้อ Continue ยังเป็นข้อเดียวที่ผูก <code class="inl">/dev</code> เข้าไปให้ด้วย ซึ่ง <code class="inl">grub2-install</code> ต้องใช้มองหา disk</p>
+  </div>
+
+  <p>พอได้เครื่องหมาย <code class="inl">#</code> แล้ว ตั้งแต่ตรงนี้เหมือนกันทั้งสองรุ่น พิมพ์บรรทัดเดียวนี้</p>
+  <div class="code"><pre>/mnt/sysimage/root/c2v-inside.sh</pre></div>
+
+  <p>ตัวโปรแกรมอ่านรุ่นจากในเครื่องเอง ไม่ต้องบอกมัน รอจนจบ</p>
+
+  <div class="tip">
+    <p><b>ทำไมถึงเหลือบรรทัดเดียว</b> ของเดิมต้องพิมพ์ <code class="inl">chroot /mnt/sysimage</code> ก่อน แล้วพอเข้าไปแล้วมองไม่เห็นแผ่น ก็ต้องถอยออกมาผูกแผ่นเข้าไปเองอีกที ซึ่งเป็นคำสั่งยาวที่มีคำว่า sysimage กับ source ปนกันอยู่ในบรรทัดเดียว และ console ของ PVE ก็วางไม่ได้ ต้องพิมพ์มือล้วน</p>
+    <p>ตอนนี้ตัวโปรแกรมทำสองอย่างนั้นเอง มันรู้ว่าถูกเรียกจากนอก chroot เพราะเห็น <code class="inl">/mnt/sysimage</code> อยู่ แล้วมันจะหาแผ่นจาก <code class="inl">/run/install/repo</code> (รุ่น 7), <code class="inl">/mnt/source</code> (รุ่น 6) และทุกจุดที่เมาท์ iso9660 ไว้ ตรวจว่ามี <code class="inl">repodata</code> หรือ <code class="inl">Packages</code> จริงก่อนค่อยผูก แล้วเช็ก <code class="inl">/dev</code> <code class="inl">/proc</code> <code class="inl">/sys</code> ให้ด้วยว่าผูกเข้าไปครบไหม เสร็จแล้วมันถึง chroot ตัวเองเข้าไป จบแล้วมันถอดที่ผูกไว้ออกให้หมด — ถ้าค้างไว้ ตอน rescue ถอดระบบออกจะถอดไม่สะอาด แล้ว ext4 ต้อง fsck ตอนบูตจริงรอบแรก</p>
+    <p>ถ้าชินกับของเดิมมากกว่า พิมพ์ <code class="inl">chroot /mnt/sysimage</code> เองแล้วค่อยรัน <code class="inl">/root/c2v-inside.sh</code> ก็ยังใช้ได้เหมือนเดิมทุกอย่าง</p>
+  </div>
+
+  <h3><span class="rel el6">CentOS 6</span>หน้าตาตอนจบ</h3>
+  <div class="out">=== c2v phase 2 [2026-08-03c]: make this rootfs bootable (label=c7root) ===
+guest: CentOS release 6.10 (Final)
+root partition: /dev/vda1
+boot disk: /dev/vda  (MBR goes here)
+yum install kernel grub dracut dracut-kernel (from /mnt/source)
+kernel: 2.6.32-754.35.1.el6.x86_64
+dracut: rebuilding /boot/initramfs-2.6.32-754.35.1.el6.x86_64.img with virtio drivers
+write /boot/grub/grub.conf
+grub: writing the MBR to /dev/vda
+MBR verified
+clearing /etc/udev/rules.d/70-persistent-net.rules (it still names the container's MAC)
+cleaning /etc/sysconfig/network-scripts/ifcfg-eth0 (drop HWADDR and UUID, keep the address)
+adding an upstart getty on ttyS0
+<span class="g">=== phase 2 done ===</span></div>
+
+  <h3><span class="rel el7">CentOS 7</span>หน้าตาตอนจบ</h3>
+  <div class="out">=== c2v phase 2 [2026-08-03c]: make this rootfs bootable (label=c7root) ===
+guest: CentOS Linux release 7.9.2009 (Core)
+root partition: /dev/vda1
+boot disk: /dev/vda  (MBR goes here)
+yum install kernel grub2 grub2-tools dracut (from /mnt/source)
+kernel: 3.10.0-1160.el7.x86_64
+dracut: rebuilding /boot/initramfs-3.10.0-1160.el7.x86_64.img with virtio drivers
+write /boot/grub2/grub.cfg
+write /etc/default/grub
+grub2-install: writing the MBR to /dev/vda
+MBR verified
+clearing /etc/udev/rules.d/70-persistent-net.rules (it still names the container's MAC)
+cleaning /etc/sysconfig/network-scripts/ifcfg-eth0 (drop HWADDR and UUID, keep the address)
+enabling getty@tty1 (noVNC has nothing to show without it)
+restore /etc/mtab -&gt; /proc/self/mounts (EL7 has no rc.sysinit to rebuild it)
+<span class="g">=== phase 2 done ===</span></div>
+
+  <p>บรรทัดที่ต้องอ่านจริงๆ มีสองบรรทัด คือ <code class="inl">kernel:</code> ต้องมีเลขรุ่นตามมา และ <code class="inl">MBR verified</code> ขาดบรรทัดไหนไปแปลว่ายังบูตไม่ได้ อย่าเพิ่งถอดแผ่น</p>
+
+  <div class="warn">
+    <p><b>ถ้าไม่มีบรรทัด yum install เลย แล้วขึ้นว่า skipping the install แทน</b> รันรอบสองเป็นแบบนี้ถูกต้อง แต่<b>รอบแรกต้องไม่เป็น</b> เพราะเฟส 1 ไม่เคยก๊อบ <code class="inl">/boot</code> มาด้วย image ที่เพิ่งสร้างจึงต้องไม่มี kernel เลย ถ้ารอบแรกขึ้นแบบนี้แปลว่ากำลังยืนอยู่ผิดที่ ออกมาแล้วเช็กก่อน</p>
+  </div>
+  <div class="code"><pre>cat /etc/redhat-release
+ls -l /boot/vmlinuz-*</pre></div>
+
+  <p>ออกจาก rescue สองครั้ง เครื่องจะดับเอง</p>
+  <div class="code"><pre>exit
+exit</pre></div>
+</section>
+
+<section id="s4">
+  <div class="eyebrow"><span class="num">4</span><h2>ลอง boot จริง</h2></div>
+
+  <p class="lead">ถอดแผ่นออก แล้วสั่ง boot จาก disk</p>
+
+  <div class="code"><pre><span class="p">$ </span>qm stop 9100
+<span class="p">$ </span>qm set 9100 --delete ide2
+<span class="p">$ </span>qm set 9100 --boot order=virtio0
+<span class="p">$ </span>qm start 9100
+<span class="p">$ </span>qm terminal 9100</pre></div>
+
+  <p>คราวนี้ใช้ <code class="inl">qm terminal</code> ได้แล้ว ออกจากหน้าจอนี้กด <kbd>Ctrl</kbd> + <kbd>O</kbd></p>
+
+  <p>ล็อกอินเข้าไปด้วยรหัส root ตัวเดิมของ CT แล้วเช็ก 3 อย่าง</p>
+  <div class="code"><pre>uname -r
+df -h /
+ls /etc/sysconfig/network-scripts/ifcfg-eth0</pre></div>
+
+  <p>ยังไม่ต้องรีบทำอะไรต่อ VM ตัวนี้<b>ยังไม่มีเน็ต</b>โดยตั้งใจ จะได้ไม่ชนกับ CT ตัวเก่าที่ยังรันอยู่ ลองเปิดโปรแกรมในนั้นดูให้พอใจ แล้วสั่งดับ</p>
+  <div class="code"><pre><span class="p">$ </span>qm shutdown 9100</pre></div>
+</section>
+
+<section id="s4b">
+  <div class="eyebrow"><span class="num">5</span><h2>ทดสอบด้วยไอพีอีกตัว</h2></div>
+
+  <p class="lead">ขั้นนี้ข้ามได้ แต่ถ้าอยากลองใช้งานจริงก่อนสลับตัว ต้องทำตามลำดับนี้เท่านั้น — CT ตัวเก่ายังรันอยู่ตลอดเวลา ไม่ต้องดับ</p>
+
+  <p>ตัว CT ไม่เสี่ยงอะไรเลย เฟส 1 แค่อ่านข้อมูลออกมาจาก CT ที่กำลังรัน <b>ตัวที่เสี่ยงคือ VM ที่ก๊อบมา</b> เพราะพอเปิดขึ้นมามันเชื่อว่าตัวเองคือเครื่องจริง งานตามเวลา ตัวส่งเมล ตัวส่งค่าไปเครื่องมอนิเตอร์ ตัวสำรองข้อมูล จะเริ่มทำงานกับของจริงทันทีพร้อมกับเครื่องเก่า</p>
+
+  <div class="stop">
+    <p><b>ห้ามใส่การ์ดเน็ตแล้วค่อยเข้าไปแก้ทีหลัง</b> ตั้งแต่กดเปิดจนกว่าคุณจะล็อกอินได้ เครื่องเปิดบริการทุกตัวไปแล้ว งานตามเวลาอาจยิงไปแล้ว เมลที่ค้างในคิวอาจส่งออกไปหาคนจริงแล้ว ต้องแก้ในไฟล์<b>ก่อน</b>เปิดเสมอ</p>
+  </div>
+
+  <h3>หนึ่ง ดับ VM แล้วเปิดไฟล์ disk ออกมาแก้</h3>
+
+  <p>ทำบน node ใหม่ ที่เดียวกับเฟส 1</p>
+  <div class="code"><pre><span class="p">$ </span>qm stop 9100
+<span class="p">$ </span>IMG=$(pvesm path tank-hdd-nas:9100/vm-9100-disk-0.raw)
+<span class="p">$ </span>LOOP=$(losetup -Pf --show "$IMG")
+<span class="p">$ </span>mkdir -p /mnt/c2v
+<span class="p">$ </span>mount "${LOOP}p1" /mnt/c2v</pre></div>
+
+  <div class="warn">
+    <p><b>อย่า chroot เข้าไป</b> คำสั่งข้างล่างนี้อ่านกับแก้ไฟล์ล้วนๆ ทั้งหมดโดยตั้งใจ CT รุ่น 6 ถ้า chroot แล้วสั่งโปรแกรมในนั้น มันจะ segfault ทันที ด้วยเหตุผลเดียวกับที่เฟส 2 ต้องไปทำในแผ่น ส่วนรุ่น 7 chroot ได้ก็จริง แต่คำสั่งอย่าง <code class="inl">systemctl</code> ในนั้นจะไปคุยกับ systemd ของ<b>ตัว node</b> ไม่ใช่ของ image ที่ mount ไว้ ผลคือไม่เกิดอะไรขึ้น หรือแย่กว่านั้นคือไปโดนบริการของ node เข้าจริงๆ</p>
+  </div>
+
+  <h3>สอง ดูว่ามีอะไรจะโทรออกบ้าง</h3>
+
+  <p>บรรทัดแรกคือรายชื่อบริการที่จะเปิดเองตอน boot ตรงนี้สองรุ่นเก็บไว้คนละที่ ให้เลือกใช้บรรทัดที่ตรงกับรุ่น</p>
+
+  <div class="code"><pre><span class="p">$ </span>ls -1 /mnt/c2v/etc/rc.d/rc3.d/S* | sed 's#.*/S[0-9]*##'
+<span class="p">$ </span>ls -1 /mnt/c2v/etc/systemd/system/multi-user.target.wants/ | sed 's/\.service$//'</pre></div>
+
+  <p><span class="rel el6">CentOS 6</span>บรรทัดบน &nbsp;&nbsp;<span class="rel el7">CentOS 7</span>บรรทัดล่างเป็นหลัก แต่ให้ดูบรรทัดบนด้วย เพราะบริการเก่าบางตัวที่ยังเป็นสคริปต์แบบ 6 ก็ยังเปิดเองได้บนรุ่น 7 เหมือนกัน</p>
+
+  <p>ที่เหลือเหมือนกันทั้งสองรุ่น</p>
+
+  <div class="code"><pre><span class="p">$ </span>cat /mnt/c2v/var/spool/cron/* 2&gt;/dev/null
+<span class="p">$ </span>ls -1 /mnt/c2v/etc/cron.d/ 2&gt;/dev/null
+<span class="p">$ </span>grep -Ev '^[[:space:]]*#' /mnt/c2v/etc/fstab | grep -E 'nfs|cifs|gluster'
+<span class="p">$ </span>ls -l /mnt/c2v/var/lib/mysql/master.info 2&gt;/dev/null</pre></div>
+
+  <table>
+    <tr><th>บรรทัดที่</th><th>ถ้าเจอแปลว่า</th></tr>
+    <tr><td class="m">1, 2</td><td>งานตามเวลา จะเริ่มยิงเองภายในไม่กี่นาทีหลังเปิด</td></tr>
+    <tr><td class="m">3</td><td>มีการ mount ที่เก็บข้อมูลจากเครื่องอื่น สองตัวจะเขียนไฟล์เดียวกัน</td></tr>
+    <tr><td class="m">4</td><td>ถ้ามีไฟล์นี้ ฐานข้อมูลตัวนี้เป็นตัวลูก มันจะไปต่อตัวแม่ด้วยเลขประจำตัวซ้ำกับของจริง แล้วเตะกันไปมา</td></tr>
+  </table>
+
+  <h3>สาม ตัดของพวกนั้นทิ้ง</h3>
+
+  <p>เอาชื่อที่ได้จากขั้นสองมาใส่ในรายการนี้ ที่ให้มาเป็นตัวที่เจอบ่อย ยังไม่ครบทุกเครื่อง ตัวที่ห้ามลืมที่สุดคือ <code class="inl">crond</code> กับ <code class="inl">keepalived</code> — ตัวหลังจะไปแย่งไอพีกลางมาจากเครื่องจริง</p>
+
+  <h4><span class="rel el6">CentOS 6</span>ลบทางลัดใน rc[2345].d</h4>
+  <div class="code"><pre><span class="p">$ </span>for s in crond postfix sendmail zabbix-agent nrpe snmpd collectd \
+           bacula-fd bareos-fd keepalived heartbeat puppet salt-minion; do
+    rm -f /mnt/c2v/etc/rc.d/rc[2345].d/S[0-9][0-9]$s
+  done</pre></div>
+
+  <h4><span class="rel el7">CentOS 7</span>ลบทางลัดใน multi-user.target.wants</h4>
+  <div class="code"><pre><span class="p">$ </span>for s in crond postfix sendmail zabbix-agent nrpe snmpd collectd \
+           bacula-fd bareos-fd keepalived puppet salt-minion; do
+    rm -f /mnt/c2v/etc/systemd/system/multi-user.target.wants/$s.service
+    rm -f /mnt/c2v/etc/rc.d/rc[2345].d/S[0-9][0-9]$s
+  done</pre></div>
+
+  <div class="warn">
+    <p><b>บนรุ่น 7 บรรทัด rc[2345].d เพียงอย่างเดียวไม่มีผลอะไรเลย</b> systemd ไม่ได้อ่านที่นั่นเป็นหลัก ถ้าลบแต่ที่เดิมแล้วเปิดเครื่อง บริการจะขึ้นครบทุกตัวเหมือนไม่ได้ทำอะไร ต้องลบในโฟลเดอร์ของ systemd ด้วยเสมอ</p>
+  </div>
+
+  <p>ที่เหลือทำเหมือนกันทั้งสองรุ่น ปิดบรรทัด mount จากเครื่องอื่น แล้วล้างคิวเมลที่ค้างอยู่</p>
+  <div class="code"><pre><span class="p">$ </span>sed -i -E 's@^([^#].*[[:space:]](nfs|nfs4|cifs|glusterfs)[[:space:]].*)$@#C2VTEST# \1@' \
+    /mnt/c2v/etc/fstab
+<span class="p">$ </span>rm -f /mnt/c2v/var/spool/postfix/deferred/* \
+        /mnt/c2v/var/spool/postfix/active/* 2&gt;/dev/null</pre></div>
+
+  <p>ตรวจซ้ำอีกรอบว่ารายการที่ตัดไปหายจริง ผลที่ออกมาต้องไม่มีชื่อที่เพิ่งลบเหลืออยู่</p>
+  <div class="code"><pre><span class="p">$ </span>ls -1 /mnt/c2v/etc/rc.d/rc3.d/S* 2&gt;/dev/null | sed 's#.*/S[0-9]*##'
+<span class="p">$ </span>ls -1 /mnt/c2v/etc/systemd/system/multi-user.target.wants/ 2&gt;/dev/null</pre></div>
+
+  <h3>สี่ วางไอพีทดสอบ</h3>
+
+  <div class="code"><pre><span class="p">$ </span>cat &gt; /mnt/c2v/etc/sysconfig/network-scripts/ifcfg-eth0 &lt;&lt;'EOF'
+DEVICE=eth0
+ONBOOT=yes
+BOOTPROTO=none
+IPADDR=10.100.1.199
+NETMASK=255.255.255.0
+EOF</pre></div>
+
+  <div class="tip">
+    <p><b>ไม่ใส่ GATEWAY โดยตั้งใจ</b> ไม่มี gateway แปลว่า VM คุยได้แค่กับเครื่องในวงเดียวกัน ออกไปข้างนอกไม่ได้ เป็นการกันชั้นที่สองที่ได้มาฟรี ไม่ต้องไปยุ่งกับ firewall ของ node ถ้าทดสอบแล้วจำเป็นต้องออกเน็ตจริงค่อยเติมบรรทัด <code class="inl">GATEWAY=10.100.1.1</code> ทีหลัง</p>
+  </div>
+
+  <p>ชื่อเครื่องเก็บของเดิมไว้ได้ ในเมื่อตัดตัวที่ประกาศชื่อออกไปหมดแล้ว และโปรแกรมเก่าหลายตัวผูกกับชื่อเครื่อง เปลี่ยนแล้วจะทดสอบไม่ตรงของจริง</p>
+
+  <h3>ห้า ปิดไฟล์ ใส่การ์ดเน็ต เปิด</h3>
+
+  <div class="code"><pre><span class="p">$ </span>umount /mnt/c2v
+<span class="p">$ </span>losetup -d "$LOOP"
+<span class="p">$ </span>qm set 9100 --net0 virtio,bridge=vmbr0
+<span class="p">$ </span>qm start 9100</pre></div>
+
+  <p>ทดสอบจากเครื่องตัวเองได้เลย</p>
+  <div class="code"><pre><span class="p">$ </span>ping -c 3 10.100.1.199
+<span class="p">$ </span>ssh root@10.100.1.199</pre></div>
+
+  <h3>ทางที่ดีกว่า สะพานตัน แล้วใส่ไอพีจริงเข้าไปเลย</h3>
+
+  <p>วิธีข้างบนใช้ไอพีปลอมเพราะกลัวชนของจริง แต่ไอพีปลอมมีราคาที่มองไม่เห็น — ไฟล์ตั้งค่าของบริการเก่าเกือบทุกตัวเขียนไอพีจริงไว้ตรงๆ พอไอพีไม่ตรง nginx จะ bind ไม่ขึ้นแล้วตายด้วยรหัส 99 ทั้งที่การ์ดปกติดีทุกอย่าง กลายเป็นว่าที่ทดสอบไปไม่ได้บอกอะไรเลย</p>
+
+  <p>ทำสะพานที่ไม่มีการ์ดจริงเสียบอยู่เลยสักใบแทน แพ็กเก็ตออกไปชนของจริงไม่ได้เพราะไม่มีทางออก ไม่ใช่เพราะเราตั้งไอพีหลบ พอเป็นแบบนั้นแล้ว<b>ใส่ไอพีจริงของ CT ลงไปได้</b></p>
+
+  <p>เครื่องเราจัดการด้วย OVS ทั้งหมด ทำบนตัว node</p>
+  <div class="code"><pre><span class="p">$ </span>ovs-vsctl add-br vmbr99
+<span class="p">$ </span>ovs-vsctl show</pre></div>
+
+  <p>ไม่ต้องสั่ง <code class="inl">add-port</code> ให้มัน นั่นแหละคือทั้งหมดของเรื่องนี้</p>
+
+  <p>ต่อ VM เข้าไป จำนวนการ์ดกับค่าที่ต้องใส่ให้แต่ละใบ ไม่ต้องนึกเอง เฟส 1 อ่านมาจาก <code class="inl">pct config</code> แล้วพิมพ์บรรทัดที่ถูกต้องไว้ให้ตอนจบ เปลี่ยนแค่ชื่อสะพานเป็น <code class="inl">vmbr99</code> หน้าตาประมาณนี้</p>
+  <div class="code"><pre><span class="p">$ </span>qm set 9100 --net0 virtio,bridge=vmbr99,mtu=9000,firewall=0
+<span class="p">$ </span>qm set 9100 --net1 virtio,bridge=vmbr99,tag=255,firewall=0</pre></div>
+
+  <div class="warn">
+    <p><b>ค่า mtu เป็นตัวที่หายเงียบที่สุดตอนย้าย</b> ของ CT ค่านี้อยู่ในบรรทัด <code class="inl">net0:</code> ของฝั่ง host ไม่ได้อยู่ในไฟล์ไหนใน guest เลย แปลว่าถ้าใส่การ์ดให้ VM เฉยๆ มันจะขึ้นมาเป็น 1500 แล้ว<b>ใช้งานได้ปกติทุกอย่าง</b>จนกว่าจะเจอข้อมูลก้อนใหญ่พอ ถึงตอนนั้นจะดูเหมือนปัญหาเน็ตช้า ไม่มีอะไรชี้กลับมาที่การย้าย ส่วน <code class="inl">tag=</code> ก็เรื่องเดียวกันแต่จะพังทันทีให้เห็นเลย</p>
+  </div>
+
+  <p><code class="inl">firewall=0</code> ใส่ไว้เพื่อไม่ให้ PVE แทรกสะพานแบบ Linux กับสายคู่หนึ่งเข้ามาคั่นระหว่างการ์ดของ VM กับ OVS ซึ่งจะทำให้ <code class="inl">ovs-vsctl show</code> อ่านยากขึ้นเปล่าๆ</p>
+
+  <div class="tip">
+    <p><b>ประตูออกเน็ตจะไม่มีใครตอบ</b> อันนั้นถูกแล้ว เส้นทางไปหามันอยู่ในวงเดียวกับการ์ดอยู่แล้ว ระบบจึงเพิ่มเส้นทางได้สำเร็จและบริการเน็ตขึ้นเขียวปกติ ที่จะค้างคือของที่ต้องออกไปข้างนอกจริงๆ เช่นตัวลงโปรแกรม ตัวเทียบเวลา หรือฐานข้อมูลตัวลูกที่ตามหาตัวแม่ ค้างเพราะตั้งใจ ไม่ใช่อาการเสีย</p>
+  </div>
+
+  <h3>เปิดทาง ssh ให้ตัวเอง</h3>
+
+  <p>หน้าจอ console ของ PVE วางข้อความไม่ได้ ซึ่งเป็นปัญหาทันทีที่ต้องพิมพ์อะไรยาวกว่าสองสามคำ แก้ด้วยการให้ตัว node มีขาข้างหนึ่งยื่นเข้าไปในสะพานตันด้วย ขาแบบนี้ OVS เรียกว่า port ชนิด internal</p>
+  <div class="code"><pre><span class="p">$ </span>ovs-vsctl add-port vmbr99 vlan99 -- set interface vlan99 type=internal
+<span class="p">$ </span>ovs-vsctl set port vlan99 tag=99
+<span class="p">$ </span>ip link set vlan99 mtu 9000 up
+<span class="p">$ </span>ip addr add 192.168.99.1/24 dev vlan99</pre></div>
+
+  <p>แล้วเติมการ์ดอีกใบให้ VM ไว้คุยกับขานี้โดยเฉพาะ วง <code class="inl">192.168.99.x</code> เป็นวงส่วนตัวที่ไม่เกี่ยวกับไอพีจริงของเครื่องเลย เลือกมาเพราะมันไม่ชนกับอะไร <b>ต้องใส่ tag ให้ตรงกับขาของ node</b></p>
+  <div class="code"><pre><span class="p">$ </span>qm set 9100 --net2 virtio,bridge=vmbr99,tag=99,mtu=9000,firewall=0</pre></div>
+
+  <div class="warn">
+    <p><b>ถ้าขา vlan99 มี tag แล้วการ์ดของ VM ไม่มี จะไม่มีทางคุยกันได้เลย</b> พอ port ไหนถูกตั้ง <code class="inl">tag=99</code> OVS จะถือว่าเป็นขาแบบ access คือรับส่งเฉพาะ VLAN 99 เท่านั้น ส่วน port ที่ไม่ได้ตั้ง tag เลยเป็นขาแบบ trunk เฟรมที่ไม่มี tag วิ่งเข้าไปจะไปโผล่ที่ VLAN 0 คนละวงกัน สองข้างนี้ต้องเหมือนกัน จะใส่ tag ทั้งคู่หรือไม่ใส่ทั้งคู่ก็ได้ แต่ต้องเหมือนกัน ที่เขียนไว้ข้างบนใส่ทั้งคู่เพราะไฟล์ <code class="inl">/etc/network/interfaces</code> ของเครื่องนี้ตั้ง <code class="inl">ovs_options tag=99</code> ไว้ที่ vlan99 อยู่แล้ว</p>
+    <p>เรื่อง <code class="inl">mtu</code> ก็คู่กัน สะพานตั้ง <code class="inl">ovs_mtu 9000</code> ไว้ ถ้าการ์ดของ VM เป็น 1500 <code class="inl">ssh</code> จะเข้าได้เหมือนไม่มีอะไรผิด แล้วไปค้างตอน <code class="inl">scp</code> ไฟล์ใหญ่ ซึ่งเป็นอาการที่ไม่มีอะไรชี้กลับมาที่ตรงนี้เลย</p>
+  </div>
+
+  <p>ในตัว VM สร้างไฟล์ตั้งค่าให้การ์ดใบนั้น <b>ไม่ใส่ GATEWAY</b> เพราะประตูออกเน็ตของเครื่องนี้คือของจริงที่อยู่บนการ์ดใบแรก</p>
+  <div class="code"><pre>cat &gt; /etc/sysconfig/network-scripts/ifcfg-eth2 &lt;&lt;'EOF'
+DEVICE=eth2
+ONBOOT=yes
+BOOTPROTO=none
+IPADDR=192.168.99.10
+NETMASK=255.255.255.0
+EOF
+service network restart</pre></div>
+
+  <p>จากนั้นเข้าจาก node ได้เลย ที่เหลือพิมพ์ยาวแค่ไหนก็ได้</p>
+  <div class="code"><pre><span class="p">$ </span>ssh root@192.168.99.10</pre></div>
+
+  <div class="warn">
+    <p><b>ไฟล์ ifcfg-eth2 นี้จะโดนลบตอนก๊อบรอบถัดไป</b> เพราะมันไม่มีอยู่ใน CT ตัวจริง ตัวก๊อบเห็นแล้วจะเก็บกวาดให้เอง ถ้ายังต้องใช้ทาง ssh นี้อยู่ ให้เขียนใหม่ทุกครั้งหลังก๊อบ หรือเก็บไว้ในไฟล์ที่อยู่นอกรายการที่ก๊อบ แล้วเอามาวางคืน</p>
+  </div>
+
+  <h3>เช็กว่าบริการขึ้นจริง</h3>
+
+  <p>ต้องเช็กจาก<b>ในตัว VM</b> เท่านั้น เพราะบริการอย่าง nginx ผูกกับไอพีจริงเจาะจง ไม่ได้ฟังทุกใบ ยิงจากข้างนอกเข้าวงจริงไม่ได้อยู่แล้วเพราะสะพานมันตัน</p>
+  <div class="code"><pre>systemctl --failed
+curl -sS -o /dev/null -w '%{http_code}\n' http://58.82.170.211/
+ss -lntp | head -20</pre></div>
+
+  <p>บรรทัดแรกต้องว่าง หรือเหลือแต่ตัวที่รู้อยู่แล้วว่าจะไม่ขึ้น</p>
+
+  <div class="tip">
+    <p><b>สะพานที่สร้างด้วย ovs-vsctl อยู่รอดข้าม reboot</b> เพราะ OVS เก็บของมันเองไว้ที่ <code class="inl">/etc/openvswitch/conf.db</code> ซึ่งเป็นคนละที่กับ <code class="inl">/etc/network/interfaces</code> ตัวที่ไม่รอดคือไอพีที่ใส่ด้วย <code class="inl">ip addr add</code> ถ้าอยากได้ถาวรจริงให้เขียนลงไฟล์ interfaces แทน</p>
+  </div>
+  <div class="code"><pre><span class="p">$ </span>cat &gt;&gt; /etc/network/interfaces &lt;&lt;'EOF'
+
+auto vmbr99
+iface vmbr99 inet manual
+    ovs_type OVSBridge
+    ovs_ports vlan99
+
+auto vlan99
+iface vlan99 inet static
+    address 192.168.99.1/24
+    ovs_type OVSIntPort
+    ovs_bridge vmbr99
+EOF
+<span class="p">$ </span>ifup vmbr99</pre></div>
+
+  <p>ทดสอบเสร็จแล้วเก็บกวาด สั่งบนตัว node</p>
+  <div class="code"><pre><span class="p">$ </span>qm set 9100 --delete net2
+<span class="p">$ </span>ovs-vsctl del-br vmbr99</pre></div>
+
+  <p>ของจริงที่ <code class="inl">ovs-vsctl show</code> บอก คือของจริง ถ้ามันยังเห็น <code class="inl">vmbr99</code> อยู่แปลว่ายังไม่ได้ลบ ไม่ว่าไฟล์ interfaces จะเขียนว่าอะไร</p>
+
+  <h3>หก ทดสอบเสร็จแล้ว ดับทิ้ง</h3>
+
+  <div class="code"><pre><span class="p">$ </span>qm shutdown 9100</pre></div>
+
+  <div class="warn">
+    <p><b>อย่าใช้งานจริงบน VM ตัวทดสอบ</b> อะไรที่พิมพ์เพิ่มเข้าไปตอนทดสอบ จะโดนลบทิ้งหมดตอนก๊อบรอบสุดท้ายในขั้นถัดไป มันเป็นสำเนาสำหรับดูเฉยๆ ตามตั้งใจ ของจริงยังอยู่ที่ CT ตัวเก่าเสมอ</p>
+  </div>
+
+  <h3>ของที่ต้องแก้คืนเอง กับของที่กลับมาเอง</h3>
+
+  <p>ตอนก๊อบรอบสุดท้ายในขั้นถัดไป ของเดิมจาก CT จะทับกลับมาให้เองเกือบหมด <b>ยกเว้นสองไฟล์ที่ตัวก๊อบข้ามไว้ตั้งแต่แรก</b> สองอันนี้ต้องแก้คืนด้วยมือ ไม่งั้นเครื่องจริงจะขึ้นมาแบบพิการ</p>
+
+  <table>
+    <tr><th>ที่แก้ไว้ตอนทดสอบ</th><th>รอบสุดท้ายจัดการให้มั้ย</th></tr>
+    <tr><td class="m">ifcfg-eth0</td><td>กลับเป็นไอพีจริงให้เอง</td></tr>
+    <tr><td class="m">rc3.d</td><td>บริการที่ตัดไป กลับมาเอง</td></tr>
+    <tr><td class="m">multi-user.target.wants</td><td>บริการที่ตัดไป กลับมาเอง</td></tr>
+    <tr><td class="m">คิวเมล</td><td>กลับมาเอง</td></tr>
+    <tr><td class="m">เลขเจ้าของไฟล์</td><td>เฟส 1 วัดใหม่แล้วลบส่วนที่บวกไว้ออกให้ทุกรอบ</td></tr>
+    <tr><td class="m">/etc/fstab</td><td><b>ไม่กลับ</b> ต้องเอา #C2VTEST# ออกเอง</td></tr>
+    <tr><td class="m">/boot</td><td><b>ไม่กลับ</b> ตัวก๊อบข้ามทั้งโฟลเดอร์ ถ้าเคยไปแก้ grub ไว้ก็ยังเป็นของที่แก้</td></tr>
+    <tr><td class="m">ifcfg-eth2</td><td><b>โดนลบ</b> เพราะ CT ไม่มีไฟล์นี้ ถ้ายังใช้ทาง ssh อยู่ต้องเขียนใหม่</td></tr>
+    <tr><td class="m">/etc/securetty</td><td><b>เสียหาย</b> บรรทัด ttyS0 หลุด ล็อกอินทางพอร์ตอนุกรมไม่ได้</td></tr>
+    <tr><td class="m">getty@tty1</td><td><b>เสียหาย</b> ทางลัดโดนลบ หน้าจอ noVNC จะดำ</td></tr>
+  </table>
+
+  <p>สามอันล่างสุดคือของที่เฟส 2 เป็นคนแก้ไว้ ไม่ใช่ของที่คุณแก้ตอนทดสอบ แต่มันอยู่ใน <code class="inl">/etc</code> เหมือนกันจึงโดนทับเหมือนกัน ทั้งสามอันแก้คืนได้ด้วยบรรทัดเดียวจากในตัว VM หลังก๊อบเสร็จ ไม่ต้องต่อแผ่น</p>
+  <div class="code"><pre>/root/c2v-inside.sh
+reboot</pre></div>
+
+  <p>คำสั่งแก้คืน ทำหลังก๊อบรอบสุดท้ายเสร็จ ก่อนเปิดเครื่องจริง</p>
+  <div class="code"><pre><span class="p">$ </span>LOOP=$(losetup -Pf --show "$(pvesm path tank-hdd-nas:9100/vm-9100-disk-0.raw)")
+<span class="p">$ </span>mount "${LOOP}p1" /mnt/c2v
+<span class="p">$ </span>sed -i 's@^#C2VTEST# @@' /mnt/c2v/etc/fstab
+<span class="p">$ </span>grep -Ev '^[[:space:]]*#' /mnt/c2v/etc/fstab
+<span class="p">$ </span>umount /mnt/c2v &amp;&amp; losetup -d "$LOOP"</pre></div>
+
+  <div class="tip">
+    <p><b>ถ้าเปิดไปแล้วโดยยังไม่ได้ตัดอะไรเลย</b> ยังกู้ได้ ดับทันทีแล้วเปิดใหม่แบบไม่ให้บริการไหนขึ้นเลย ด้วยการเติมคำว่า <code class="inl">single</code> ต่อท้ายบรรทัด kernel ที่หน้าเมนู boot จะได้หน้าจอ root เปล่าๆ ที่ไม่มีเน็ตและไม่มีงานตามเวลา เข้าไปแก้แล้วค่อย <code class="inl">telinit 3</code> วิธีเติมไม่เหมือนกันสองรุ่น</p>
+    <p><span class="rel el6">CentOS 6</span>กด <kbd>a</kbd> ที่เมนู แล้วพิมพ์ <code class="inl">single</code> ต่อท้ายบรรทัดที่โผล่มา กด Enter</p>
+    <p><span class="rel el7">CentOS 7</span>กด <kbd>e</kbd> ที่เมนู เลื่อนลงไปหาบรรทัดที่ขึ้นต้นด้วย <code class="inl">linux16</code> พิมพ์ <code class="inl">single</code> ต่อท้ายบรรทัดนั้น แล้วกด <kbd>Ctrl</kbd> + <kbd>X</kbd> ปุ่ม Enter ไม่ใช่ปุ่มสั่งบูตในเมนูนี้</p>
+  </div>
+</section>
+
+<section id="s5">
+  <div class="eyebrow"><span class="num">6</span><h2>ย้ายจริง</h2></div>
+
+  <p class="lead">ถึงตรงนี้ VM boot ได้แล้ว เหลือแค่ก๊อบข้อมูลรอบสุดท้ายแล้วสลับตัว ช่วงนี้บริการจะดับ ยาวเท่ากับเวลาก๊อบส่วนที่เปลี่ยน</p>
+
+  <p><b>หนึ่ง</b> ดับ CT ตัวเก่า พิมพ์บนเครื่องเก่า</p>
+  <div class="code"><pre><span class="p">$ </span>ssh root@10.100.1.11
+<span class="p">$ </span>pct shutdown 100
+<span class="p">$ </span>pct status 100</pre></div>
+
+  <p><b>สอง</b> กลับมาที่ node ใหม่ ก๊อบรอบสุดท้ายด้วย <code class="inl">--stopped</code></p>
+  <div class="code"><pre><span class="p">$ </span>./tools/c2v-prepare.sh \
+    --old-node 10.100.1.11 \
+    --old-ctid 100 \
+    --vmid 9100 \
+    --storage tank-hdd-nas \
+    --iso local:iso/CentOS-7-x86_64-DVD-2009.iso \
+    --stopped</pre></div>
+
+  <div class="tip">
+    <p><b>รอบนี้ไม่ทับ kernel ที่เพิ่งลงไป</b> เพราะตัวก๊อบข้าม <code class="inl">/boot</code> กับ <code class="inl">/etc/fstab</code> ไว้ตั้งแต่แรก จะรันก่อนหรือหลังเฟส 2 ก็ปลอดภัยเท่ากัน</p>
+  </div>
+
+  <p><b>สาม</b> <b>เฉพาะคนที่ทำขั้น 5 มา</b> แก้ <code class="inl">/etc/fstab</code> คืน ถ้าไม่ได้ทำขั้น 5 ให้ข้ามไปข้อสี่</p>
+  <div class="code"><pre><span class="p">$ </span>LOOP=$(losetup -Pf --show "$(pvesm path tank-hdd-nas:9100/vm-9100-disk-0.raw)")
+<span class="p">$ </span>mkdir -p /mnt/c2v &amp;&amp; mount "${LOOP}p1" /mnt/c2v
+<span class="p">$ </span>sed -i 's@^#C2VTEST# @@' /mnt/c2v/etc/fstab
+<span class="p">$ </span>grep -Ev '^[[:space:]]*#' /mnt/c2v/etc/fstab
+<span class="p">$ </span>umount /mnt/c2v &amp;&amp; losetup -d "$LOOP"</pre></div>
+
+  <div class="warn">
+    <p><b>ไอพีทดสอบกับบริการที่ตัดไป ไม่ต้องแก้คืน</b> ข้อสองทับกลับมาให้เองแล้ว แต่ <code class="inl">/etc/fstab</code> อยู่ในรายการที่ตัวก๊อบข้ามเสมอ มันจึงยังค้างเป็น <code class="inl">#C2VTEST#</code> อยู่ ลืมข้อนี้แล้วเครื่องจริงจะขึ้นมาโดยไม่มีที่เก็บข้อมูลจากเครื่องอื่น</p>
+  </div>
+
+  <p><b>สี่</b> ใส่การ์ดเน็ตให้ VM แล้วเปิด <b>ต้องใส่ให้ครบทุกใบที่ CT เคยมี</b> เฟส 1 พิมพ์บรรทัดที่ถูกต้องไว้ให้แล้วตอนจบ ก๊อบมาจากตรงนั้นดีที่สุด อย่านึกเอง ตัวอย่างของเครื่องที่มีสองใบและใบแรกเป็น jumbo</p>
+  <div class="code"><pre><span class="p">$ </span>qm set 9100 --net0 virtio,bridge=vmbr0,mtu=9000
+<span class="p">$ </span>qm set 9100 --net1 virtio,bridge=vmbr1,tag=255
+<span class="p">$ </span>qm start 9100
+<span class="p">$ </span>qm terminal 9100</pre></div>
+
+  <div class="warn">
+    <p><b>ขาดการ์ดไปใบหนึ่ง ไม่ได้แปลว่าเสียแค่ใบนั้น</b> ไฟล์ตั้งค่าของใบที่หายยังอยู่ในเครื่อง บริการที่ผูกกับไอพีของใบนั้นจะพยายาม bind แล้วตายด้วยรหัส 99 ทั้งที่อีกใบทำงานปกติ อาการที่เห็นคือเว็บบางตัวขึ้นบางตัวไม่ขึ้น ซึ่งอ่านเหมือนปัญหาเส้นทางแต่ไม่ใช่ ค่า <code class="inl">mtu</code> กับ <code class="inl">tag</code> ก็ต้องตรงของเดิมด้วย ไม่งั้นได้เครื่องที่ดูดีแต่ส่งข้อมูลก้อนใหญ่ไม่ผ่าน</p>
+  </div>
+
+  <div class="stop">
+    <p><b>ก่อนเช็กอย่างอื่น รันบรรทัดนี้ในหน้า console ของ VM ก่อนเสมอ</b> การก๊อบรอบสุดท้ายเอา <code class="inl">/etc</code> จาก CT กลับมาทับทั้งชุด ของที่เฟส 2 เคยแก้ไว้ในนั้นหายไปหมด — <code class="inl">HWADDR</code> กลับเข้ามาในไฟล์ ifcfg ทุกใบ, <code class="inl">ttyS0</code> หลุดจาก <code class="inl">/etc/securetty</code>, ทางลัดของ <code class="inl">getty@tty1</code> โดนลบ ผลคือการ์ดไม่ขึ้นสักใบและหน้าจอดำ ทั้งที่เมื่อวานทดสอบผ่านหมด</p>
+  </div>
+  <div class="code"><pre>/root/c2v-inside.sh
+reboot</pre></div>
+
+  <p>สั้นแบบนี้เพราะออกแบบมาให้พิมพ์เองได้ในหน้า console ที่วางข้อความไม่ได้ ปกติรอบนี้จะเห็นว่า kernel กับ boot loader ลงไว้แล้ว เลยข้ามขั้นที่ใช้เวลานานทั้งหมด ใช้เวลาไม่กี่วินาที</p>
+
+  <div class="warn">
+    <p><b>ยกเว้นตอนที่เฟส 1 ขึ้น WARN ว่ามีของหาย</b> ให้ดูบรรทัดท้ายๆ ของเฟส 1 ก่อนกดเปิดเครื่องเสมอ ถ้ามันบอกว่า <code class="inl">this image has a kernel in /boot but not: ...</code> แปลว่าของที่เฟส 2 เคยลงไว้โดนก๊อบรอบนี้ลบไป มันจะใส่แผ่นกลับเข้าไปในไดรฟ์ให้เองแล้วยังบูตจากดิสก์เหมือนเดิม รอบนี้ <code class="inl">c2v-inside.sh</code> จะกลับไปลงจากแผ่นใหม่ ใช้เวลาเป็นนาที ไม่ใช่วินาที ถ้ามันบอกว่า <code class="inl">phase 2's kernel, bootloader and dracut all survived the sync</code> ก็คือปกติ</p>
+  </div>
+
+  <div class="tip">
+    <p>ของที่<b>ไม่</b>โดนทับกลับมี <code class="inl">/boot</code>, <code class="inl">/etc/fstab</code>, <code class="inl">/etc/mtab</code>, <code class="inl">70-persistent-net.rules</code>, ตัว boot loader ที่อยู่นอกระบบไฟล์ และของสามอย่างที่เฟส 2 ลงไว้เอง คือ <code class="inl">/lib/modules</code>, grub และ dracut เพราะทั้งหมดอยู่ในรายการที่ตัวก๊อบข้ามไว้ตั้งแต่แรก ส่วน <code class="inl">/root/c2v-inside.sh</code> เฟส 1 วางให้ใหม่ทุกรอบอยู่แล้ว จึงเป็นรุ่นล่าสุดเสมอ</p>
+  </div>
+
+  <p><b>ห้า</b> เช็กในตัว VM ว่าไอพีขึ้นแล้ว</p>
+  <div class="code"><pre>ip addr show eth0
+ping -c 3 10.100.1.1</pre></div>
+
+  <p>ถ้าไอพียังไม่ขึ้น สั่งบรรทัดนี้ในตัว VM แล้วดูใหม่</p>
+  <div class="code"><pre>service network restart</pre></div>
+
+  <p><span class="rel el7">CentOS 7</span>ถ้าบรรทัดบนตอบว่าไม่รู้จักบริการชื่อ network แปลว่าเครื่องนี้ไม่ได้ลง initscripts ไว้ ให้ใช้บรรทัดนี้แทน</p>
+  <div class="code"><pre>systemctl restart NetworkManager
+nmcli device reapply eth0</pre></div>
+
+  <p>ถ้ายังไม่ขึ้นอีก ดูว่าชื่อการ์ดยังเป็น <code class="inl">eth0</code> อยู่จริงไหม เพราะไฟล์ตั้งค่าที่ก๊อบมาจาก CT ตั้งชื่อนี้ไว้ชื่อเดียว</p>
+  <div class="code"><pre>ip -o link show
+cat /proc/cmdline</pre></div>
+
+  <p>บรรทัดล่างต้องมีคำว่า <code class="inl">net.ifnames=0</code> กับ <code class="inl">biosdevname=0</code> อยู่ ถ้าไม่มี ชื่อการ์ดจะกลายเป็น <code class="inl">ens18</code> แล้วไฟล์ <code class="inl">ifcfg-eth0</code> จะไม่ถูกใช้เลย แก้โดยกลับไปรันเฟส 2 ใหม่ อย่าไปแก้ชื่อไฟล์ให้ตรงกับ ens18 เพราะรอบก๊อบถัดไปมันจะทับกลับมาเป็น eth0 อีก</p>
+
+  <p><b>หก</b> ให้มันเปิดเองตอน node บูต แล้วปิด CT เก่าไม่ให้เปิดเองด้วย</p>
+  <div class="code"><pre><span class="p">$ </span>qm set 9100 --onboot 1</pre></div>
+  <div class="code"><pre><span class="p">$ </span>ssh root@10.100.1.11 pct set 100 --onboot 0</pre></div>
+
+  <div class="warn">
+    <p><b>อย่าเพิ่งลบ CT เก่า</b> ทิ้งไว้แบบดับๆ อย่างน้อยสองสามวัน มันคือ rollback ทางเดียวที่มี ถ้าต้องถอย แค่ดับ VM แล้วเปิด CT เก่ากลับ</p>
+  </div>
+</section>
+
+<section id="all">
+  <div class="eyebrow"><span class="num">7</span><h2>คำสั่งทั้งหมดรวดเดียว</h2></div>
+
+  <p class="lead">สำหรับตอนที่ทำเป็นแล้ว ตั้งค่า 5 บรรทัดบนสุดครั้งเดียว ที่เหลือก๊อบวางทีละท่อน</p>
+
+  <div class="code"><pre>OLD=10.100.1.11
+CTID=100
+VMID=9100
+STOR=tank-hdd-nas
+ISO=local:iso/CentOS-7-x86_64-DVD-2009.iso   <span class="c"># must match the CT's own release</span>
+LABIP=192.168.99.10   <span class="c"># lab-only NIC for ssh. the real IPs stay untouched</span>
+
+cd ~/ct-migrate
+
+<span class="c"># phase 1 - copy the rootfs</span>
+./tools/c2v-prepare.sh --old-node $OLD --old-ctid $CTID --vmid $VMID \
+  --storage $STOR --iso $ISO --dry-run
+./tools/c2v-prepare.sh --old-node $OLD --old-ctid $CTID --vmid $VMID \
+  --storage $STOR --iso $ISO --bwlimit 500000
+
+<span class="c"># phase 2 - open the web console and boot the ISO into its rescue mode:</span>
+<span class="c">#           EL6:  type   linux rescue           at the boot prompt</span>
+<span class="c">#           EL7:  choose Troubleshooting &gt; Rescue a CentOS system &gt; 1) Continue</span>
+<span class="c">#           both: mount READ/WRITE, then in the rescue shell one line -</span>
+<span class="c">#           it binds the DVD onto the image and chroots itself:</span>
+<span class="c">#             /mnt/sysimage/root/c2v-inside.sh</span>
+<span class="c">#             exit</span>
+qm start $VMID
+
+<span class="c"># first real boot</span>
+qm stop $VMID
+qm set $VMID --delete ide2
+qm set $VMID --boot order=virtio0
+qm start $VMID
+qm terminal $VMID
+qm shutdown $VMID
+
+<span class="c"># OPTIONAL - test on a dead-end bridge while the CT keeps running.</span>
+<span class="c"># everything up to 'qm start' MUST be done before the VM is ever</span>
+<span class="c"># given a NIC. do not chroot into /mnt/c2v: on EL6 it segfaults, and</span>
+<span class="c"># on EL7 systemctl there talks to the node's systemd, not the image.</span>
+qm stop $VMID
+LOOP=$(losetup -Pf --show "$(pvesm path $STOR:$VMID/vm-$VMID-disk-0.raw)")
+mkdir -p /mnt/c2v &amp;&amp; mount "${LOOP}p1" /mnt/c2v
+
+<span class="c">#   look first - add anything you see here to the list below.</span>
+<span class="c">#   EL6 answers on the first line, EL7 on the second</span>
+ls -1 /mnt/c2v/etc/rc.d/rc3.d/S* | sed 's#.*/S[0-9]*##'
+ls -1 /mnt/c2v/etc/systemd/system/multi-user.target.wants/ | sed 's/\.service$//'
+cat /mnt/c2v/var/spool/cron/* 2&gt;/dev/null
+grep -Ev '^[[:space:]]*#' /mnt/c2v/etc/fstab | grep -E 'nfs|cifs|gluster'
+
+<span class="c">#   then cut - both lines are harmless on the release that does not use them</span>
+for s in crond postfix sendmail zabbix-agent nrpe snmpd collectd \
+         bacula-fd bareos-fd keepalived heartbeat puppet salt-minion; do
+  rm -f /mnt/c2v/etc/systemd/system/multi-user.target.wants/$s.service
+  rm -f /mnt/c2v/etc/rc.d/rc[2345].d/S[0-9][0-9]$s
+done
+sed -i -E 's@^([^#].*[[:space:]](nfs|nfs4|cifs|glusterfs)[[:space:]].*)$@#C2VTEST# \1@' \
+  /mnt/c2v/etc/fstab
+rm -f /mnt/c2v/var/spool/postfix/deferred/* \
+      /mnt/c2v/var/spool/postfix/active/* 2&gt;/dev/null
+
+umount /mnt/c2v &amp;&amp; losetup -d "$LOOP"
+
+<span class="c">#   a bridge with no physical port. nothing can leave it, so the VM may</span>
+<span class="c">#   carry the CT's own addresses with no chance of a clash - which is the</span>
+<span class="c">#   only way nginx binds at all. one qm set per NIC the CT had; mtu and</span>
+<span class="c">#   tag are the ones phase 1 printed, only the bridge name changes</span>
+ovs-vsctl add-br vmbr99
+qm set $VMID --net0 virtio,bridge=vmbr99,mtu=9000,firewall=0
+qm set $VMID --net1 virtio,bridge=vmbr99,tag=255,firewall=0
+
+<span class="c">#   a leg into that bridge for the node itself, so you get ssh instead of</span>
+<span class="c">#   a console that cannot paste. tag and mtu must match on both ends or</span>
+<span class="c">#   the two legs are on different VLANs and nothing answers</span>
+ovs-vsctl add-port vmbr99 vlan99 -- set interface vlan99 type=internal
+ovs-vsctl set port vlan99 tag=99
+ip link set vlan99 mtu 9000 up
+ip addr add 192.168.99.1/24 dev vlan99
+qm set $VMID --net2 virtio,bridge=vmbr99,tag=99,mtu=9000,firewall=0
+
+qm start $VMID
+qm terminal $VMID
+
+<span class="c"># inside the VM, typed by hand, once. check which machine you are on</span>
+<span class="c"># first - the CT answers to the same hostname. kvm is the VM, lxc is</span>
+<span class="c"># the live CT and you must not write anything there</span>
+<span class="c">#   systemd-detect-virt</span>
+<span class="c">#   cd /etc/sysconfig/network-scripts</span>
+<span class="c">#   printf 'DEVICE=eth2\nONBOOT=yes\nBOOTPROTO=none\n' &gt; ifcfg-eth2</span>
+<span class="c">#   printf 'IPADDR=192.168.99.10\nNETMASK=255.255.255.0\n' &gt;&gt; ifcfg-eth2</span>
+<span class="c">#   service network restart</span>
+
+ssh root@$LABIP
+qm shutdown $VMID
+
+<span class="c"># tear the lab down before go-live. ovs-vsctl show is the truth here,</span>
+<span class="c"># not /etc/network/interfaces</span>
+qm set $VMID --delete net2
+ovs-vsctl del-br vmbr99
+
+<span class="c"># cutover</span>
+ssh root@$OLD pct shutdown $CTID
+ssh root@$OLD pct status $CTID
+./tools/c2v-prepare.sh --old-node $OLD --old-ctid $CTID --vmid $VMID \
+  --storage $STOR --iso $ISO --stopped
+
+<span class="c"># only if you did the optional test above: fstab is never overwritten</span>
+<span class="c"># by the sync, so the #C2VTEST# comments are still in there</span>
+LOOP=$(losetup -Pf --show "$(pvesm path $STOR:$VMID/vm-$VMID-disk-0.raw)")
+mount "${LOOP}p1" /mnt/c2v
+sed -i 's@^#C2VTEST# @@' /mnt/c2v/etc/fstab
+grep -Ev '^[[:space:]]*#' /mnt/c2v/etc/fstab
+umount /mnt/c2v &amp;&amp; losetup -d "$LOOP"
+
+qm start $VMID
+qm terminal $VMID
+
+<span class="c"># inside the VM, typed by hand. this last sync brought /etc back from</span>
+<span class="c"># the container, so every VM-only edit phase 2 made in there is gone -</span>
+<span class="c"># ttyS0 out of securetty, HWADDR back in the ifcfg files. normally it</span>
+<span class="c"># finds the kernel, the bootloader and dracut still installed and skips</span>
+<span class="c"># the whole DVD step. read the tail of phase 1 first: if it warned that</span>
+<span class="c"># something is missing it has put the ISO back in the drive, and this</span>
+<span class="c"># run reinstalls from it instead</span>
+<span class="c">#   /root/c2v-inside.sh</span>
+<span class="c">#   reboot</span>
+
+<span class="c"># only once it boots clean, and only once the old CT is stopped. one</span>
+<span class="c"># line per NIC the CT had - phase 1 printed them at the end of its run</span>
+<span class="c"># with the bridge, mtu and tag already filled in. a missing NIC does</span>
+<span class="c"># not just lose that NIC, it kills every service bound to its address</span>
+qm set $VMID --net0 virtio,bridge=vmbr0,mtu=9000
+qm set $VMID --net1 virtio,bridge=vmbr1,tag=255
+qm reboot $VMID
+
+<span class="c"># after it is up and you are happy</span>
+qm set $VMID --onboot 1
+ssh root@$OLD pct set $CTID --onboot 0</pre></div>
+</section>
+
+<section id="trouble">
+  <div class="eyebrow"><span class="num">8</span><h2>เจอแบบนี้ทำยังไง</h2></div>
+
+  <h3>บูตขึ้น ล็อกอินได้ ทุกอย่างดูปกติ แต่บริการตายเกือบหมด</h3>
+
+  <p class="lead">อันนี้อ่านยากที่สุดในเอกสารทั้งฉบับ เพราะไม่มีอะไรดูเสียเลยสักอย่าง <b>ถ้าย้ายมาจาก CT ที่เป็น unprivileged ให้สงสัยข้อนี้ก่อนข้ออื่นเสมอ</b></p>
+
+  <p>อาการคือเปิดเครื่องแล้วผ่านหมด ล็อกอินได้ <code class="inl">ls</code> ได้ <code class="inl">df</code> ได้ ข้อมูลอยู่ครบ แต่ <code class="inl">systemctl --failed</code> ยาวเป็นหางว่าว และเกือบทุกตัวบ่นเรื่องเดียวกัน</p>
+  <div class="code"><pre>systemctl --failed
+nginx -t</pre></div>
+  <div class="out">nginx: [emerg] open() "/var/log/nginx/error.log" failed (30: Read-only file system)</div>
+
+  <p>เลข <code class="inl">30</code> คือหัวใจ มันแปลว่าเขียนไม่ได้ เพราะระบบไฟล์หลักยังถูกเมาท์แบบอ่านอย่างเดียวอยู่ ตรวจสองบรรทัดนี้</p>
+  <div class="code"><pre>mount | grep ' / '
+systemctl status systemd-remount-fs</pre></div>
+
+  <p>ตัวที่มีหน้าที่เปลี่ยนระบบไฟล์หลักให้เขียนได้ตอนบูต คือ <code class="inl">systemd-remount-fs</code> มันจะขึ้นว่า failed ลองสั่งมือดู</p>
+  <div class="code"><pre>mount -o remount,rw /</pre></div>
+  <div class="out">mount: only root can use "--options" option (effective UID is 100000)</div>
+
+  <p>ทั้งที่ <code class="inl">id</code> ตอบว่าเป็น root ชัดเจน ตรงนี้คือจุดที่ทุกคนงง คำตอบอยู่ที่บรรทัดนี้</p>
+  <div class="code"><pre>id
+ls -l /bin/mount /bin/su</pre></div>
+  <div class="out">-rwsr-xr-x 1 100000 100000 44K /bin/mount</div>
+
+  <h4>ทำไมถึงเป็นแบบนั้น</h4>
+
+  <p>CT แบบ unprivileged เก็บไฟล์ทุกไฟล์ด้วยเลขเจ้าของที่<b>ถูกบวกไว้แล้ว</b>ตามตารางแปลงของ kernel ค่ามาตรฐานของ PVE คือบวกหนึ่งแสน แปลว่า root ข้างใน CT ซึ่งเห็นตัวเองเป็นเลข 0 พอมองจากฝั่ง host จริงๆ แล้วไฟล์นั้นเป็นของเลข <code class="inl">100000</code> บน PVE 6 ตัวเลขนี้อยู่ในไฟล์จริงๆ ไม่ได้แปลงตอนอ่าน</p>
+
+  <p><b>VM ไม่มีตารางแปลงนั้น</b> เลขที่ติดมาจึงเป็นเลขที่ใช้ตรงๆ พูดสั้นๆ คือ root ของ CT คือ 100000 ส่วน root ของ VM คือ 0 ก๊อบข้ามมาเฉยๆ เลขไม่ตรงกัน</p>
+
+  <p>แล้วทำไมยัง <code class="inl">ls</code> ได้ทั้งที่เจ้าของไฟล์ผิดหมด เพราะ root ยังถือสิทธิ์ข้ามการตรวจเจ้าของไฟล์อยู่ ทุกอย่างที่เป็นการอ่านเขียนธรรมดาจึงผ่านหมด <b>นี่คือเหตุผลที่มันซ่อนตัวได้เก่งขนาดนี้</b></p>
+
+  <p>สิ่งที่พังคือโปรแกรมกลุ่ม setuid โปรแกรมพวกนี้ตอนรันจะไปหยิบสิทธิ์<b>จากเลขเจ้าของของตัวไฟล์</b> ไม่ได้หยิบจากคนที่สั่ง ปกติ <code class="inl">/bin/mount</code> เป็นของเลข 0 ใครสั่งก็กลายเป็น 0 แต่ตอนนี้มันเป็นของเลข 100000 root สั่งแล้วเลย<b>ถูกลดสิทธิ์</b>ลงไปเป็น 100000 แทน <code class="inl">mount</code> เลยปฏิเสธ</p>
+
+  <p>จากตรงนั้นลูกโซ่ก็ครบ kernel เมาท์ระบบไฟล์หลักแบบอ่านอย่างเดียวมาตั้งแต่แรกตามปกติ ตัวที่จะมาเปลี่ยนให้เขียนได้เรียก <code class="inl">mount</code> ไม่สำเร็จ ระบบไฟล์เลยอ่านอย่างเดียวตลอดกาล แล้วทุกบริการที่ต้องเขียนตอนเปิดก็ตายด้วยรหัส 30 เหมือนกันหมด</p>
+
+  <h4>แก้ยังไง</h4>
+
+  <p>ปัญหาไก่กับไข่คือจะแก้เจ้าของไฟล์ต้องเขียนได้ก่อน แต่ตอนนี้เขียนไม่ได้ ทางออกคือสั่ง kernel ให้เมาท์แบบเขียนได้ตั้งแต่แรก ไม่ต้องพึ่งตัวที่พัง สั่ง <code class="inl">reboot</code> แล้วที่หน้าเมนู boot</p>
+
+  <p><span class="rel el7">CentOS 7</span>กด <kbd>e</kbd> เลื่อนไปหาบรรทัดที่ขึ้นต้นด้วย <code class="inl">linux16</code> ต่อท้ายบรรทัดนั้นด้วยคำว่า <code class="inl">rw</code> แล้วกด <kbd>Ctrl</kbd> + <kbd>X</kbd></p>
+  <p><span class="rel el6">CentOS 6</span>กด <kbd>a</kbd> แล้วพิมพ์ <code class="inl">rw</code> ต่อท้ายบรรทัดที่โผล่มา กด Enter</p>
+
+  <p>คราวนี้จะได้ระบบไฟล์ที่เขียนได้ พอล็อกอินแล้วสั่งบรรทัดเดียวจบ เฟส 2 รุ่นใหม่ตรวจเรื่องนี้เป็นอย่างแรกและแก้ให้เอง</p>
+  <div class="code"><pre>/root/c2v-inside.sh
+reboot</pre></div>
+
+  <p>รอบนี้บูตปกติได้เลย ไม่ต้องไปแตะเมนู เพราะ <code class="inl">mount</code> กลับมาเป็นของเลข 0 แล้ว</p>
+
+  <div class="tip">
+    <p><b>ถ้าไฟล์ c2v-inside.sh ในเครื่องเป็นรุ่นเก่าที่ยังไม่มีขั้นนี้</b> แก้มือได้ สองบรรทัด สั้นพอจะพิมพ์เองในหน้า console ที่ paste ไม่ได้</p>
+  </div>
+  <div class="code"><pre>find / -xdev -uid 100000 -exec chown -h 0 {} +
+find / -xdev -gid 100000 -exec chgrp -h 0 {} +</pre></div>
+
+  <p>สองบรรทัดนี้แก้เฉพาะของที่เป็นของ root ซึ่งพอให้เครื่องกลับมาใช้งานได้ แต่ผู้ใช้อื่นเช่น mysql หรือ apache จะยังเป็นเลขที่บวกไว้อยู่ ให้ตามเก็บทีละเลข เอาเลขจากบรรทัดแรก</p>
+  <div class="code"><pre>find / -xdev -printf '%U\n' | sort -un
+find / -xdev -uid 100027 -exec chown -h 27 {} +</pre></div>
+
+  <p>ไล่จากเลขน้อยไปมากเสมอ เพราะทุกเลขมีแต่ลดลง ตัวที่แก้ไปแล้วจึงไม่มีทางโดนหยิบซ้ำในรอบหลัง</p>
+
+  <div class="warn">
+    <p><b>อย่าลืมกลับไปแก้ที่ต้นทางด้วย</b> ที่แก้ในตัว VM คือแก้ปลายเหตุ ถ้าเฟส 1 บนเครื่อง host ยังเป็นรุ่นเก่า พอก๊อบรอบถัดไปเลขจะกลับมาบวกใหม่ทั้งเครื่อง เอาชุด <code class="inl">tools/</code> รุ่นใหม่ขึ้นไปทับแล้วรันเฟส 1 อีกรอบ รุ่นใหม่จะวัดค่าที่บวกไว้เองจากตัว image แล้วลบออกให้ทุกครั้งหลังก๊อบเสร็จ พร้อมตรวจซ้ำว่าไม่เหลือค้าง ถ้ายังเหลือมันจะหยุดและไม่ยอมให้ไปต่อ</p>
+  </div>
+
+  <p>ถ้าอยากรู้ว่า CT ต้นทางเป็นแบบไหน ดูจากเครื่องเก่า มีบรรทัด <code class="inl">unprivileged: 1</code> คือใช่</p>
+  <div class="code"><pre><span class="p">$ </span>pct config 140 | grep -E 'unprivileged|idmap'</pre></div>
+
+  <h3>หน้าจอค้างที่คำว่า GRUB หรือขึ้น No bootable device</h3>
+  <p>ตัว boot loader ไม่ได้ลง เฟส 2 ไม่จบ ให้เอาแผ่นกลับมาต่อแล้วทำเฟส 2 ใหม่ ต้องเป็นแผ่นรุ่นเดียวกับ CT เหมือนเดิม บรรทัดล่างนี้เป็นตัวอย่างของรุ่น 7</p>
+  <div class="code"><pre><span class="p">$ </span>qm stop 9100
+<span class="p">$ </span>qm set 9100 --ide2 local:iso/CentOS-7-x86_64-DVD-2009.iso,media=cdrom
+<span class="p">$ </span>qm set 9100 --boot 'order=ide2;virtio0'
+<span class="p">$ </span>qm start 9100</pre></div>
+
+  <h3>เฟส 2 ขึ้นคำว่า is not EL6 หรือบอกให้ใส่แผ่น CentOS 6 ทั้งที่เครื่องเป็นรุ่น 7</h3>
+  <p>ไฟล์ <code class="inl">/root/c2v-inside.sh</code> ในเครื่องนั้นเป็นของเก่า รุ่นที่ยังไม่รู้จัก CentOS 7 <b>อย่าปล่อยให้มันทำต่อ</b> ถ้ามันหาแผ่นเจอขึ้นมา มันจะลง grub 0.97 ทับระบบรุ่น 7 ซึ่งพังกว่าเดิม เพราะของเดิมก็เสียไปด้วย</p>
+  <p>ดูตรงวงเล็บเหลี่ยมในบรรทัดแรกที่มันพิมพ์ออกมา นั่นคือวันที่ของตัวโปรแกรม ถ้าไม่มีวงเล็บนั้นเลย แปลว่าเก่ากว่าทุกรุ่นที่เอกสารนี้พูดถึง</p>
+  <p>ต้นเหตุอยู่ที่เครื่อง host ไม่ใช่ที่ VM เพราะเฟส 1 เป็นคนวางไฟล์นี้ลงไป แปลว่าโฟลเดอร์ <code class="inl">tools/</code> บนเครื่องที่รันเฟส 1 ยังเป็นชุดเก่า ให้ก๊อบชุดใหม่ขึ้นไปทับ แล้วรันเฟส 1 อีกรอบ มันวางไฟล์ให้ใหม่ทุกรอบอยู่แล้ว รอบนี้เร็วเพราะก๊อบเฉพาะส่วนต่าง ระหว่างนั้นปิดหน้าจอ rescue ทิ้งไว้ได้เลย ยังไม่ต้องทำอะไร</p>
+  <div class="warn">
+    <p>ถ้า image ก้อนนั้นถูกสร้างด้วยชุดเก่า ป้ายชื่อของมันจะเป็น <code class="inl">c6root</code> ไม่ใช่ <code class="inl">c7root</code> พอรันเฟส 1 ชุดใหม่ทับ โปรแกรมจะหยุดแล้วบอกให้ใส่ <code class="inl">--label c6root</code> ใส่ตามนั้นถ้าจะใช้ก้อนเดิมต่อ หรือถ้าอยากเริ่มใหม่ให้สะอาด สั่ง <code class="inl">qm destroy</code> แล้วรันเฟส 1 ตั้งแต่ต้น ไม่ต้องใส่ <code class="inl">--label</code></p>
+  </div>
+
+  <h3>รันซ้ำในเครื่องที่บูตขึ้นมาปกติ แล้วมันบอกว่า no install media at /mnt/source</h3>
+
+  <p class="lead"><b>ไม่ใช่เรื่องแผ่น</b> เครื่องนี้บูตได้ ล็อกอินได้ แต่ของที่เฟส 2 เคยลงไว้ให้ ตอนนี้ไม่มีแล้ว <code class="inl">c2v-inside.sh</code> เห็นว่าไม่มี boot loader เลยจะกลับไปลงใหม่จากแผ่น แล้วในไดรฟ์ไม่มีแผ่น มันจึงหยุดตรงนั้น ข้อความที่ขึ้นเป็นผลของอาการ ไม่ใช่ตัวอาการ</p>
+
+  <p>เช็กด้วยบรรทัดเดียว พิมพ์ได้ในหน้า console</p>
+  <div class="code"><pre>ls /lib/modules; command -v dracut grub2-install</pre></div>
+
+  <p>ถ้าไม่ขึ้นอะไรเลย ตรงกับอาการนี้ <b>และแปลว่า kernel ที่กำลังรันอยู่ตอนนี้ไม่มี module ให้โหลดสักตัว</b> ซึ่งอันตรายกว่าตัวข้อความมาก เพราะเครื่องยังดูดีทุกอย่างจนกว่าจะไปเจอของที่ต้องใช้ module</p>
+
+  <h4>ทำไมถึงเป็นแบบนั้น</h4>
+
+  <p>CT ไม่มี kernel ไม่มี grub ไม่มี dracut เพราะไม่ต้องใช้ ของสามอย่างนี้เฟส 2 เป็นคนลงเข้าไปในภาพดิสก์เอง พอสั่งก๊อบรอบถัดไป ตัวก๊อบทำงานแบบ <code class="inl">--delete</code> คือทำให้ปลายทางเหมือนต้นทาง มันจึงลบสามอย่างนั้นทิ้ง เพราะต้นทางไม่มี ส่วน <code class="inl">/boot</code> อยู่ในรายการข้ามอยู่แล้ว เครื่องเลย<b>ยังบูตได้ตามปกติ</b> นี่คือเหตุผลที่ไม่มีใครทันสังเกต</p>
+
+  <p>รุ่นตั้งแต่ที่แก้แล้วเป็นต้นไป สามอย่างนี้อยู่ในรายการข้ามด้วย และเฟส 1 จะเช็กให้ทุกรอบหลังก๊อบเสร็จ ถ้าหายมันจะขึ้น <code class="inl">WARN: this image has a kernel in /boot but not: ...</code> แล้วใส่แผ่นกลับเข้าไปในไดรฟ์ให้เอง</p>
+
+  <h4>แก้ยังไง</h4>
+
+  <p>ไม่ต้องบูตโหมด rescue รันเฟส 1 ใหม่ด้วยสคริปต์รุ่นที่แก้แล้ว มันจะเจอเองว่าอะไรหายแล้วต่อแผ่นกลับให้ โดยที่ลำดับการบูตยังเป็นดิสก์มาก่อนเหมือนเดิม</p>
+  <div class="code"><pre><span class="p">$ </span>./tools/c2v-prepare.sh --old-node 10.100.1.11 --old-ctid 100 \
+  --vmid 9100 --storage tank-hdd-nas --iso local:iso/CentOS-7-x86_64-DVD-2009.iso</pre></div>
+
+  <p>แล้วเปิดเครื่องตามปกติ ไม่ต้องเลือกอะไรที่หน้าจอบูต เข้าไปรันซ้ำ รอบนี้มันจะเจอ <code class="inl">/dev/sr0</code> แล้วลงกลับให้ครบ</p>
+  <div class="code"><pre><span class="p">$ </span>qm start 9100
+<span class="p">$ </span>qm terminal 9100</pre></div>
+  <div class="code"><pre>/root/c2v-inside.sh
+reboot</pre></div>
+
+  <p>พอเสร็จแล้วเช็กบรรทัดเดิมซ้ำอีกที ต้องขึ้นครบทั้งสามอย่าง</p>
+  <div class="code"><pre>ls /lib/modules; command -v dracut grub2-install</pre></div>
+
+  <h3>ในโหมด rescue แล้วมันบอกว่า no install media at /mnt/source</h3>
+  <p>คนละเรื่องกับข้อบน อันนี้เป็นเรื่องแผ่นจริงๆ ในโหมด rescue ของรุ่น 7 แผ่นถูกเมาท์ไว้ที่ <code class="inl">/run/install/repo</code> ซึ่งมองไม่เห็นจากใน chroot ตัวโปรแกรมเลยไปหาไดรฟ์เอาเองแล้วเมาท์ซ้ำ ถ้ายังไม่ได้แปลว่าในนั้นไม่มีไดรฟ์ให้เห็น เช็กก่อนว่ามีจริงไหม</p>
+  <div class="code"><pre>ls -l /dev/sr0</pre></div>
+  <p>ถ้าเจออาการนี้แปลว่าเข้า chroot เองมาก่อน ให้ออกมาแล้วเรียกจากข้างนอกแทน บรรทัดเดียวจบ มันผูกทั้งแผ่นและ <code class="inl">/dev</code> <code class="inl">/proc</code> <code class="inl">/sys</code> ให้เอง</p>
+  <div class="code"><pre>exit
+/mnt/sysimage/root/c2v-inside.sh</pre></div>
+  <p>ถ้ารันจากข้างนอกแล้วมันยังบอกว่าหาแผ่นไม่เจอ แปลว่าไม่มีแผ่นอยู่ในเครื่องจริงๆ ไม่ใช่เรื่องมองไม่เห็น ดูสองบรรทัดนี้ประกอบ</p>
+  <div class="code"><pre>ls -l /dev/sr0
+grep iso9660 /proc/mounts</pre></div>
+  <p>ว่างทั้งคู่คือลืมต่อแผ่นให้ VM ตั้งแต่แรก ต้องกลับไปสั่งที่ host แล้วเปิดใหม่ รันเฟส 1 ซ้ำก็ได้ มันใส่แผ่นกลับให้เอง หรือสั่งตรงๆ ก็ได้</p>
+  <div class="code"><pre>qm set 9100 --ide2 local:iso/CentOS-7-x86_64-DVD-2009.iso,media=cdrom</pre></div>
+
+  <h3>เฟส 2 หยุดแล้วบอกว่า yum finished but there is still no bootloader</h3>
+  <p>แผ่นที่ต่ออยู่เป็น Minimal ไม่ใช่แผ่นเต็ม ตัว <code class="inl">yum</code> จบด้วยสถานะสำเร็จทั้งที่ลงได้ไม่ครบ เพราะมันถือว่าชื่อที่หาไม่เจอไม่ใช่ความผิดพลาด ตัวโปรแกรมเลยต้องเช็กซ้ำเองว่ามี boot loader จริงไหม นี่คือจุดที่มันจับได้ ให้เปลี่ยนเป็นแผ่น DVD เต็มแล้วเริ่มเฟส 2 ใหม่ ไม่ต้องทำเฟส 1 ซ้ำ</p>
+
+  <h3>ขึ้น dracut แล้วค้างที่ Warning: /dev/root does not exist</h3>
+  <p>initramfs ไม่มี driver ของ virtio ให้ boot เข้า rescue ใหม่ แล้วสั่งบรรทัดนี้ใน chroot โดยใส่เลข kernel ตามที่เห็นในบรรทัด <code class="inl">kernel:</code> ตอนเฟส 2</p>
+  <div class="code"><pre><span class="p">$ </span>ls -1 /boot/vmlinuz-*</pre></div>
+  <p><span class="rel el6">CentOS 6</span>เลขจะหน้าตาแบบนี้</p>
+  <div class="code"><pre>/root/c2v-inside.sh --kver 2.6.32-754.35.1.el6.x86_64</pre></div>
+  <p><span class="rel el7">CentOS 7</span>ของรุ่น 7 สั้นกว่า</p>
+  <div class="code"><pre>/root/c2v-inside.sh --kver 3.10.0-1160.el7.x86_64</pre></div>
+
+  <h3>Kernel panic — unable to mount root fs</h3>
+  <p>ชื่อ label ของ disk ไม่ตรงกับที่เขียนไว้ใน grub เช็กด้วยคำสั่งนี้ในโหมด rescue บรรทัดของ grub แยกตามรุ่น ที่เหลือเหมือนกัน</p>
+  <div class="code"><pre>blkid
+cat /mnt/sysimage/etc/fstab</pre></div>
+  <p><span class="rel el6">CentOS 6</span>ไฟล์ของ grub รุ่นเก่าอยู่ที่นี่</p>
+  <div class="code"><pre>cat /mnt/sysimage/boot/grub/grub.conf</pre></div>
+  <p><span class="rel el7">CentOS 7</span>ของ grub2 อยู่คนละที่ คนละชื่อ</p>
+  <div class="code"><pre>cat /mnt/sysimage/boot/grub2/grub.cfg</pre></div>
+  <p>ทั้งสามที่ต้องเป็นชื่อเดียวกัน ปกติคือ <code class="inl">c7root</code> ส่วน image ที่สร้างไว้นานแล้วจะเป็น <code class="inl">c6root</code></p>
+
+  <h3><span class="rel el7">CentOS 7</span>บูตขึ้นแล้วแต่หน้าจอ noVNC ดำสนิท ไม่มีอะไรให้พิมพ์</h3>
+  <p>ตัวเครื่องขึ้นปกติแล้ว แค่ไม่มีใครวาดหน้าจอให้ ลองเข้าทาง <code class="inl">qm terminal 9100</code> ก่อน ถ้าทางนั้นได้แปลว่าที่ขาดคือ <code class="inl">getty@tty1</code> เฟส 2 เปิดให้อยู่แล้ว ถ้าไม่ได้เปิดแปลว่าใช้ <code class="inl">c2v-inside.sh</code> รุ่นเก่า สั่งในตัว VM เองได้เลย</p>
+  <div class="code"><pre>systemctl enable --now getty@tty1</pre></div>
+  <p>รุ่น 6 ไม่มีอาการนี้ เพราะ upstart เปิด <code class="inl">tty1</code> ให้ตั้งแต่ต้นอยู่แล้ว</p>
+
+  <h3><span class="rel el7">CentOS 7</span>รันเฟส 1 ซ้ำในเครื่องที่เคยบูตได้ แล้วมันวนอยู่ที่ Failed to mount /</h3>
+
+  <p class="lead"><b>เครื่องนี้เคยบูตได้ปกติมาก่อน</b> สิ่งเดียวที่ทำลงไปคือรันเฟส 1 ซ้ำเพื่อวาง <code class="inl">c2v-inside.sh</code> รุ่นใหม่ลงไป ซึ่งเป็นวิธีที่เอกสารนี้บอกให้ทำเองในอีกหลายข้อ แล้วรอบถัดมามันขึ้นชุดนี้วนไม่จบ</p>
+  <div class="out">[DEPEND] Dependency failed for D-Bus System Message Bus Socket.
+         Starting Login Service...
+[FAILED] Failed to start Login Service.
+[  OK  ] Stopped Login Service.
+         Mounting /...
+[FAILED] Failed to mount /.</div>
+
+  <p>อาการมีสองระดับ ตัวที่หนักคือวนแบบข้างบนจนไม่ได้หน้าจอให้พิมพ์เลย ตัวที่เบากว่าคือบูตจนได้ shell แต่ระบบไฟล์หลักเขียนไม่ได้ และ <code class="inl">systemctl --failed</code> ขึ้นตัวเดียวคือ <code class="inl">systemd-logind.service</code> ทั้งสองแบบเป็นเรื่องเดียวกัน ต่างกันแค่ว่าบูตไปได้ไกลแค่ไหนก่อนจะติด</p>
+
+  <div class="warn">
+    <p><b>อย่าเพิ่งสับสนกับข้อ unprivileged ข้างบน</b> ข้อนั้นระบบไฟล์เขียนไม่ได้เหมือนกัน แต่ <code class="inl">mount</code> จะบ่นเรื่องเลข UID ส่วนข้อนี้สั่ง <code class="inl">mount -o remount,rw /</code> แล้ว<b>ผ่าน</b> ถ้าสั่งแล้วผ่าน คืออ่านข้อนี้ ไม่ใช่ข้อนั้น</p>
+  </div>
+
+  <h4>ทำไมถึงเป็นแบบนั้น</h4>
+
+  <p>ไฟล์ <code class="inl">/etc/mtab</code> ต้องเป็นคนละอย่างกันในสองช่วงของงานนี้ ตอนเข้าโหมด rescue มันต้องเป็นไฟล์จริง ไม่งั้นโปรแกรมกู้ระบบตายทั้งตัว ตามข้อล่างสุดของหน้านี้ เฟส 1 จึงเขียนทับให้เป็นไฟล์เปล่า แต่พอเครื่องบูตด้วยตัวเองแล้ว รุ่น 7 ต้องการทางลัดกลับ เพราะ <code class="inl">systemd</code> ไม่เคยเขียนไฟล์นี้ให้ใคร เฟส 2 จึงเปลี่ยนกลับให้ตอนจบ</p>
+
+  <p>สคริปต์รุ่นเก่าเขียนทับ<b>ทุกรอบ</b> ไม่ได้ดูว่า image ก้อนนั้นผ่านเฟส 2 มาแล้วหรือยัง พอรันเฟส 1 ซ้ำในเครื่องที่บูตได้แล้ว ทางลัดที่เฟส 2 วางไว้ก็หายไป กลายเป็นไฟล์เปล่า และรุ่น 7 ไม่มี <code class="inl">rc.sysinit</code> มาสร้างใหม่ให้เหมือนรุ่น 6 มันจึงว่างอยู่อย่างนั้นตลอดไป</p>
+
+  <p>ของที่อ่านตารางเมาท์จากไฟล์นี้ก็เลยเห็นว่าไม่มีอะไรเมาท์อยู่สักอย่าง จากตรงนั้นลูกโซ่ก็ไล่ลงมาเป็นทอดๆ ดูได้จาก <code class="inl">journalctl</code> ตอนบูต</p>
+  <div class="code"><pre>journalctl -b | grep -A2 'Failed to mount'</pre></div>
+  <div class="out">systemd[1]: Failed to mount /.
+systemd-logind[487]: Failed to connect to system bus: No such file or directory
+systemd-logind[487]: Failed to fully start up daemon: No such file or directory
+systemd[1]: Failed to start Login Service.</div>
+
+  <p>อ่านจากล่างขึ้นบน ตัวที่ตายจริงคือบรรทัดบนสุด ที่เหลือเป็นผลตามมา เมาท์ <code class="inl">/</code> ไม่ผ่าน ช่องทางคุยกันของ dbus เลยไม่ถูกสร้าง <code class="inl">systemd-logind</code> ต่อไม่ติดแล้วตาย systemd เห็นว่าตายก็เปิดใหม่ให้ วนแบบนี้จนครบโควตา</p>
+
+  <p><b>ตรงนี้สำคัญ</b> พอวนครบโควตาแล้ว systemd จะเลิกเปิดให้ถาวร <code class="inl">systemctl status systemd-logind</code> จะขึ้นว่า <code class="inl">start-limit</code> แปลว่าต่อให้แก้ต้นเหตุแล้วมันก็ยังไม่ขึ้นมาเอง ต้องสั่งเปิดเองหรือ reboot</p>
+
+  <h4>แก้ยังไง ถ้ายังได้ shell</h4>
+
+  <p>เอาทางลัดกลับคืน แล้ว<b>ต้องสั่งเปิด logind เองด้วย</b> เพราะเหตุผลย่อหน้าบน สองบรรทัด สั้นพอจะพิมพ์เองในหน้า console ที่ paste ไม่ได้ ชื่อบริการคือ <code class="inl">systemd-logind</code> ไม่ใช่ <code class="inl">logind</code> เฉยๆ</p>
+  <div class="code"><pre>ln -sf /proc/self/mounts /etc/mtab
+systemctl restart systemd-logind</pre></div>
+  <p>ต้องขึ้นว่า <code class="inl">active (running)</code> แล้ว reboot หนึ่งรอบเพื่อดูว่ารอบหน้าบูตสะอาดจริง จบแล้วบรรทัดนี้ต้องว่าง</p>
+  <div class="code"><pre>systemctl --failed</pre></div>
+
+  <h4>แก้ยังไง ถ้าวนจนไม่ได้ shell เลย</h4>
+
+  <p>แก้จากเครื่อง host แทน อันนี้สั่งที่ host ไม่ใช่ในตัว VM จึง paste ได้ <b>ต้องปิด VM ก่อน</b> ห้ามเมาท์ดิสก์ของเครื่องที่ยังเปิดอยู่ เปลี่ยนเลข <code class="inl">9100</code> กับชื่อ storage ตามของจริง</p>
+  <div class="code"><pre><span class="p">$ </span>qm stop 9100
+<span class="p">$ </span>IMG=$(pvesm path tank-hdd-nas:9100/vm-9100-disk-0.raw)
+<span class="p">$ </span>LOOP=$(losetup -P -f --show "$IMG")
+<span class="p">$ </span>mkdir -p /mnt/fix &amp;&amp; mount ${LOOP}p1 /mnt/fix
+<span class="p">$ </span>ln -sf /proc/self/mounts /mnt/fix/etc/mtab
+<span class="p">$ </span>umount /mnt/fix &amp;&amp; losetup -d $LOOP
+<span class="p">$ </span>qm start 9100</pre></div>
+
+  <p>รอบนี้จะบูตผ่าน ไม่ต้องไปสั่งเปิด logind เอง เพราะ reboot ล้างโควตาที่นับไว้ให้อยู่แล้ว</p>
+
+  <div class="tip">
+    <p>วิธีที่ง่ายกว่าถ้าเอาชุด <code class="inl">tools/</code> รุ่นใหม่ขึ้นไปแล้ว คือรันเฟส 1 ซ้ำอีกรอบเลย รุ่นใหม่จะเจอเองว่าไฟล์นี้ถูกทำพังไว้แล้วซ่อมให้ ไม่ต้องเมาท์มือ</p>
+  </div>
+
+  <div class="warn">
+    <p><b>ต้นเหตุอยู่ที่ชุดสคริปต์บนเครื่อง host</b> ถ้ายังเป็นรุ่นเก่า รันเฟส 1 ซ้ำอีกครั้งก็พังใหม่อีกครั้ง เอาชุด <code class="inl">tools/</code> รุ่นใหม่ขึ้นไปทับ รุ่นใหม่จะดูก่อนว่า image ก้อนนั้นบูตด้วยตัวเองได้แล้วหรือยัง ถ้าได้แล้วมันจะไม่แตะทั้ง <code class="inl">/etc/mtab</code> และ <code class="inl">/etc/fstab</code> เลย เพราะสองไฟล์นั้นคือสิ่งที่พาเครื่องผ่านการบูตรอบล่าสุดมา และถ้าเจอ image รุ่น 7 ที่ถูกทำพังไว้แล้ว มันจะซ่อมให้ พร้อมขึ้น <code class="inl">WARN</code> สามบรรทัดบอกว่าซ่อมอะไร ส่วนรุ่น 6 ปล่อยเป็นไฟล์ธรรมดาเหมือนเดิม เพราะ <code class="inl">rc.sysinit</code> สร้างใหม่ให้ทุกบูตอยู่แล้ว</p>
+  </div>
+
+  <p>ที่เฟส 1 รุ่นใหม่ดูว่าเคยผ่านเฟส 2 มาแล้วหรือยัง มันไม่ได้ดูจากไฟล์ในระบบไฟล์ แต่ดูจากลายเซ็นของ boot loader ที่อยู่นอกระบบไฟล์ ตรงหัวดิสก์ ที่นั่นการก๊อบไม่มีทางไปแตะได้ จึงเป็นคำตอบที่เชื่อได้จริงเพียงที่เดียว</p>
+
+  <h3><span class="rel el7">CentOS 7</span>สั่ง df หรือ mount แล้วไม่ขึ้นอะไรเลย</h3>
+  <p>ไฟล์ <code class="inl">/etc/mtab</code> เป็นไฟล์ธรรมดาที่ว่างอยู่ ไม่ใช่ทางลัด เฟส 1 ตั้งใจเขียนแบบนั้นเพราะโหมด rescue ต้องการไฟล์จริง แล้วเฟส 2 จะเปลี่ยนกลับเป็นทางลัดให้ตอนจบ ถ้ายังเป็นไฟล์ว่างอยู่แปลว่าเฟส 2 ไม่จบ หรือใช้รุ่นเก่า หรือรันเฟส 1 ซ้ำด้วยรุ่นเก่าทับของที่เฟส 2 วางไว้ ตามข้อบน แก้ในตัว VM ได้เลย</p>
+  <div class="code"><pre>ln -sf /proc/self/mounts /etc/mtab</pre></div>
+  <p>รุ่น 6 ห้ามทำแบบนี้ ต้องเป็นไฟล์ธรรมดาเท่านั้น เพราะ <code class="inl">rc.sysinit</code> เขียนทับทุกครั้งที่บูต</p>
+
+  <h3><span class="rel el6">CentOS 6</span>โหมด rescue เด้ง Traceback ของ python แล้วขึ้น install exited abnormally</h3>
+  <p>ถ้าบรรทัดล่างสุดเขียนว่า <code class="inl">IOError: [Errno 22] Invalid argument</code> และบรรทัดเหนือขึ้นไปมีคำว่า <code class="inl">makeMtab</code> อาการนี้คือไฟล์ <code class="inl">/etc/mtab</code> ในตัวที่ก๊อบมาเป็นทางลัดชี้เข้า <code class="inl">/proc</code> ซึ่ง CT ทุกตัวเป็นแบบนั้น เพราะ container ไม่มีตารางเมาท์ของตัวเอง พอโหมด rescue เขียนไฟล์นั้น มันไปเขียนลง <code class="inl">/proc</code> ของแผ่นกู้ระบบแทน แล้วตายทั้งโปรแกรม ยังไม่ทันได้หน้าจอพิมพ์คำสั่ง</p>
+  <p>ตัว <code class="inl">c2v-prepare.sh</code> รุ่นใหม่แก้ไฟล์นี้ให้แล้วตั้งแต่เฟส 1 ถ้าเจอแปลว่าใช้รุ่นเก่าสร้างมา แก้ได้ในที่เดิมไม่ต้องกลับไปที่ host กด <kbd>Ctrl</kbd> + <kbd>C</kbd> ให้มัน reboot แล้วพิมพ์ <code class="inl">linux rescue</code> ใหม่ คราวนี้ตอนถามให้เลือก <b>Skip</b> ไม่ใช่ Continue จะได้ <code class="inl">#</code> มาเลยโดยไม่ต้องผ่านขั้นที่พัง แล้วพิมพ์ตามนี้</p>
+  <div class="code"><pre>mkdir -p /mnt/sysimage
+mount /dev/vda1 /mnt/sysimage
+rm -f /mnt/sysimage/etc/mtab
+: &gt; /mnt/sysimage/etc/mtab
+chroot /mnt/sysimage
+/root/c2v-inside.sh</pre></div>
+  <p>สองบรรทัดกลางคือตัวแก้ ลบทางลัดทิ้งแล้วสร้างไฟล์เปล่าจริงๆ แทน CentOS 6 เขียนไฟล์นี้ใหม่ทุกครั้งที่บูตอยู่แล้ว แก้ครั้งเดียวจบถาวร ครั้งต่อไปเลือก Continue ได้ตามปกติ</p>
+  <p>ที่ต้องใช้ <code class="inl">rm</code> ก่อน เพราะถ้าเขียนทับเฉยๆ มันจะวิ่งตามทางลัดไปเขียนที่ <code class="inl">/proc</code> เหมือนเดิม</p>
+
+  <h3>โหมด rescue บอกว่าหาระบบที่ติดตั้งไว้ไม่เจอ</h3>
+  <p>แปลว่าเฟส 1 ไม่จบ ยังไม่ได้เขียน <code class="inl">/etc/fstab</code> ให้กลับไปรันเฟส 1 ใหม่จนขึ้นคำว่า phase 1 done</p>
+
+  <h3>รัน c2v-inside.sh แล้วบอกว่า you are still in the rescue shell</h3>
+  <p>ข้อความนี้เป็นของรุ่นเก่า รุ่นนี้ไม่บ่นแล้ว เพราะมันจัดการให้เองตั้งแต่อยู่นอก chroot ถ้ายังเจออยู่แปลว่าไฟล์ในเครื่องเป็นของเก่า ให้รันเฟส 1 ใหม่ มันวางตัวใหม่ให้ทุกรอบ แล้วดูเลขรุ่นในบรรทัดแรกว่าตรงกับที่ host บอกไหม</p>
+
+  <h3>รันจากนอก chroot แล้วบอกว่า /mnt/sysimage has no /root/c2v-inside.sh in it</h3>
+  <p>โหมด rescue ไม่ได้ mount disk ของ VM ให้ มักเป็นเพราะเลือก Read-Only หรือ Skip ให้ย้อนกลับไปเลือก Continue ใหม่ ถ้าเลือก Continue แล้วยังขึ้นแบบเดิม แปลว่าเฟส 1 ยังไม่จบ กลับไปดูที่ host ว่าขึ้นคำว่า phase 1 done หรือยัง</p>
+
+  <h3>เปิด VM แล้วไอพีไม่ขึ้น</h3>
+  <p>เข้าไปดูในตัว VM ว่าไฟล์ตั้งค่ายังอยู่ครบไหม</p>
+  <div class="code"><pre>cat /etc/sysconfig/network-scripts/ifcfg-eth0
+cat /etc/udev/rules.d/70-persistent-net.rules
+ip link</pre></div>
+  <p>ไฟล์ <code class="inl">70-persistent-net.rules</code> ต้องว่างเปล่า ถ้ามีบรรทัดอยู่ให้ล้างแล้ว reboot</p>
+  <div class="code"><pre>: &gt; /etc/udev/rules.d/70-persistent-net.rules
+reboot</pre></div>
+
+  <h3>ย้ายจริงแล้ว แต่ที่เก็บข้อมูลจากเครื่องอื่นไม่ขึ้น</h3>
+  <p>เกือบทุกครั้งคือลืมข้อสามของขั้น 6 หลังทดสอบด้วยไอพีอีกตัวมา บรรทัดพวกนั้นยังถูกปิดอยู่ ดูในตัว VM</p>
+  <div class="code"><pre>grep C2VTEST /etc/fstab</pre></div>
+  <p>ถ้ามีบรรทัดขึ้นมา แปลว่าใช่ แก้ในตัว VM ได้เลยไม่ต้องดับ</p>
+  <div class="code"><pre>sed -i 's@^#C2VTEST# @@' /etc/fstab
+mount -a
+df -h</pre></div>
+
+  <h3>เปิด VM ทดสอบไปแล้วทั้งที่ยังไม่ได้ตัดบริการ</h3>
+  <p>ดับทันที อย่าเพิ่งเข้าไปแก้ในเครื่องเพราะบริการเปิดไปหมดแล้ว</p>
+  <div class="code"><pre><span class="p">$ </span>qm stop 9100</pre></div>
+  <p>แล้วไปดูสองอย่างที่แก้กลับไม่ได้ คือเมลที่ส่งออกไปแล้ว กับงานตามเวลาที่ยิงไปแล้ว เช็กจากฝั่งปลายทาง ไม่ใช่จากในเครื่องนี้ ส่วนตัว VM ให้เริ่มขั้น 5 ใหม่ตั้งแต่ข้อหนึ่ง ข้อมูลไม่เสียหาย</p>
+
+  <h3>บูตแรกช้ามาก ขึ้นข้อความ relabel</h3>
+  <p>ปกติ SELinux กำลังติดป้ายไฟล์ใหม่ทั้งเครื่อง เกิดครั้งเดียว ปล่อยให้มันทำจนจบ อย่าปิดเครื่องกลางคัน</p>
+
+  <h3>โฟลเดอร์ที่เคยเป็น mountpoint กลายเป็นโฟลเดอร์ว่าง</h3>
+  <p>เป็นตามที่เตือนไว้ตอนเฟส 1 ข้อมูลก้อนนั้นไม่ถูกก๊อบมาตั้งแต่แรก ต้องย้ายแยกเอง</p>
+
+  <h3>อยากเลิกกลางคัน</h3>
+  <p>ลบ VM ทิ้งได้เลย CT เก่าไม่เคยถูกแตะ</p>
+  <div class="code"><pre><span class="p">$ </span>qm stop 9100
+<span class="p">$ </span>qm destroy 9100 --purge</pre></div>
+</section>
+
+<footer>
+  เอกสารนี้ใช้คู่กับ tools/c2v-prepare.sh และ tools/c2v-inside.sh ในโฟลเดอร์เดียวกัน<br>
+  การย้าย CT ที่รันเป็น container ต่อได้ตามปกติ ใช้ ct-migrate.sh กับ docs/manual.html แทน
+</footer>
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp';
+    btn.type = 'button';
+    btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      // strip the shell prompt so what lands on the clipboard is runnable
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.p').forEach(function(el){ el.remove(); });
+      var text = clone.textContent;
+      var done = function(){
+        btn.textContent = 'copied';
+        setTimeout(function(){ btn.textContent = 'copy'; }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else {
+        fallback();
+      }
+      function fallback(){
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'select manually'; }
+        document.body.removeChild(ta);
+      }
+    });
+    box.appendChild(btn);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# findmnt -no TARGET|FSTYPE|SOURCE -T <path> - the three questions R1 asks
+# before it decides whether a storage can be snapshotted at all.
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+col=""; p=""
+while (( $# )); do
+  case "$1" in
+    -no|-o) col="${2:-}"; shift 2;;
+    -T)     p="${2:-}";   shift 2;;
+    *)      shift;;
+  esac
+done
+trace "findmnt -no $col -T $p"
+# a path that is not there has no mount, and findmnt says so by failing
+[[ -e "$p" ]] || exit 1
+h="$(fs_holder "$p")"
+case "$col" in
+  TARGET) printf '%s\n' "$h";;
+  FSTYPE) fs_field "$h" 2;;
+  SOURCE) fs_field "$h" 3;;
+  *)      exit 1;;
+esac
+exit 0

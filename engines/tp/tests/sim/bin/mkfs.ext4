@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+. "$SIMLIB"
+img=""; for a in "$@"; do [[ -f "$a" || "$a" == */images/* ]] && img="$a"; done
+trace "mkfs.ext4 $*"
+# G3 made executable: touching the filesystem of a MOUNTED image is corruption.
+[[ -n "$img" && -n "$(loop_of "$img")" ]] && violation "mkfs.ext4 on a MOUNTED image: $img"
+dry_forbids "mkfs.ext4 on $img"
+# a full pool, a busy loop device, a bad image - all end the same way
+[[ -f "$SIMROOT/mkfs.fail" ]] && { echo "mkfs.ext4: fake failure" >&2; exit 1; }
+exit 0

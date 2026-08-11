@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+img=""; for a in "$@"; do [[ -f "$a" || "$a" == */images/* ]] && img="$a"; done
+trace "resize2fs $*"
+[[ -n "$img" && -n "$(loop_of "$img")" ]] && violation "resize2fs on a MOUNTED image: $img"
+exit 0

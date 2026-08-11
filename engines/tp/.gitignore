@@ -1,0 +1,50 @@
+# Runtime state, written by the engines next to themselves. Never commit these:
+# they are per-host and they hold the live status of a real fleet.
+/logs/
+/done/
+/state/
+/pause/
+
+# One lock per lane, per engine. All of them are per-host and transient.
+/.sync-*.lock
+/.node-*.lock
+/.replica-*.lock
+/.failback-*.lock
+
+# Set by hand during a failback to stop every replica lane. If this were
+# committed, cloning the repo onto a node would silently stop its replication.
+/PAUSE
+
+# The real fleet inventories are site-specific; only the samples are tracked.
+/inventory.tsv
+/inventory-replica.tsv
+/bridgemap.tsv
+
+# Local overrides of the shipped tunables.
+/ctmig.local.conf
+/ctrep.local.conf
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# packaging output
+/tp.zip
+/ct-migrate-tools.zip
+/pve-migrate.zip
+
+# editors and desktops. The repo is edited from macOS, which litters.
+.DS_Store
+._*
+.idea/
+*.swp
+*~
+.vscode/

@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+. "$SIMLIB"; loop_of "${@: -1}"; exit 0

@@ -1,0 +1,36 @@
+# inventory.tsv - whitespace/tab separated; '#' starts a comment (inline too)
+#
+# columns:  src_ctid  [fields in ANY order]
+#   src_ctid : CT to replicate. Must exist somewhere in the cluster; the
+#              engine finds its node and its SOURCE storage from /etc/pve.
+#   then each extra field is classified by what it IS:
+#     a NUMBER              -> tgt_ctid  (default: src_ctid + OFFSET)
+#     a key from BKP_DESTS  -> dest      (default: DEFAULT_DEST) - hdd / ssd
+#     anything else         -> SOURCE storage assertion: the engine derives
+#                              the real storage from the CT's own rootfs
+#                              line; if the assertion differs, the row FAILS
+#                              LOUDLY instead of silently syncing a CT that
+#                              someone moved.
+#   an unclassifiable field, a repeated field kind, a duplicate src_ctid, or
+#   two rows resolving to the same target VMID refuse the WHOLE file - the
+#   engine runs nothing (exit 2) until the inventory is fixed.
+#
+#   What you never write here: node names, paths, sizes - all derived live
+#   from PVE, so there is nothing to keep in sync by hand.
+#
+# dest picks which backup pool receives the copy (see BKP_DESTS in ctrep.conf):
+#   hdd -> replica-hdd/ct (capacity)     ssd -> replica-ssd/ct (fast DR start)
+# Changing dest AFTER the copy exists trips GUARD R8 on purpose - move or
+# destroy the old copy first, the engine will not silently split it.
+#
+# lanes: run one cron per SOURCE storage; the engine sorts each CT into its
+# lane by the CT's real storage - a row does not choose its lane, its rootfs
+# does:
+#   ct-replica.sh --storage tank-hdd-nas
+#   ct-replica.sh --storage tank-ssd-nas
+#
+# examples:
+105   ssd
+112   9112
+113   8113   tank-ssd-nas   ssd
+114                        # -> tgt 8114, dest DEFAULT_DEST

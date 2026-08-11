@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# fake ssh - one remote machine, reached the only way the engine can reach it:
+# one shell command at a time.
+#
+#   $SIM_BKP_HOST      the backup node, and the ONLY host this engine may open
+#                      a connection to. Its filesystem is $SIMROOT/bkp/fs, so a
+#                      scenario sets it up by writing files and asserts on them
+#                      afterwards. /etc/pve is cluster-shared, which is why the
+#                      engine reads the PRODUCTION configs from over here.
+#   anything else      a violation. See below.
+#
+# The production nodes still exist in the sandbox as $SIMROOT/nodes/<host>/,
+# but nothing connects to them: the engine asks the backup node about them over
+# the cluster API instead. `pvesh get /nodes/<host>/lxc/<id>/status/current` is
+# answered from those directories, and `node_down` makes that call fail the way
+# a real cluster fails when a member is gone.
+#
+# Every command the engine issues is answered on purpose. An unknown remote
+# command is a violation rather than a polite exit 0: a new remote call that
+# silently "succeeds" is how a simulator starts proving nothing.
+# shellcheck source=tests/sim/failback/lib.sh
+. "$SIMLIB"
+host=""; ctl=""; declare -a cmd=()
+while (( $# )); do
+  case "$1" in
+    -o) shift 2;;                       # every -o option, ControlPath included
+    -O) ctl="${2:-}"; shift 2;;         # ssh -O exit <host>: tear a master down
+    -c) shift 2;;                       # cipher list
+    -*) shift;;
+    *)  if [[ -z "$host" ]]; then host="${1#*@}"; else cmd+=("$1"); fi; shift;;
+  esac
+done
+[[ -n "$ctl" ]] && exit 0               # control-socket housekeeping, nothing to model
+
+c="${cmd[*]:-}"
+trace "ssh $host :: $(printf '%s' "$c" | tr '\n' ' ')"
+
+# ------------------------------------------------------- anything but backup
+# B0, learned on real hardware and now enforced here rather than remembered.
+# This engine runs on the storage node, which is deliberately OUTSIDE the
+# cluster: it has neither the cluster's hosts file nor a root key for any
+# compute node, so `ssh root@pve01` does not resolve and never will. Every
+# production CT was refused at B1 until the engine stopped trying and started
+# asking the backup node - which IS a cluster member - over the cluster API.
+#
+# So a connection to any host other than the backup node is not something to
+# model, it is the regression itself. Refusing it here is what stops that fix
+# from being undone by somebody who only reads the simulator.
+if [[ "$host" != "${SIM_BKP_HOST:-}" ]]; then
+  violation "ssh to $host: this engine may only connect to the backup node. The storage node has no path to a production node - ask the cluster API through the backup node instead ($c)"
+  echo "ssh: Could not resolve hostname $host: Name or service not known" >&2
+  exit 255
+fi
+
+# ---------------------------------------------------------------- backup node
+if [[ -f "$BKP/.down" ]]; then
+  echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255
+fi
+
+case "$c" in
+  # ---- B1: is the PRODUCTION CT stopped, asked through the cluster API ----
+  # The backup node is a cluster member, so it can answer for a node this host
+  # cannot reach. A member that is gone gives back a proxy error and no status
+  # line at all, which is exactly the "unverified is not stopped" case B1 turns
+  # on - so node_down must fail here rather than answer "stopped".
+  "pvesh get /nodes/"*"/status/current"*)
+    p="${c#pvesh get /nodes/}"
+    node="${p%%/*}"; id="${p#*/lxc/}"; id="${id%%/*}"
+    N="$SIMROOT/nodes/$node"
+    [[ -d "$N" && ! -f "$N/.down" ]] || {
+      echo "proxy handler failed: hostname lookup '$node' failed" >&2; exit 2; }
+    f="$N/ct/$id.status"
+    [[ -f "$f" ]] || { echo "no such resource '/nodes/$node/lxc/$id'" >&2; exit 2; }
+    printf 'status: %s\ntype: lxc\nvmid: %s\n' "$(cat "$f")" "$id"; exit 0;;
+
+  # ---- B2: is the promoted copy up or down ----
+  "pct status "*)
+    id="$(awk '{print $3}' <<<"$c")"; f="$BKP/ct/$id.status"
+    [[ -f "$f" ]] || { echo "Configuration file 'nodes/$(cat "$BKP/node" 2>/dev/null)/lxc/$id.conf' does not exist" >&2; exit 2; }
+    printf 'status: %s\n' "$(cat "$f")"; exit 0;;
+
+  # ---- where does the copy's data actually sit on that node ----
+  "zfs get "*mountpoint*)
+    ds="${c##* mountpoint }"; ds="${ds%% *}"
+    m="$(bkp_field "$ds" 3)"
+    [[ -z "$m" ]] && { echo "cannot open '$ds': dataset does not exist" >&2; exit 1; }
+    printf '%s\n' "$m"; exit 0;;
+
+  # ---- finding the production CT in the cluster filesystem ----
+  "ls "*)
+    a="${c#ls }"; a="${a%%2>*}"
+    set -f; read -r -a pats <<<"$a"; set +f
+    found=0
+    for pat in "${pats[@]}"; do
+      [[ "$pat" == -* ]] && continue
+      # shellcheck disable=SC2206  # the glob is the point: /etc/pve/nodes/*/lxc
+      hits=( "$BKP/fs"$pat )
+      for f in "${hits[@]}"; do
+        [[ -e "$f" ]] || continue
+        printf '%s\n' "${f#"$BKP/fs"}"; found=1
+      done
+    done
+    (( found )) || { echo "ls: cannot access: No such file or directory" >&2; exit 2; }
+    exit 0;;
+
+  "cat "*)
+    f="${c#cat }"; f="${f%% *}"
+    [[ -f "$BKP/fs$f" ]] || exit 1
+    cat "$BKP/fs$f"; exit 0;;
+
+  true) exit 0;;
+esac
+
+violation "remote command the simulator does not model: $c"
+exit 1

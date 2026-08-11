@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# ct-replica.sh never repairs anything - it only tells the operator to run this
+# with the CT stopped. The fake is here so that if a future edit ever does call
+# it, the call is recorded and a run against a mounted image is a violation
+# rather than a corrupted customer image.
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+img=""; for a in "$@"; do [[ -f "$a" || "$a" == */images/* ]] && img="$a"; done
+trace "e2fsck $*"
+[[ -n "$img" && -n "$(loop_of "$img")" ]] && violation "e2fsck on a MOUNTED image: $img"
+exit 0

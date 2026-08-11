@@ -50,8 +50,16 @@ proves the simulator can fail. `tp` learned this the expensive way.
 
 ## Before you say you are done
 
-    make lint     # bash -n + shellcheck
-    make test     # fails today, on purpose - there is no simulator yet
+    make lint     # both layers: bash -n, shellcheck, the language rule, embeds
+    make test     # engines/tp's full suite. Warns that ketsync has none
+    make mutation # 118 known bugs put back. None may survive
+
+Never commit on red. If you touched an engine, `make mutation` is not optional
+— that is the target that proves the suite can still fail.
+
+`make test-ketsync` fails on purpose: there is no simulator for this layer yet.
+It is kept separate from `make test` so that a red gate always means something
+broke, rather than something that has been red since the first commit.
 
 ## Layout
 
@@ -61,9 +69,13 @@ proves the simulator can fail. `tp` learned this the expensive way.
     ketsync.conf.sample  this machine's role and the master's address
     nodes.tsv.sample     name -> ip -> role. The only name resolution here
     inventory.tsv.sample ct, tier, home node, dr node
-    engines/tp/          the execution layer, cloned in, never edited here
+    engines/tp/          the execution layer. Committed here, edited here
     docs/decisions.md    why it is shaped this way, and what is not built
     tests/               the debt
+
+`engines/tp` came from the standalone `tp` repo at commit `b4ddc0c` and is now
+edited in place; there is no upstream to pull from. `engines/tp/CLAUDE.md`
+governs everything beneath it and wins over this file wherever the two overlap.
 
 ## Style
 

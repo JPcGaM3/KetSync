@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+. "$SIMLIB"
+p=""
+while (( $# )); do case "$1" in -T) p="${2:-}"; shift 2;; *) shift;; esac; done
+trace "findmnt -T $p"
+[[ -d "$p" ]] || exit 1
+fs_holder "$p"

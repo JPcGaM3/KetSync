@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# shellcheck source=tests/sim/failback/lib.sh
+. "$SIMLIB"
+[[ "${1:-}" == "-q" ]] && shift
+p="${1%/}"; trace "mountpoint $p"
+is_mounted "$p"

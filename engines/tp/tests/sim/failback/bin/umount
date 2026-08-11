@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# fake umount. Packing the mountpoint back into the image file is what makes a
+# restore observable: after a good run the customer's image holds the DR
+# generation, after a refused one it holds exactly what it held before.
+#
+# A umount that FAILS leaves the mount in place, because that is the state the
+# engine has to survive - see the ENOSPC scenarios.
+# shellcheck source=tests/sim/failback/lib.sh
+. "$SIMLIB"
+m="${1%/}"; trace "umount $m"
+grep -qxF "$m" "$SIMROOT/umount.fail" 2>/dev/null && { echo "umount: target is busy" >&2; exit 32; }
+
+img="$(img_at "$m")"
+# Packing the mountpoint back is the write. A read-only mount cannot have been
+# dirtied, so there is nothing to pack and nothing to report; a read-write one
+# rewrites the image whether or not the run called itself dry.
+if [[ -n "$img" ]] && is_ro "$m"; then
+  img=""
+fi
+if [[ -n "$img" ]]; then
+  dry_forbids "umount rewrote the image $img"
+  sz="$(stat -c%s "$img")"
+  : > "$SIMROOT/.repack"
+  for f in "$m"/*; do
+    [[ -f "$f" ]] || continue
+    printf '%s\t%s\n' "${f##*/}" "$(head -1 "$f")" >> "$SIMROOT/.repack"
+  done
+  printf -- '--PAD--\n' >> "$SIMROOT/.repack"
+  cat "$SIMROOT/.repack" > "$img"
+  # an image does not shrink because its contents did; keeping the size is what
+  # makes a grow from an earlier ENOSPC round still visible in the next one
+  [[ "$(stat -c%s "$img")" -le "$sz" ]] && command truncate -s "$sz" "$img"
+fi
+del_mount "$m"; del_loop_by_mnt "$m"; del_ro "$m"
+# the filesystem goes away with the mount; anything left behind would be a later
+# run reading a previous run's rootfs through a stale directory
+find "$m" -mindepth 1 -delete 2>/dev/null
+exit 0

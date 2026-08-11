@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+. "$SIMLIB"
+img=""; for a in "$@"; do [[ -f "$a" || "$a" == */images/* ]] && img="$a"; done
+trace "e2fsck $*"
+# G3 made executable: touching the filesystem of a MOUNTED image is corruption.
+[[ -n "$img" && -n "$(loop_of "$img")" ]] && violation "e2fsck on a MOUNTED image: $img"
+dry_forbids "e2fsck -fp on $img"
+exit 0

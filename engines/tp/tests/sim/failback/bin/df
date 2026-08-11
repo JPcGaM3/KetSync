@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# df -h <path>: not called by the engine today either. Shaped like the real one
+# so a free-space check added later has something honest to read.
+# shellcheck source=tests/sim/failback/lib.sh
+. "$SIMLIB"
+p="${*: -1}"; p="${p%/}"; trace "df $p"
+u="$(cat "$SIMROOT/df.used" 2>/dev/null || echo 6.2G)"
+echo "Filesystem      Size  Used Avail Use% Mounted on"
+echo "/dev/loop0       20G  $u   13G  33% $p"
+exit 0

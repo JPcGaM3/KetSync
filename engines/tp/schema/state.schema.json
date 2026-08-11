@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/ctmig/state.schema.json",
+  "title": "ct-migrate state snapshot",
+  "description": "state/<new_ctid>.json - what the engine knew about one CT at the end of its last run. Replaced atomically on every write, so a reader never sees half a file. The append-only history in state/<new_ctid>.runs.jsonl is a stream of the 'run' object below, one per line.",
+  "type": "object",
+  "required": [
+    "schema_version", "new_ctid", "old_ctid", "old_node", "new_node",
+    "storage", "image", "image_size_gib", "config_present", "config_size",
+    "size_drift", "mp_empty", "last"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "bumped only when a reader would break; new optional fields do not bump it"
+    },
+    "new_ctid":  { "type": "string", "description": "CT id on the new node - also the file name" },
+    "old_ctid":  { "type": "string", "description": "CT id on the old node; often the same number" },
+    "old_node":  { "type": "string", "description": "source node, as written in inventory.tsv" },
+    "new_node":  { "type": "string", "description": "target node; required per row, never defaulted" },
+    "storage":   { "type": "string", "description": "PVE storage id the rootfs image lives on" },
+    "image":     { "type": "string", "description": "absolute path of the raw image, from pvesm path" },
+    "image_size_gib": {
+      "type": "integer", "minimum": 0,
+      "description": "real size of the image file, rounded up. 0 means it does not exist yet"
+    },
+    "config_present": {
+      "type": "boolean",
+      "description": "true once /etc/pve/lxc/<new_ctid>.conf exists on the new node. The engine writes it once and never rewrites it (G6)"
+    },
+    "config_size": {
+      "type": "string",
+      "description": "the size= value in that config, e.g. '20G'. Empty while no config exists"
+    },
+    "size_drift": {
+      "type": "boolean",
+      "description": "true when config_size disagrees with image_size_gib, which happens after an ENOSPC grow. Bookkeeping only - PVE reads the real size from the storage layer"
+    },
+    "mp_empty": {
+      "type": "array", "items": { "type": "string" },
+      "description": "mount point paths that were migrated as config but whose DATA was not copied. Every one of these will be an empty directory on the new node"
+    },
+    "last": { "$ref": "#/$defs/run" }
+  },
+  "$defs": {
+    "run": {
+      "type": "object",
+      "description": "one execution of the engine against this CT. Identical shape in 'last' and in every line of runs.jsonl",
+      "required": [
+        "ts", "epoch", "lane", "mode", "status", "reason", "message",
+        "rc", "secs", "files", "literal_bytes", "bytes_sent", "total_bytes",
+        "grow_attempts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ts":    { "type": "string", "description": "local time the run finished, ISO 8601 with offset" },
+        "epoch": { "type": "integer", "description": "the same instant as seconds since epoch, for sorting" },
+        "lane":  { "type": "string", "description": "'all' for a full run, otherwise the storage id from --storage" },
+        "mode": {
+          "type": "string", "enum": ["presync", "stopped"],
+          "description": "'stopped' means --stopped: the final delta off a CT that is not running"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["running", "ok", "failed", "skipped", "interrupted"],
+          "description": "'running' is published before the transfer starts and is only ever seen live. A run killed mid-transfer is rewritten to 'interrupted' by the exit trap"
+        },
+        "reason": {
+          "type": "string",
+          "description": "stable slug for why a run was not ok; empty when status is ok",
+          "enum": [
+            "", "interrupted",
+            "storage_unknown", "g1_pool", "g2_running", "g7_ctid_taken",
+            "storage_inactive", "node_busy", "ssh_old_node", "ct_not_found",
+            "not_stopped", "no_image", "pct_mount", "not_running", "pool_space",
+            "alloc_failed", "mkfs_failed", "loop_mount", "g3_umount",
+            "g4_enospc", "g5_rsync", "cfg_write"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "description": "the first ERROR / GUARD / WARN / HINT / NOTE line the run logged for this CT - the headline a human should read"
+        },
+        "rc": {
+          "type": "integer",
+          "description": "rsync exit code. -1 means the run never got that far. 0 is clean, 24 is 'files vanished' and is normal on a live CT, 11 is ENOSPC, 23 is a partial transfer and is a failure"
+        },
+        "secs":  { "type": "integer", "minimum": 0, "description": "wall clock seconds spent in rsync, summed over ENOSPC retries" },
+        "files": { "type": "integer", "minimum": 0, "description": "regular files transferred, summed over ENOSPC retries" },
+        "literal_bytes": {
+          "type": "integer", "minimum": 0,
+          "description": "bytes rsync had to actually send as new content. The convergence metric: it should fall run over run"
+        },
+        "bytes_sent": {
+          "type": "integer", "minimum": 0,
+          "description": "total bytes put on the wire, including protocol overhead"
+        },
+        "total_bytes": {
+          "type": "integer", "minimum": 0,
+          "description": "size of the whole dataset rsync considered. A property of the CT, so it is NOT summed across retries"
+        },
+        "grow_attempts": {
+          "type": "integer", "minimum": 0,
+          "description": "how many times ENOSPC forced the image to be grown during this run"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# df -h <mnt>: the engine reads column 3 of line 2 to print how full the source
+# is. Only the shape matters, so the shape is all this returns.
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+p="${*: -1}"; p="${p%/}"
+u="$(cat "$SIMROOT/df.used" 2>/dev/null || echo 6.2G)"
+echo "Filesystem      Size  Used Avail Use% Mounted on"
+echo "/dev/loop0       20G  $u   13G  33% $p"
+exit 0

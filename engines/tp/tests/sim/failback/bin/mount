@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# fake mount. The only form the engine uses is
+#     mount -o loop <raw image> <mountpoint>
+# and it is read-write on purpose: this tool restores INTO the image.
+#
+# An image here is a one-file archive - "name<TAB>contents" per line - and
+# mounting unpacks it, umount packs it back. That is enough for a scenario to
+# prove which generation of the rootfs ended up in the customer's image, and
+# that a run which failed did not change it.
+# shellcheck source=tests/sim/failback/lib.sh
+. "$SIMLIB"
+opts=""; img=""; mnt=""
+while (( $# )); do
+  case "$1" in
+    -o) opts="${2:-}"; shift 2;;
+    -*) shift;;
+    *)  if [[ -z "$img" ]]; then img="$1"; else mnt="${1%/}"; fi; shift;;
+  esac
+done
+trace "mount -o $opts $img $mnt"
+
+grep -qxF "$mnt" "$SIMROOT/mount.fail" 2>/dev/null && { echo "mount: fake failure" >&2; exit 32; }
+
+[[ ",$opts," == *,loop,* ]] || violation "mount of $img without -o loop - a raw image is not a block device"
+
+# A dry run may mount, but only read-only. Mounting ext4 read-write replays the
+# journal and updates the superblock, so a dry run that does it has already
+# written to the customer's production image before it transferred a byte -
+# which is exactly what "dry-run - nothing was written" denies.
+# The engine ASKING for a read-write mount during a dry run is the defect,
+# whether or not this fake then lets it succeed - so this is checked here and
+# the marker is set further down, where the mount actually takes.
+[[ ",$opts," == *,ro,* ]] || dry_forbids "read-write loop-mount of $img"
+
+# B4. The engine restores into a volume that already exists; creating one here
+# would be a rebuild nobody asked for, on a storage nobody checked.
+if [[ ! -f "$img" ]]; then
+  violation "loop-mount of $img, which does not exist - B4 should have refused this row"
+  echo "mount: $img: failed to setup loop device: No such file or directory" >&2; exit 32
+fi
+
+prev="$(loop_of "$img")"
+[[ -n "$prev" ]] && violation "double loop-mount of $img (already on $prev, now $mnt)"
+is_mounted "$mnt" && violation "mount onto $mnt, which is already a mountpoint - the old image is now hidden, not released"
+
+# B3, one layer down from the engine's own check: if the image's dataset is not
+# mounted then this "image" is a file on the node's root disk.
+[[ "$(fs_holder "$img")" == "/" ]] \
+  && violation "loop-mount of $img, which sits on the node ROOT filesystem - B3"
+
+# The kernel can return 0 and leave the target an ordinary empty directory: a
+# loop device exhausted under a batch, a stale entry, an image whose filesystem
+# will not actually mount. That is the whole reason B5 verifies the mountpoint
+# instead of trusting the exit status, so the simulator has to be able to
+# produce it.
+if grep -qxF "$mnt" "$SIMROOT/mount.silent" 2>/dev/null; then
+  trace "mount SILENT $img $mnt"; exit 0
+fi
+
+# Recorded here, where the mount really took, and cleared by umount. A marker
+# that outlived its mount would make the NEXT mount of the same path look
+# read-only - so a scenario that dry-runs and then runs for real would skip
+# the repack and the image would never receive the restore, and whoever wrote
+# it would go looking for that in the engine.
+[[ ",$opts," == *,ro,* ]] && mark_ro "$mnt"
+add_mount "$mnt"; add_loop "$img" "$mnt"
+# the archive stops at --PAD--; everything after it is the zero padding that
+# gives the image a plausible size for the ENOSPC arithmetic to work on
+while IFS=$'\t' read -r name body; do
+  [[ "$name" == "--PAD--" ]] && break
+  [[ -n "${name:-}" ]] || continue
+  printf '%s\n' "${body:-}" > "$mnt/$name"
+done < "$img"
+exit 0

@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# fake ssh - the whole backup node, reached the only way the engine can reach
+# it: one shell command at a time. The remote filesystem is $SIMROOT/bkp/fs, so
+# a scenario sets the backup node up by writing files and asserts on them
+# afterwards.
+#
+# Everything the engine asks for is answered here on purpose. An unknown remote
+# command is a violation rather than a polite exit 0: a new remote call that
+# silently "succeeds" is how a simulator starts proving nothing.
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+host=""; ctl=""; ctlpath=""; declare -a cmd=()
+while (( $# )); do
+  case "$1" in
+    -o) [[ "${2:-}" == ControlPath=* ]] && ctlpath="${2#ControlPath=}"
+        shift 2;;
+    -O) ctl="${2:-}"; shift 2;;         # ssh -O exit <host>: tear a master down
+    -c) shift 2;;                       # cipher list
+    -*) shift;;
+    *)  if [[ -z "$host" ]]; then host="${1#*@}"; else cmd+=("$1"); fi; shift;;
+  esac
+done
+# Which socket this invocation multiplexes through is not cosmetic. Two lanes
+# run concurrently under cron and each one's cleanup closes the masters it
+# finds; a socket name without the pid in it is shared, so the lane that
+# finishes first tears down the connection the other lane is still using and
+# that lane dies mid-run. Nothing else in the sandbox can see the path, so it is
+# recorded here - control commands included, rather than swallowed silently.
+kind=cmd; [[ -n "$ctl" ]] && kind="-O $ctl"
+printf '%s\t%s\n' "$kind" "${ctlpath:-<none>}" >> "$SIMROOT/ctlpath"
+[[ -n "$ctl" ]] && exit 0               # control-socket housekeeping, nothing else to model
+
+c="${cmd[*]:-}"
+trace "ssh $host :: $(printf '%s' "$c" | tr '\n' ' ')"
+if [[ -f "$BKP/.down" ]]; then
+  echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255
+fi
+
+case "$c" in
+  # ---- who is this machine, really (the preflight before anything runs) ----
+  *"readlink /etc/pve/local"*)
+    n="$(cat "$BKP/node" 2>/dev/null)"
+    [[ -n "$n" ]] && printf 'NODE=%s\n' "$n"
+    printf 'NODES=%s\n' "$(cat "$BKP/nodes" 2>/dev/null)"
+    exit 0;;
+
+  # ---- R9: does the mock bridge exist, and does anything on it reach a wire?
+  # This reproduces the engine's own remote snippet, including the fact that a
+  # missing bridge exits before it can echo OK.
+  *"ip -br link show"*)
+    [[ -f "$BKP/r9.fail" ]] && { echo "ssh_exchange_identification: closed" >&2; exit 255; }
+    br="${c#*ip -br link show }"; br="${br%%[[:space:]]*}"
+    [[ -f "$BKP/bridges/$br" ]] || { echo MISSING; exit 0; }
+    while read -r port kind _; do
+      [[ -z "${port:-}" ]] && continue
+      case "$kind" in nic|bond) printf 'UPLINK %s\n' "$port";; esac
+    done < "$BKP/bridges/$br"
+    echo OK; exit 0;;
+
+  # ---- AUTO_DISCOVER ----
+  *"pvesh get /cluster/resources"*)
+    cat "$BKP/resources.json" 2>/dev/null; exit 0;;
+
+  # ---- is the destination storage id there at all ----
+  "pvesm status "*)
+    sid="${c##*--storage }"; sid="${sid%% *}"
+    s="$(cat "$BKP/storage/$sid" 2>/dev/null)" \
+      || { echo "storage '$sid' does not exist" >&2; exit 255; }
+    echo "Name             Type     Status           Total            Used       Available        %"
+    echo "$sid          zfspool   $s      10737418240      1073741824      9663676416    10.00%"
+    exit 0;;
+
+  # ---- R2 ----
+  "pct status "*)
+    id="$(awk '{print $3}' <<<"$c")"; f="$BKP/ct/$id.status"
+    [[ -f "$f" ]] || { echo "Configuration file 'nodes/$(cat "$BKP/node")/lxc/$id.conf' does not exist" >&2; exit 2; }
+    printf 'status: %s\n' "$(cat "$f")"; exit 0;;
+  "pct list"*)
+    printf '%10s %-10s %-20s\n' VMID Status Name
+    for f in "$BKP"/ct/*.status; do
+      [[ -e "$f" ]] || continue
+      id="${f##*/}"; id="${id%.status}"
+      printf '%10s %-10s %-20s\n' "$id" "$(cat "$f")" "copy-$id"
+    done
+    exit 0;;
+
+  # ---- R3: the destination dataset, created on first use ----
+  "zfs list "*"zfs create "*)
+    ds="${c##* }"
+    [[ -n "$(bkp_field "$ds" 2)" ]] && exit 0
+    [[ -f "$BKP/zfscreate.fail" ]] && { echo "cannot create '$ds': fake failure" >&2; exit 1; }
+    dry_forbids "zfs create $ds on the backup node"
+    bkp_add "$ds" yes "/$ds"; mkdir -p "$BKP/fs/$ds"
+    trace "bkp zfs create $ds"
+    exit 0;;
+  # ---- R3, dry: the read half of the same guard. A dry run asks whether the
+  # dataset exists and stops there; the create below is the write it skips. ----
+  "zfs list "*)
+    ds="${c#zfs list }"; ds="${ds%% *}"
+    [[ -n "$(bkp_field "$ds" 2)" ]] && exit 0
+    echo "cannot open '$ds': dataset does not exist" >&2; exit 1;;
+  "zfs get "*mounted,mountpoint*)
+    t="${c#*mounted,mountpoint }"; ds="${t%% *}"
+    m="$(bkp_field "$ds" 2)"
+    [[ -z "$m" ]] && exit 1                       # no such dataset: no output at all
+    printf '%s %s\n' "$m" "$(bkp_field "$ds" 3)"  # what `| paste -sd' '` makes of it
+    exit 0;;
+
+  # ---- reading /etc/pve ----
+  "ls "*)
+    a="${c#ls }"; a="${a%%2>*}"
+    set -f; read -r -a pats <<<"$a"; set +f
+    found=0
+    for pat in "${pats[@]}"; do
+      [[ "$pat" == -* ]] && continue
+      # shellcheck disable=SC2206  # the glob is the point: /etc/pve/nodes/*/lxc
+      hits=( "$BKP/fs"$pat )
+      for f in "${hits[@]}"; do
+        [[ -e "$f" ]] || continue
+        printf '%s\n' "${f#"$BKP/fs"}"; found=1
+      done
+    done
+    (( found )) || { echo "ls: cannot access: No such file or directory" >&2; exit 2; }
+    exit 0;;
+
+  # ---- writing the copy config ----
+  "cat > "*)
+    f="${c#cat > }"; f="${f%% *}"
+    tgt="${f##*/}"; tgt="${tgt%.conf}"
+    body="$(cat)"
+    if [[ ! -d "$BKP/fs${f%/*}" ]]; then
+      echo "-bash: $f: No such file or directory" >&2; exit 1
+    fi
+    [[ -f "$BKP/cfgwrite.fail" ]] && { echo "$f: Input/output error" >&2; exit 1; }
+    # A copy carries a production IP and MAC. The only thing that keeps that
+    # harmless is the bridge it sits on, so a config that names any other
+    # bridge is a live duplicate of a customer host waiting to be started.
+    while IFS= read -r l; do
+      case "$l" in
+        net[0-9]*:*)
+          [[ "$l" == *bridge=* ]] || continue
+          b="${l#*bridge=}"; b="${b%%,*}"
+          [[ "$b" == "${SIM_MOCK_BRIDGE:-vmbr99}" ]] \
+            || violation "copy config $tgt puts $l on bridge '$b', not the isolated ${SIM_MOCK_BRIDGE:-vmbr99}";;
+        onboot:*)
+          [[ "${l#onboot: }" == 0 ]] \
+            || violation "copy config $tgt has '$l' - a copy that boots itself is a second live host";;
+      esac
+    done <<<"$body"
+    # A write cut short is SILENT: stdin is consumed, the status is 0, and only
+    # part of the text arrives. That is what this reproduces, not a write error.
+    dry_forbids "copy config write to $f on the backup node"
+    if grep -qxF "$tgt" "$SIMROOT/cfgwrite.trunc" 2>/dev/null; then
+      printf '%s' "$body" | head -c 40 > "$BKP/fs$f"
+    else
+      printf '%s\n' "$body" > "$BKP/fs$f"
+    fi
+    exit 0;;
+
+  "cat "*)
+    f="${c#cat }"; f="${f%% *}"
+    [[ -f "$BKP/fs$f" ]] || exit 1
+    cat "$BKP/fs$f"; exit 0;;
+
+  true) exit 0;;
+esac
+
+violation "remote command the simulator does not model: $c"
+exit 1

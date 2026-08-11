@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คู่มือใช้งาน tp</title>
+<style>
+  :root{
+    --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
+    --bg:#fbfaf8; --surface:#ffffff; --line:#e8e5de; --line2:#d9d5cc;
+    --accent:#0f766e; --accent-soft:#e6f1ef;
+    --warn:#a45309; --warn-soft:#fdf3e3;
+    --crit:#b02020; --crit-soft:#fceded;
+    --code-bg:#f5f4f0;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai","Sarabun",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+  .topbar{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line)}
+  .topbar .in{max-width:820px;margin:0 auto;padding:11px 24px;display:flex;
+              align-items:center;gap:16px;flex-wrap:wrap}
+  .topbar .name{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent)}
+  .topbar a{font-size:14px;color:var(--muted);text-decoration:none;padding:2px 0;
+            border-bottom:1.5px solid transparent}
+  .topbar a:hover{color:var(--ink);border-bottom-color:var(--accent)}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 90px}
+  header.doc{padding-bottom:26px;border-bottom:2px solid var(--ink);margin-bottom:8px}
+  h1{font-size:31px;line-height:1.35;margin:0 0 8px;font-weight:700}
+  header.doc p{color:var(--muted);margin:0;font-size:16.5px}
+  .where{display:inline-block;margin-top:16px;font-size:14px;background:var(--accent-soft);
+         color:var(--accent);border:1px solid #c6ddd9;border-radius:999px;padding:4px 14px}
+  section{margin-top:46px;scroll-margin-top:70px}
+  .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+  .num{font-family:var(--mono);font-size:13px;font-weight:600;color:#fff;background:var(--accent);
+       border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+  h2{font-size:22px;margin:0;font-weight:700}
+  h3{font-size:17px;margin:30px 0 6px;font-weight:700}
+  p{margin:0 0 14px}
+  .lead{color:var(--muted);margin-bottom:16px}
+  .part{margin-top:64px;padding:14px 0 0;border-top:3px solid var(--ink)}
+  .part .label{font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase;
+               color:var(--accent);margin-bottom:2px}
+  .part h2{font-size:26px}
+  ol.steps{counter-reset:s;margin:10px 0 16px;padding:0;list-style:none}
+  ol.steps li{position:relative;padding-left:42px;margin:14px 0}
+  ol.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:3px;
+    width:27px;height:27px;background:var(--accent);color:#fff;border-radius:50%;
+    font-family:var(--mono);font-size:13px;font-weight:600;
+    display:flex;align-items:center;justify-content:center}
+  ul.clean{margin:8px 0 16px;padding:0;list-style:none}
+  ul.clean li{position:relative;padding-left:20px;margin:9px 0}
+  ul.clean li::before{content:"";position:absolute;left:2px;top:12px;width:6px;height:6px;
+                      background:var(--accent);border-radius:50%}
+  .code{position:relative;margin:14px 0 18px}
+  pre{background:var(--code-bg);border:1px solid var(--line2);border-radius:10px;
+      padding:15px 68px 15px 17px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;
+      font-family:var(--mono);font-size:13.5px;line-height:1.75;color:#22262c}
+  pre .p{color:var(--accent);user-select:none}
+  pre .c{color:var(--faint)}
+  .code .cp{position:absolute;top:8px;right:8px;font-family:var(--sans);font-size:12px;
+    color:var(--muted);background:var(--surface);border:1px solid var(--line2);
+    border-radius:7px;padding:3px 11px;cursor:pointer;line-height:1.5}
+  .code .cp:hover{color:var(--accent);border-color:var(--accent)}
+  .out{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line2);
+       border-radius:0 10px 10px 0;padding:13px 16px;margin:14px 0 18px;
+       white-space:pre-wrap;overflow-wrap:anywhere;
+       font-family:var(--mono);font-size:12.8px;line-height:1.8;color:#4b515b}
+  .out .g{color:var(--accent);font-weight:600}
+  .out .r{color:var(--crit);font-weight:600}
+  code.inl{font-family:var(--mono);font-size:.87em;background:#eef0ec;border:1px solid var(--line2);
+           border-radius:4px;padding:1px 6px;color:#0c4f48;white-space:nowrap}
+  kbd{font-family:var(--mono);font-size:.85em;background:var(--surface);border:1px solid var(--line2);
+      border-bottom-width:2px;border-radius:5px;padding:2px 7px;color:var(--ink);white-space:nowrap}
+  .tip,.ok,.warn,.stop{border-left:3px solid;border-radius:0 9px 9px 0;padding:13px 17px;
+                       margin:16px 0;font-size:15px}
+  .tip{border-color:var(--accent);background:var(--accent-soft)}
+  .ok{border-color:var(--accent);background:var(--accent-soft)}
+  .warn{border-color:var(--warn);background:var(--warn-soft)}
+  .stop{border-color:var(--crit);background:var(--crit-soft)}
+  .tip b{color:var(--accent)} .ok b{color:var(--accent)}
+  .warn b{color:var(--warn)} .stop b{color:var(--crit)}
+  .tip p:last-child,.ok p:last-child,.warn p:last-child,.stop p:last-child{margin-bottom:0}
+  table{width:100%;border-collapse:collapse;margin:14px 0 18px;font-size:14.5px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:13px;color:var(--muted);font-weight:600;border-bottom:1.5px solid var(--line2)}
+  td.m,td .m{font-family:var(--mono);font-size:13px;white-space:nowrap;color:#0c4f48}
+  tr:hover td{background:#fdfdfb}
+  footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);
+         font-size:13.5px;color:var(--faint);line-height:1.9}
+  @media(max-width:640px){
+    body{font-size:15.5px}
+    .wrap{padding:28px 18px 70px}
+    h1{font-size:25px}
+    table{font-size:13.5px}
+    th,td{padding:8px 8px}
+    td.m,td .m{white-space:normal}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="in">
+    <span class="name">tp</span>
+    <a href="#s1">ลองก่อน</a>
+    <a href="#s2">migrate</a>
+    <a href="#s3">replica</a>
+    <a href="#s4">failback</a>
+    <a href="#s5">status / doctor</a>
+    <a href="#s6">อ่านผล</a>
+    <a href="#s7">เจอคำปฏิเสธ</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="doc">
+  <h1>คู่มือใช้งาน tp</h1>
+  <p>เปิดหน้านี้หน้าเดียวก็ทำงานได้ครบ — คำสั่งจริง เรียงตามลำดับที่ต้องใช้จริง</p>
+  <div class="where">ทุกคำสั่งในหน้านี้พิมพ์บนเครื่อง {nfs_node} เท่านั้น ยกเว้นที่เขียนบอกไว้ชัดๆ</div>
+</header>
+
+<section id="s0">
+  <div class="eyebrow"><span class="num">0</span><h2>tp คืออะไร</h2></div>
+  <p><code class="inl">tp</code> คือคำสั่งเดียวที่มีเครื่องยนต์อยู่ข้างหลัง 3 ตัว แต่ละตัวทำหน้าที่คนละอย่าง
+     ไม่มีตัวไหนเปิดหรือปิด CT ให้เอง — งานเปิดปิดเป็นงานของคน ทำเองทุกครั้ง</p>
+  <table>
+    <tr><th style="width:29%">คำสั่ง</th><th>ทำอะไร</th></tr>
+    <tr><td class="m">tp migrate</td>
+        <td>ย้าย CT ที่ยังอยู่บนเครื่องเก่านอกระบบ เข้ามาเป็นไฟล์ image ที่เครื่องนี้ ทำจนขึ้นเครื่องใหม่แล้วจบ ไม่ต้องทำอีก</td></tr>
+    <tr><td class="m">tp replica</td>
+        <td>ก๊อป image ที่ใช้งานจริงอยู่ตอนนี้ ไปเป็นสำเนาที่<b>ปิดไว้</b>บนเครื่อง {backup_node} ทำตลอดไป ทุก 15 นาที</td></tr>
+    <tr><td class="m">tp failback</td>
+        <td>วันที่ของจริงพังจนต้องเปิดสำเนาใช้แทน คำสั่งนี้พาข้อมูลที่สำเนาทำไว้ระหว่างนั้น กลับเข้า image ตัวจริง</td></tr>
+    <tr><td class="m">tp status</td>
+        <td>อ่านอย่างเดียว ไม่แตะอะไรทั้งนั้น — รอบล่าสุดของ CT แต่ละตัวเป็นยังไง</td></tr>
+    <tr><td class="m">tp doctor</td>
+        <td>อ่านอย่างเดียว — ถามคำถามที่ไม่มีใครจำได้ว่าต้องถาม เช่น CT ตัวไหนขึ้นระบบใหม่แล้วแต่ยังไม่มีสำเนา</td></tr>
+  </table>
+  <p>เริ่มทุกครั้งเหมือนกันหมด คือเข้าเครื่องแล้วเข้าโฟลเดอร์ก่อน ทุกอย่างอยู่ในโฟลเดอร์นี้โฟลเดอร์เดียว</p>
+  <div class="code"><pre><span class="p">$ </span>ssh root@{nfs_node}
+<span class="p">$ </span>cd /root/tp
+<span class="p">$ </span>./tp                    <span class="c"># no arguments = the list of subcommands</span>
+<span class="p">$ </span>./tp version</pre></div>
+  <div class="tip">
+    <p><b>อยากอ่านรายละเอียดของเครื่องยนต์ตัวไหน</b> ใส่ <code class="inl">--help</code> ต่อท้ายได้ทุกตัว
+       มันจะพิมพ์หัวไฟล์ของตัวเองออกมา รวมถึงความหมายของ exit code</p>
+  </div>
+  <div class="code"><pre><span class="p">$ </span>./tp migrate --help
+<span class="p">$ </span>./tp replica --help
+<span class="p">$ </span>./tp failback --help</pre></div>
+</section>
+
+<section id="s1">
+  <div class="eyebrow"><span class="num">1</span><h2>นิสัยเดียวที่ต้องติด: ลองด้วย --dry-run ก่อนเสมอ</h2></div>
+  <p class="lead">ข้อเดียวในคู่มือนี้ที่ถ้าจำได้ข้อเดียว ให้จำข้อนี้</p>
+  <p>เครื่องยนต์ทั้งสามตัวรับ <code class="inl">--dry-run</code> เหมือนกันหมด ใส่แล้ว<b>ด่านตรวจทุกด่านยังทำงานครบ</b>
+     แต่ไม่มีการเขียนอะไรลงที่ไหนเลย ทั้งเครื่องนี้และเครื่องปลายทาง สิ่งที่ได้คือรายการว่า<b>ถ้าทำจริงจะเกิดอะไรขึ้น</b>
+     นี่คือวิธีมองก่อนลงมือ และเป็นคำสั่งแรกของทุกหัวข้อในคู่มือนี้</p>
+  <div class="code"><pre><span class="p">$ </span>./tp migrate  --ctid 251 --dry-run
+<span class="p">$ </span>./tp replica  --dry-run
+<span class="p">$ </span>./tp failback --all --dry-run</pre></div>
+  <p>บรรทัดสุดท้ายของรอบ dry-run จะบอกไว้เองว่าไม่ได้เขียนอะไร ถ้าอ่านแล้วรายการตรงกับที่คิด ค่อยรันซ้ำโดยตัด
+     <code class="inl">--dry-run</code> ออก</p>
+  <div class="out">dry-run only - nothing was written, here or on the backup node</div>
+  <div class="warn">
+    <p><b>ข้อยกเว้นเดียว</b> <code class="inl">--stopped</code> ของ migrate ใช้ร่วมกับ <code class="inl">--dry-run</code> ไม่ได้
+       เพราะมันต้องไปสั่ง <code class="inl">pct mount</code> บนเครื่องเก่า ซึ่งเป็นการเขียนบนเครื่องคนอื่น
+       โปรแกรมจะปฏิเสธและบอกให้ dry-run รอบธรรมดาแทน</p>
+  </div>
+</section>
+
+<div class="part" id="part1">
+  <div class="label">3 flows</div>
+  <h2>งานทั้งสามแบบ ทีละแบบ</h2>
+</div>
+
+<section id="s2">
+  <div class="eyebrow"><span class="num">2</span><h2>tp migrate — ดึง CT จากเครื่องเก่าเข้ามา</h2></div>
+  <p class="lead">ใช้ตอนย้ายเข้าระบบใหม่ ทำทีเดียวจบต่อ CT หนึ่งตัว จบแล้วไม่ต้องทำอีก</p>
+  <p>โปรแกรมก๊อปข้อมูลของ CT ที่<b>ยังเปิดใช้งานอยู่</b>บนเครื่องเก่า เข้ามาเป็นไฟล์ image ที่เครื่องนี้
+     ลูกค้าไม่รู้สึกอะไรเลย แล้วมันสร้าง config ของ CT ตัวใหม่ให้บนเครื่องปลายทาง โดย<b>ไม่ใส่เน็ต</b>และ<b>ไม่ให้เปิดเอง</b>
+     ตัวจริงกับตัวใหม่จึงไม่มีวันชนกันบนเน็ตเวิร์ก</p>
+
+  <h3>ไฟล์ที่มันอ่าน</h3>
+  <table>
+    <tr><th style="width:36%">ไฟล์</th><th>คืออะไร</th></tr>
+    <tr><td class="m">inventory.tsv</td><td>รายชื่อ CT ที่จะย้าย 5 ช่อง เว้นวรรคหรือ tab ก็ได้ · ต้นแบบอยู่ที่ <span class="m">inventory.sample.tsv</span></td></tr>
+    <tr><td class="m">ctmig.conf</td><td>ความเร็วและตัวเลขปรับจูน ไม่ต้องแตะถ้ายังไม่มีปัญหา</td></tr>
+    <tr><td class="m">done/&lt;new_ctid&gt;.done</td><td>ไฟล์เปล่าที่<b>คนสร้างเอง</b> แปลว่า CT ตัวนี้ปิดงานแล้ว รอบต่อไปจะข้ามถาวร</td></tr>
+  </table>
+  <p>ห้าช่องใน <code class="inl">inventory.tsv</code> เรียงแบบนี้ ไม่มีช่องไหนมีค่าเริ่มต้น ขาดช่องไหนแถวนั้นถูกข้ามพร้อมขึ้น ERROR</p>
+  <div class="code"><pre><span class="c"># old_node     old_ctid  new_ctid  new_node       storage</span>
+10.100.1.11    100       251       10.100.1.31    tank-hdd-nas
+10.100.1.23    998       99200     10.100.1.18    tank-ssd-nas</pre></div>
+
+  <h3>ลองก่อน</h3>
+  <div class="code"><pre><span class="p">$ </span>./tp migrate --ctid 251 --dry-run</pre></div>
+
+  <h3>ทำจริง</h3>
+  <p>ทีละตัวใช้ <code class="inl">--ctid</code> (ใส่<b>เลขตัวใหม่</b> ช่องที่ 3) · ทั้ง storage ใช้ <code class="inl">--storage</code> · ไม่ใส่อะไรเลยคือทุกแถว</p>
+  <div class="code"><pre><span class="p">$ </span>./tp migrate --ctid 251
+<span class="p">$ </span>./tp migrate --storage tank-hdd-nas
+<span class="p">$ </span>./tp migrate</pre></div>
+  <p>รันซ้ำได้ตลอดและควรรันซ้ำ รอบหลังๆ ก๊อปเฉพาะส่วนที่เปลี่ยน ยิ่งรันบ่อยรอบสุดท้ายวัน go-live ยิ่งสั้น</p>
+
+  <h3>อ่านผลยังไง</h3>
+  <div class="out">##############################################################################
+[251] CT 100 on 10.100.1.11  -&gt;  CT 251 on 10.100.1.31, storage 'tank-hdd-nas'
+[251] stats: files=1240 changed=812.4MiB wire=190.2MiB of 12.0GiB time=96s
+[251] create CT config on 10.100.1.31 (no net, onboot=0, stopped)
+##############################################################################
+lane 'all' finished: <span class="g">ok=1 skipped=0 frozen=2 failed=0</span></div>
+  <p>ดูสองอย่าง: <code class="inl">changed=</code> ของแต่ละตัวว่าลดลงเรื่อยๆ ไหม และบรรทัดสรุปท้ายรอบต้องได้
+     <code class="inl">failed=0</code> · <code class="inl">frozen=</code> คือจำนวนตัวที่ปิดงานไปแล้ว เป็นเรื่องปกติ</p>
+
+  <h3>วัน go-live — งานที่โปรแกรมไม่ทำให้</h3>
+  <p>ห้ามสลับลำดับข้อ 1 กับ 2</p>
+  <ol class="steps">
+    <li><b>ปิด CT ตัวเก่าด้วยมือ แล้วรอจนดับสนิท</b>
+      <div class="code"><pre><span class="p">$ </span>ssh root@10.100.1.11 pct shutdown 100
+<span class="p">$ </span>ssh root@10.100.1.11 pct status 100      <span class="c"># must say: status: stopped</span></pre></div></li>
+    <li><b>รอบสุดท้าย</b> เก็บข้อมูลช่วงท้ายที่ยังไม่ได้ก๊อป ใช้กับทีละตัวเท่านั้น
+      <div class="code"><pre><span class="p">$ </span>./tp migrate --ctid 251 --stopped</pre></div></li>
+    <li><b>ปิดงาน CT ตัวนี้</b> ไม่ทำข้อนี้ รอบถัดไปจะก๊อปทับตัวใหม่ที่กำลังใช้งานอยู่
+      <div class="code"><pre><span class="p">$ </span>touch done/251.done</pre></div></li>
+    <li><b>เติมเน็ตแล้วค่อยสตาร์ท</b> ไอพีข้างล่างเป็นตัวอย่าง แก้ให้ตรงของจริง
+      <div class="code"><pre><span class="p">$ </span>ssh root@10.100.1.31 pct set 251 -net0 name=eth0,bridge=vmbr0,ip=10.100.1.51/24,gw=10.100.1.1
+<span class="p">$ </span>ssh root@10.100.1.31 pct start 251</pre></div></li>
+    <li><b>เพิ่มตัวนี้เข้ารายชื่อสำเนา</b> ขึ้นระบบใหม่แล้วแต่ยังไม่มีสำเนา คือช่องโหว่ที่ <code class="inl">tp doctor</code> ตามหาอยู่ (ข้อ 3)</li>
+  </ol>
+  <div class="ok">
+    <p><b>เสร็จแล้วหน้าตาแบบนี้</b> รอบสุดท้ายได้ <code class="inl">failed=0</code> · มีไฟล์ <span class="m">done/251.done</span> ·
+       CT ตัวใหม่เปิดใช้งานอยู่ · รอบถัดๆ ไปตัวนี้ไปโผล่ที่ช่อง <code class="inl">frozen</code> แทน</p>
+  </div>
+  <div class="stop">
+    <p><b>ถ้าตัวใหม่มีปัญหา</b> ตัวเก่ายังอยู่ครบทุกอย่าง โปรแกรมนี้อ่านอย่างเดียวไม่เคยแตะมัน เปิดกลับได้เลย
+       แล้วลบ marker ทิ้งเพื่อให้ระบบกลับมา sync ตัวนี้ต่อ</p>
+  </div>
+  <div class="code"><pre><span class="p">$ </span>ssh root@10.100.1.31 pct stop 251        <span class="c"># stop the new one first</span>
+<span class="p">$ </span>ssh root@10.100.1.11 pct start 100       <span class="c"># the old CT was never touched</span>
+<span class="p">$ </span>rm done/251.done</pre></div>
+</section>
+
+<section id="s3">
+  <div class="eyebrow"><span class="num">3</span><h2>tp replica — สำเนากันพัง ทุก 15 นาที ตลอดไป</h2></div>
+  <p class="lead">ตั้งครั้งเดียวแล้วปล่อยให้ cron ทำ ปกติไม่ต้องพิมพ์เองเลย</p>
+  <p>ทุก 15 นาที โปรแกรมก๊อปข้อมูลของ CT ที่อยู่ในรายชื่อ ไปเป็นสำเนาบนเครื่อง {backup_node}
+     สำเนาทุกตัว<b>ปิดไว้ตลอด</b> เลขของสำเนาคือเลขต้นทางบวก 8000 (เช่น CT 105 → สำเนา 8105)
+     สำเนาถือ IP และ MAC ของตัวจริงไว้เป๊ะๆ แต่ไปนั่งอยู่บนสะพานลอยที่ไม่ต่อสายออกไปไหน จึงชนกับตัวจริงไม่ได้</p>
+
+  <h3>ไฟล์ที่มันอ่าน</h3>
+  <table>
+    <tr><th style="width:36%">ไฟล์</th><th>คืออะไร</th></tr>
+    <tr><td class="m">inventory-replica.tsv</td>
+        <td>รายชื่อ CT ที่จะทำสำเนา · <b>คนละไฟล์กับของ migrate</b> ช่องคนละความหมายกันเลย · ต้นแบบอยู่ที่ <span class="m">inventory-replica.sample.tsv</span></td></tr>
+    <tr><td class="m">ctrep.conf</td><td>เครื่อง backup, pool ปลายทาง, ความเร็ว, ชื่อสะพานลอย</td></tr>
+    <tr><td class="m">PAUSE</td><td>ถ้ามีไฟล์นี้ = หยุดทำสำเนาทั้งฟลีต ใช้ตอน failback เท่านั้น เสร็จแล้วต้องลบ</td></tr>
+  </table>
+  <p>แถวหนึ่งบรรทัด ช่องแรกคือเลข CT ต้นทาง ช่องหลังใส่ได้ตามต้องการไม่สนลำดับ:
+     ตัวเลข = เลขสำเนาที่อยากกำหนดเอง, <code class="inl">hdd</code> หรือ <code class="inl">ssd</code> = pool ปลายทาง,
+     ที่เหลือ = ชื่อ storage ต้นทางไว้กันย้ายมั่ว</p>
+  <div class="code"><pre>105   ssd
+112   9112
+113   8113   tank-ssd-nas   ssd
+114                       <span class="c"># -&gt; copy 8114, default pool</span></pre></div>
+
+  <h3>ลองก่อน</h3>
+  <div class="code"><pre><span class="p">$ </span>./tp replica --dry-run
+<span class="p">$ </span>./tp replica --ctid 105 --dry-run</pre></div>
+
+  <h3>ทำจริง</h3>
+  <p>รันมือเฉพาะตอนเพิ่ม CT ใหม่เข้ารายชื่อ หรือตอนตามแก้ตัวที่ค้าง นอกนั้นปล่อย cron</p>
+  <div class="code"><pre><span class="p">$ </span>./tp replica --ctid 105
+<span class="p">$ </span>./tp replica --storage tank-hdd-nas
+<span class="p">$ </span>./tp replica</pre></div>
+
+  <h3>cron หนึ่งบรรทัดต่อหนึ่ง storage</h3>
+  <p>แยกไฟล์ตาม storage ต้นทาง เพื่อให้สองสายวิ่งพร้อมกันได้โดยไม่แย่งแบนด์วิดท์กัน
+     ตัว CT ไม่ได้เลือกสายเอง — มันถูกจัดสายตาม storage ที่ข้อมูลมันนอนอยู่จริง</p>
+  <div class="code"><pre><span class="p">$ </span>echo '*/15 * * * * root /root/tp/tp replica --storage tank-hdd-nas &gt;/dev/null 2&gt;&amp;1' &gt; /etc/cron.d/ct-replica-hdd
+<span class="p">$ </span>echo '*/15 * * * * root /root/tp/tp replica --storage tank-ssd-nas &gt;/dev/null 2&gt;&amp;1' &gt; /etc/cron.d/ct-replica-ssd</pre></div>
+  <div class="tip">
+    <p><b>ตั้ง 2 สายแล้วต้องบอกมันด้วย</b> เปิด <span class="m">ctrep.conf</span> แล้วตั้ง <code class="inl">LANES=2</code>
+       เพดานความเร็วรวมจะได้ยังคุมอยู่ · ถ้าไฟล์ cron เดิมชี้ไปที่ <span class="m">/root/tp/ct-replica.sh</span> ก็ถูกเหมือนกัน
+       <code class="inl">tp replica</code> ส่งต่อไปให้ไฟล์นั้นตรงๆ ไม่ต่างกันเลย</p>
+  </div>
+
+  <h3>อ่านผลยังไง</h3>
+  <div class="out">R9: vmbr99 ok on {backup_node} (no uplink)
+[105] stats: files=318 changed=214.6MiB wire=61.2MiB time=44s avg=1.3MiB/s
+[105] OK -&gt; 8105 (rc=0)
+##############################################################################
+=== lane 'tank-hdd-nas' finished: <span class="g">ok=6 skipped=0 failed=0</span> ===</div>
+  <div class="ok">
+    <p><b>เสร็จแล้วหน้าตาแบบนี้</b> ทุกรอบจบด้วย <code class="inl">failed=0</code> · สำเนาทุกตัวยัง<b>ปิด</b>อยู่ ·
+       <code class="inl">tp doctor</code> ไม่บ่นว่ามี CT ไหนไม่มีสำเนา และไม่มี PAUSE ค้าง</p>
+  </div>
+</section>
+
+<section id="s4">
+  <div class="eyebrow"><span class="num">4</span><h2>tp failback — พาข้อมูลกลับหลังวันที่พัง</h2></div>
+  <p class="lead">ใช้เฉพาะตอนที่สำเนาถูกเปิดขึ้นมารับงานแทนตัวจริงไปแล้ว และตอนนี้ข้อมูลใหม่ที่สุดอยู่ที่สำเนา</p>
+  <p>มันคือ replica ที่วิ่งย้อนทาง ดึงข้อมูลจากสำเนาบนเครื่อง {backup_node} กลับเข้า image ตัวจริงที่เครื่องนี้
+     และเป็นทางเดียวที่ความผิดพลาดจะทำลายข้อมูลของ<b>ตัวจริง</b> ไม่ใช่สำเนา ด่านตรวจของมันจึงปฏิเสธอย่างเดียว ไม่มีเตือนแล้วทำต่อ
+     มันอ่าน <span class="m">inventory-replica.tsv</span> กับ <span class="m">ctrep.conf</span> ชุดเดียวกับ replica ไม่ต้องตั้งค่าซ้ำ</p>
+
+  <h3>ข้อ 0 ทำวันธรรมดา ไม่ใช่วันเกิดเหตุ</h3>
+  <p><code class="inl">--list</code> อ่านอย่างเดียว มันไล่ถามทุกเครื่องว่า CT ตัวจริงอยู่ไหนและดับหรือยัง — ถามผ่าน ssh <b>ด้วยชื่อเครื่อง</b>
+     เครื่องนี้ตั้งใจให้อยู่นอกคลัสเตอร์ มันจึงไม่ได้ชื่อและกุญแจมาเองฟรีๆ วันที่รู้ว่า ssh ไม่เคยถูกตั้ง ต้องไม่ใช่วันที่สำเนากำลังรับลูกค้าอยู่</p>
+  <div class="code"><pre><span class="p">$ </span>./tp failback --list</pre></div>
+  <div class="out">CT      COPY    DEST  PROD-NODE      PROD        COPY-STATE  IMAGE
+105     8105    hdd   pve-a          stopped     running     /tank/hosting/images/105/vm-105-disk-0.raw
+112     9112    ssd   pve-b          stopped     running     /tank/fast/images/112/vm-112-disk-0.raw</div>
+
+  <h3>ลองก่อน</h3>
+  <div class="code"><pre><span class="p">$ </span>./tp failback --all --dry-run</pre></div>
+
+  <h3>ขั้นที่ 1 — presync ตอนสำเนายังรับงานอยู่</h3>
+  <p>รันได้บ่อยเท่าที่อยากรัน ระหว่างที่ลูกค้ายังใช้สำเนาอยู่ตามปกติ แต่ละรอบขนเฉพาะส่วนที่เปลี่ยน
+     ดูเลข <code class="inl">changed=</code> ของแต่ละตัว รันซ้ำจนมันไม่ลดแล้ว นั่นคือพร้อมตัดจริง</p>
+  <div class="code"><pre><span class="p">$ </span>./tp failback --all
+<span class="p">$ </span>./tp failback --ctid 105
+<span class="p">$ </span>./tp failback --all --dest ssd           <span class="c"># only copies on that backup pool</span></pre></div>
+  <div class="out">[105] stats: files=44 changed=18.2MiB wire=6.1MiB time=7s
+[105] OK &lt;= 8105 (rc=0)
+##############################################################################
+=== failback finished: <span class="g">ok=6 skipped=0 failed=0</span> ===
+presync done. run it again until 'changed=' stops shrinking, then cut over:</div>
+  <div class="warn">
+    <p><b>ขั้นนี้สำเนาต้องเปิดอยู่</b> ตราบใดที่สำเนายังรัน ตัวทำสำเนาจะข้ามมันเอง ข้อมูลใหม่จึงปลอดภัย
+       ถ้าปิดสำเนาไปแล้วโดยยังไม่ได้ตั้ง PAUSE โปรแกรมจะปฏิเสธและบอกให้ไปใช้ <code class="inl">--final</code> แทน</p>
+  </div>
+
+  <h3>ขั้นที่ 2 — รอบสุดท้าย ต้องมี PAUSE ก่อน</h3>
+  <p>ทำสามข้อนี้ตามลำดับ ห้ามข้ามข้อแรก ไฟล์ PAUSE คือสิ่งเดียวที่กันไม่ให้ cron รอบถัดไปเอาข้อมูลเก่าทับสำเนา
+     ทันทีที่สำเนาถูกปิด</p>
+  <ol class="steps">
+    <li><b>หยุดการทำสำเนาทั้งฟลีตก่อน</b>
+      <div class="code"><pre><span class="p">$ </span>touch /root/tp/PAUSE</pre></div></li>
+    <li><b>ปิดสำเนาทุกตัวที่กำลังรับงานอยู่</b> ใส่เลขสำเนา ไม่ใช่เลขตัวจริง
+      <div class="code"><pre><span class="p">$ </span>ssh root@{backup_node} pct shutdown 8105
+<span class="p">$ </span>ssh root@{backup_node} pct status 8105   <span class="c"># must say: status: stopped</span></pre></div></li>
+    <li><b>รอบสุดท้าย</b>
+      <div class="code"><pre><span class="p">$ </span>./tp failback --all --final</pre></div></li>
+  </ol>
+  <div class="tip">
+    <p><b>ก่อนเขียนทับ image ตัวจริง มันถ่ายรูปเก็บไว้ให้เองหนึ่งรูป</b> ชื่อขึ้นต้นด้วย <code class="inl">ctback-</code>
+       ในบรรทัด <code class="inl">safety net:</code> ของ log · ถ้าจะย้อน ให้<b>ก๊อปไฟล์ออกมาจากรูปนั้น</b> ห้ามสั่งย้อนทั้ง dataset
+       เพราะจะลากทุก CT ที่อยู่ด้วยกันย้อนไปหมด</p>
+  </div>
+
+  <h3>ขั้นที่ 3 — งานที่โปรแกรมไม่ยอมทำให้</h3>
+  <p>พอรอบ <code class="inl">--final</code> จบ มันจะพิมพ์รายการนี้ออกมาเองพร้อมเลข CT จริง สี่ข้อนี้เป็นงานคนล้วนๆ ตั้งใจให้เป็นแบบนั้น</p>
+  <div class="out">next, by hand, for: 105 112
+  1) start each production CT:   ssh root@&lt;its node&gt; pct start &lt;ctid&gt;
+  2) put each copy's network back on the mock bridge (ct-replica R11 nags until you do)
+  3) rm /root/tp/PAUSE
+  4) /root/tp/ct-replica.sh          # first round back, must end failed=0</div>
+  <div class="code"><pre><span class="p">$ </span>ssh root@pve-a pct start 105
+<span class="p">$ </span>rm /root/tp/PAUSE
+<span class="p">$ </span>./tp replica</pre></div>
+  <div class="ok">
+    <p><b>เสร็จแล้วหน้าตาแบบนี้</b> CT ตัวจริงเปิดรับงานอยู่ · สำเนากลับไปปิดและกลับไปอยู่บนสะพานลอยตามเดิม ·
+       ไฟล์ PAUSE หายไปแล้ว · <code class="inl">tp replica</code> รอบแรกหลังกลับมาจบด้วย <code class="inl">failed=0</code></p>
+  </div>
+  <div class="stop">
+    <p><b>ลืมลบ PAUSE คือความเงียบที่แพงที่สุดในระบบนี้</b> สำเนาทุกตัวจะหยุดอัปเดตโดยไม่มีอะไรร้อง
+       รู้ตัวอีกทีคือวันที่ต้องใช้มัน · <code class="inl">tp doctor</code> ถามข้อนี้ให้ทุกครั้งที่รัน</p>
+  </div>
+</section>
+
+<div class="part" id="part2">
+  <div class="label">read only</div>
+  <h2>ดูสถานะ และอ่านผล</h2>
+</div>
+
+<section id="s5">
+  <div class="eyebrow"><span class="num">5</span><h2>tp status กับ tp doctor</h2></div>
+  <p class="lead">ทั้งสองคำสั่งอ่านอย่างเดียว พิมพ์ตอนไหนก็ได้ ไม่มีทางทำอะไรพัง</p>
+
+  <h3>tp status — รอบล่าสุดของแต่ละ CT เป็นยังไง</h3>
+  <p>ตอบคำถามว่า "CT ตัวนี้ครั้งสุดท้ายที่ระบบแตะมัน ผลเป็นยังไง เมื่อไหร่ ขยับไปกี่ MB"
+     ทั้งสามเครื่องยนต์อยู่ในตารางเดียวกัน ช่อง <code class="inl">TOOL</code> บอกว่าใครเป็นคนเขียนแถวนั้น
+     ใช้ตอนเปิดเครื่องมาตอนเช้า หรือตอนอยากรู้ว่าเมื่อคืนมีอะไรพลาดไหม</p>
+  <div class="code"><pre><span class="p">$ </span>./tp status</pre></div>
+  <div class="out">##############################################################################
+CT       TOOL       STATUS      REASON                 WHEN                CHANGED
+105      replica    <span class="g">ok</span>          -                      2026-08-11T09:15:02 214MiB (rc=0)
+112      replica    <span class="r">failed</span>      r5_rsync               2026-08-11T09:15:44 0MiB (rc=23)
+251      migrate    <span class="g">ok</span>          -                      2026-08-10T22:04:11 1024MiB (rc=24)
+##############################################################################</div>
+
+  <h3>tp doctor — คำถามที่ไม่มีใครจำได้ว่าต้องถาม</h3>
+  <p>ถาม 5 ข้อรวดเดียว: CT ตัวไหนขึ้นระบบใหม่แล้วแต่ไม่มีสำเนา · เพดานความเร็วสองตัวที่ไม่รู้จักกัน ·
+     image ที่โตเกินตัวเลขใน config · PAUSE ที่ค้างอยู่ · รายชื่อทั้งสองไฟล์อ่านออกไหมและมีกี่แถว
+     เจออะไรมันจะจบด้วยรหัสไม่เป็นศูนย์ · ควรพิมพ์ทุกครั้งหลังจบงาน migrate หนึ่งตัว และหลังจบ failback</p>
+  <div class="code"><pre><span class="p">$ </span>./tp doctor</pre></div>
+  <div class="out">##############################################################################
+== live in the hybrid but not replicated
+  <span class="r">CT 251 went live (done/251.done) but is not in inventory-replica.tsv - it has NO DR copy</span>
+##############################################################################
+== bandwidth ceilings that do not know about each other
+  ctmig.conf=230m  ctrep.conf=230m  -&gt; up to 460m if both run at once
+##############################################################################
+== images grown past what their config says
+  <span class="g">ok</span>
+##############################################################################
+== stale PAUSE
+  <span class="g">ok</span>
+##############################################################################
+== inventories readable
+  inventory.tsv: 12 rows
+  inventory-replica.tsv: 9 rows</div>
+</section>
+
+<section id="s6">
+  <div class="eyebrow"><span class="num">6</span><h2>อ่านผลการรันหนึ่งรอบ</h2></div>
+  <p class="lead">ทุกเครื่องยนต์จบด้วยบรรทัดสรุปหน้าตาเดียวกัน อ่านบรรทัดเดียวนี้ก่อนเสมอ</p>
+  <div class="out">=== lane 'tank-hdd-nas' finished: <span class="g">ok=6 skipped=1 failed=0</span> ===</div>
+  <table>
+    <tr><th style="width:22%">คำ</th><th>แปลว่า</th></tr>
+    <tr><td class="m">ok=</td><td>สำเร็จกี่ตัว ข้อมูลถึงปลายทางครบ</td></tr>
+    <tr><td class="m">skipped=</td><td>ข้ามกี่ตัว — ด่านตรวจปฏิเสธไว้ <b>ไม่ใช่ความเสียหาย</b> แต่แปลว่าตัวนั้นยังไม่ได้ก๊อป ต้องไปดูว่าทำไม</td></tr>
+    <tr><td class="m">failed=</td><td>พังกี่ตัว ต้องมี 0 เสมอ ไม่เป็น 0 คือมีงานให้ทำ</td></tr>
+    <tr><td class="m">frozen=</td><td>เฉพาะ migrate — ปิดงานไปแล้วกี่ตัว (มีไฟล์ใน <span class="m">done/</span>) เป็นเรื่องปกติ</td></tr>
+  </table>
+  <p>ถ้ามีตัวพัง บรรทัดถัดมาจะบอกเลขตัวที่ต้องไปดู ตามด้วยเลขนั้นไปหาใน log</p>
+  <div class="out"><span class="r">NEEDS ATTENTION -&gt; CT: 112 118</span></div>
+
+  <h3>log ของสายนั้นอยู่ไหน</h3>
+  <p>อยู่ในโฟลเดอร์ <span class="m">logs/</span> ข้างๆ โปรแกรม แยกไฟล์ตามสายและตามวัน ชื่อสายคือชื่อ storage ที่ใส่หลัง
+     <code class="inl">--storage</code> หรือคำว่า <code class="inl">all</code> ถ้าไม่ได้ใส่</p>
+  <table>
+    <tr><th style="width:32%">เครื่องยนต์</th><th>ไฟล์ log</th></tr>
+    <tr><td class="m">tp migrate</td><td class="m">logs/ctmig-&lt;lane&gt;-&lt;date&gt;.log</td></tr>
+    <tr><td class="m">tp replica</td><td class="m">logs/replica-&lt;lane&gt;-&lt;date&gt;.log</td></tr>
+    <tr><td class="m">tp failback</td><td class="m">logs/failback-&lt;date&gt;.log</td></tr>
+  </table>
+  <div class="code"><pre><span class="p">$ </span>ls -lt logs/ | head
+<span class="p">$ </span>grep -n '\[112\]' logs/replica-tank-hdd-nas-2026-08-11.log
+<span class="p">$ </span>tail -f logs/replica-all-2026-08-11.log</pre></div>
+  <div class="tip">
+    <p><b>แถวคั่นยาวๆ ในไฟล์ log ไม่ใช่ error</b> มันคือเส้นแบ่งระหว่าง CT ตัวหนึ่งกับตัวถัดไป
+       มีไว้ให้กวาดตาหาตัวที่พังเจอเร็วๆ ตอนตีสอง</p>
+  </div>
+
+  <h3>ตัวเลข rc ท้ายบรรทัด</h3>
+  <p>คือรหัสของ rsync ตัวขนข้อมูล จำสี่ตัวนี้พอ</p>
+  <table>
+    <tr><th style="width:14%">rc</th><th>แปลว่า</th><th>ทำยังไงต่อ</th></tr>
+    <tr><td class="m">0</td><td>สำเร็จ</td><td>ไม่ต้องทำอะไร</td></tr>
+    <tr><td class="m">24</td><td><b>สำเร็จเหมือนกัน</b> — มีไฟล์หายไประหว่างก๊อป ซึ่งเป็นเรื่องปกติมากของ CT ที่ยังเปิดใช้งานอยู่</td><td>ไม่ต้องทำอะไร</td></tr>
+    <tr><td class="m">23</td><td>ก๊อปได้ไม่ครบ</td><td>เจอ<b>ครั้งแรก</b> ปกติเป็นอาการชั่วคราวจากการอ่านแบบไม่แตะต้นฉบับ ปล่อยให้รอบหน้าเก็บ ·
+        เจอ<b>สองรอบติดกันที่ CT ตัวเดิม</b> ไม่ใช่เรื่องชั่วคราวแล้ว ไฟล์ image น่าจะเสีย ให้ปิด CT ตัวนั้นก่อน แล้วตรวจแบบอ่านอย่างเดียว</td></tr>
+    <tr><td class="m">11</td><td>พื้นที่ใน image เต็ม</td><td>โปรแกรมขยาย image ให้เอง 5% แล้วลองใหม่ สามครั้ง ถ้ายังไม่พอมันจะบอกดังๆ ·
+        ขยายแล้วเลขขนาดใน config ของ CT จะไม่ตรง ต้องไปแก้บรรทัด rootfs เองตอนว่าง</td></tr>
+  </table>
+  <p>คำสั่งตรวจ image ตอนเจอ 23 สองรอบติด — <b>CT ต้องดับก่อน</b> เท่านั้น ชื่อไฟล์ image เอามาจากบรรทัด ERROR ใน log ได้ตรงๆ</p>
+  <div class="code"><pre><span class="p">$ </span>pvesm path tank-hdd-nas:105/vm-105-disk-0.raw    <span class="c"># where the image really is</span>
+<span class="p">$ </span>e2fsck -fn /tank/hosting/images/105/vm-105-disk-0.raw   <span class="c"># look only, changes nothing</span></pre></div>
+</section>
+
+<section id="s7">
+  <div class="eyebrow"><span class="num">7</span><h2>คำปฏิเสธที่จะได้เจอจริงๆ และวิธีแก้</h2></div>
+  <p class="lead">โปรแกรมปฏิเสธเพราะมันเห็นอะไรบางอย่างที่ผิด ไม่ใช่เพราะมันเสีย อ่านคำที่มันพิมพ์ แล้วแก้ตามนี้</p>
+
+  <h3>GUARD B1: cannot reach &lt;node&gt;</h3>
+  <div class="out"><span class="r">[105] GUARD B1: cannot reach pve-a to check the CT - 'unverified' is not 'stopped'</span></div>
+  <p>failback ต้องถามเครื่องปลายทางให้ได้ว่า CT ตัวจริงดับแล้วจริงไหม ถามไม่ได้ = ไม่นับว่าดับ = ไม่ยอมเขียน
+     เพราะถ้ามันยังรันอยู่ การเขียนลงไปจะทำลาย CT ของลูกค้าตัวเป็นๆ · เครื่องนี้ต้อง ssh เป็น root
+     ไปทุกเครื่องที่รัน CT ได้ <b>โดยเรียกด้วยชื่อเครื่อง</b> · <b>ตรวจวันนี้เลย อย่ารอวันเกิดเหตุ</b></p>
+  <div class="code"><pre><span class="p">$ </span>./tp failback --list                      <span class="c"># it names every node it could not reach</span>
+<span class="p">$ </span>ssh -o BatchMode=yes root@pve-a true      <span class="c"># must print nothing and exit 0</span></pre></div>
+  <p>ถ้ามันบอกว่าหาชื่อเครื่องไม่เจอ ให้เพิ่มชื่อกับ IP ลงใน <span class="m">/etc/hosts</span> ของเครื่องนี้ ·
+     ถ้ามันถามรหัสผ่าน แปลว่ายังไม่ได้ส่งกุญแจไป</p>
+  <div class="code"><pre><span class="p">$ </span>ssh-copy-id root@pve-a</pre></div>
+
+  <h3>ไม่มีไฟล์รายชื่อ</h3>
+  <div class="out"><span class="r">ERROR: no inventory at /root/tp/inventory-replica.tsv - NOTHING was run</span>
+  this file is NOT ct-migrate's inventory.tsv; the columns differ</div>
+  <p>สองไฟล์นี้คนละไฟล์กัน ช่องคนละความหมาย ห้ามเอามาใช้แทนกันเด็ดขาด เริ่มจากไฟล์ต้นแบบ</p>
+  <div class="code"><pre><span class="p">$ </span>cp inventory-replica.sample.tsv inventory-replica.tsv    <span class="c"># replica + failback</span>
+<span class="p">$ </span>cp inventory.sample.tsv inventory.tsv                    <span class="c"># migrate only</span></pre></div>
+
+  <h3>ใส่ตัวกรองแล้วไม่ตรงกับใครเลย</h3>
+  <div class="out"><span class="r">ERROR: no CT matched --storage tank-sdd-nas - nothing was replicated</span></div>
+  <p>พิมพ์ชื่อผิดหนึ่งตัวอักษร งานเลยไม่ถูกทำเลยแม้แต่ตัวเดียว โปรแกรมจงใจให้จบแบบไม่สำเร็จ
+     เพราะถ้าจบแบบสำเร็จทั้งที่ไม่ได้ทำอะไร cron จะดูเขียวสนิทได้เป็นเดือนโดยไม่มีสำเนาเลยสักตัว · เทียบชื่อกับไฟล์รายชื่อ</p>
+  <div class="code"><pre><span class="p">$ </span>awk '$1!~/^#/ &amp;&amp; NF&gt;=5 {print $3, $5}' inventory.tsv
+<span class="p">$ </span>pvesm status</pre></div>
+
+  <h3>GUARD B7: could not snapshot</h3>
+  <div class="out"><span class="r">[110] GUARD B7: could not snapshot tank/hosting - NOTHING was written for CT 110</span></div>
+  <p>รอบ <code class="inl">--final</code> เขียนทับ image ตัวจริง รูปที่ถ่ายไว้ก่อนเขียนคือทางกลับทางเดียวที่มี
+     ถ่ายไม่ได้ = ไม่ยอมเขียน สาเหตุปกติคือ pool เต็ม</p>
+  <div class="code"><pre><span class="p">$ </span>zpool list
+<span class="p">$ </span>zfs list -t snapshot tank/hosting</pre></div>
+  <p>แก้ไม่ได้จริงๆ และยอมรับความเสี่ยงว่าจะไม่มีทางย้อนกลับ ต้องพิมพ์ประโยคนี้เองด้วยมือ ไม่มีทางไปโดนเข้าโดยบังเอิญ</p>
+  <div class="code"><pre><span class="p">$ </span>./tp failback --ctid 110 --final --no-snapshot</pre></div>
+
+  <h3>GUARD R9: สะพานลอยมีสายต่อออก</h3>
+  <div class="out"><span class="r">GUARD R9: vmbr99 on {backup_node} HAS AN UPLINK - NOTHING was run</span>
+  port 'eno2' is a physical NIC or a bond
+  ANY COPY ALREADY RUNNING ON IT MAY BE COLLIDING WITH PRODUCTION NOW.</div>
+  <p>สำเนาถือ IP และ MAC ของตัวจริง สิ่งเดียวที่ทำให้เรื่องนี้ปลอดภัยคือสะพาน <code class="inl">vmbr99</code>
+     บนเครื่อง {backup_node} ต่อไปไหนไม่ได้เลย วินาทีที่มีคนเสียบสายจริงเข้าไป สำเนาทุกตัวบนนั้นกลายเป็นเครื่องปลอมที่ชนกับของจริงทันที
+     มันจึงหยุดทั้งรอบ ไม่ทำอะไรต่อ · <b>นี่คืออันเดียวในหน้านี้ที่ต้องรีบภายในนาทีนี้</b> ไปดูว่ามีสำเนาตัวไหนเปิดอยู่บนนั้นแล้วหรือยัง</p>
+  <div class="code"><pre><span class="p">$ </span>ssh root@{backup_node} 'pct list'
+<span class="p">$ </span>ssh root@{backup_node} 'ls /sys/class/net/vmbr99/brif/'</pre></div>
+  <p>อีกแบบคือมันบอกว่าไม่มีสะพานนี้อยู่เลย แปลว่ายังไม่ได้สร้าง ดูวิธีสร้างใน ct-replica-setup.html</p>
+  <div class="out"><span class="r">GUARD R9: bridge vmbr99 does not exist on {backup_node} - NOTHING was run</span></div>
+</section>
+
+<section id="s8">
+  <div class="eyebrow"><span class="num">8</span><h2>อยากรู้ลึกกว่านี้ อ่านเล่มไหน</h2></div>
+  <p class="lead">หน้านี้พอสำหรับงานประจำวันทั้งหมด เล่มอื่นมีไว้ตอบคำถามที่เจาะกว่านี้</p>
+  <table>
+    <tr><th style="width:34%">เล่ม</th><th>ตอบคำถามว่า</th></tr>
+    <tr><td class="m">quickstart.html</td><td>เพิ่งเริ่มใช้ migrate ครั้งแรก ตั้งแต่ติดตั้งโฟลเดอร์ ทำ ssh key ไปจนขึ้นเครื่องใหม่ ทีละขั้น</td></tr>
+    <tr><td class="m">manual.html</td><td>migrate ในงานประจำวัน และรายละเอียดของด่านตรวจแต่ละด่าน</td></tr>
+    <tr><td class="m">ct-replica-setup.html</td><td>ติดตั้งระบบทำสำเนาครั้งแรก สร้าง pool ปลายทาง สร้างสะพานลอย ตั้ง cron</td></tr>
+    <tr><td class="m">ct-replica-manual.html</td><td>งานประจำวันของ replica เพิ่ม CT ใหม่ และวันที่ต้องเปิดสำเนาขึ้นมาใช้จริง</td></tr>
+    <tr><td class="m">infra-setup.html</td><td>ประกอบระบบทั้งชุดขึ้นมาใหม่ตั้งแต่ศูนย์ เครื่องไหนทำหน้าที่อะไร ต่อกันยังไง</td></tr>
+    <tr><td class="m">c2v.html</td><td>แปลง CT ให้กลายเป็น VM สาย RHEL / AlmaLinux / Rocky</td></tr>
+    <tr><td class="m">c2v-deb.html</td><td>แปลง CT ให้กลายเป็น VM สาย Debian / Ubuntu</td></tr>
+  </table>
+  <div class="stop">
+    <p><b>สามข้อที่ห้ามลืม</b> ลองด้วย <code class="inl">--dry-run</code> ก่อนเสมอ ·
+       migrate เสร็จแล้วต้อง <code class="inl">touch done/&lt;new_ctid&gt;.done</code> ·
+       failback เสร็จแล้วต้องลบไฟล์ PAUSE</p>
+  </div>
+</section>
+
+<footer>
+  คู่มือหน้าแรกของ tp · เปิดหน้านี้ก่อนหน้าอื่นเสมอ
+</footer>
+
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp';
+    btn.type = 'button';
+    btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.p').forEach(function(el){ el.remove(); });
+      var text = clone.textContent;
+      var done = function(){
+        btn.textContent = 'copied';
+        setTimeout(function(){ btn.textContent = 'copy'; }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else { fallback(); }
+      function fallback(){
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'select manually'; }
+        document.body.removeChild(ta);
+      }
+    });
+    box.appendChild(btn);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# fake mount. The only form the engine uses is
+#     mount -o loop,ro,noload <raw image> <mountpoint>
+# and every part of that line is load-bearing, so this fake refuses to pretend
+# about any of it.
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+opts=""; img=""; mnt=""
+while (( $# )); do
+  case "$1" in
+    -o) opts="${2:-}"; shift 2;;
+    -*) shift;;
+    *)  if [[ -z "$img" ]]; then img="$1"; else mnt="${1%/}"; fi; shift;;
+  esac
+done
+trace "mount -o $opts $img $mnt"
+
+grep -qxF "$mnt" "$SIMROOT/mount.fail" 2>/dev/null && { echo "mount: fake failure" >&2; exit 32; }
+
+# R6. noload is not a performance flag: without it the kernel replays the ext4
+# journal, which is a WRITE into the clone of a live customer image.
+[[ ",$opts," == *,ro,*     ]] || violation "loop-mount of $img is not read-only (-o $opts) - R6"
+[[ ",$opts," == *,noload,* ]] || violation "loop-mount of $img without noload (-o $opts) - the journal would be replayed into the source, R6"
+[[ ",$opts," == *,rw,*     ]] && violation "loop-mount of $img is read-write (-o $opts) - R6"
+
+prev="$(loop_of "$img")"
+[[ -n "$prev" ]] && violation "double loop-mount of $img (already on $prev, now $mnt)"
+is_mounted "$mnt" && violation "mount onto $mnt, which is already a mountpoint - the old image is now hidden, not released"
+
+# R1, and the reason this whole tool takes a snapshot at all: the bytes must
+# come from the point-in-time clone. Reading the LIVE dataset spreads one CT's
+# files over the minutes the transfer takes, which is a torn copy that boots.
+# A non-ZFS holder is the LIVE_FALLBACK case and the engine's own guard decides
+# whether that was accepted, so it is not this fake's business.
+holder="$(fs_holder "$img")"
+if [[ "$(fs_field "$holder" 2)" == "zfs" ]]; then
+  src="$(fs_field "$holder" 3)"
+  [[ "$(zfs_type "$src")" == "clone" ]] \
+    || violation "loop-mount reads $img from the LIVE dataset '$src', not from a clone - R1"
+fi
+
+[[ -f "$img" ]] || { echo "mount: $img: no such image" >&2; exit 32; }
+add_mount "$mnt"; add_loop "$img" "$mnt"
+# what the mounted filesystem "contains": where these bytes came from, and the
+# payload itself. Both travel with the rsync, so a scenario can prove that what
+# landed on the backup came out of the clone and not out of the live dataset.
+printf '%s\n' "$img" > "$mnt/.image"
+cat "$img" > "$mnt/rootfs.txt" 2>/dev/null
+exit 0

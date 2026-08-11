@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+. "$SIMLIB"
+img=""; for a in "$@"; do [[ -f "$a" || "$a" == */images/* ]] && img="$a"; done
+trace "truncate $*"
+# G3 made executable: touching the filesystem of a MOUNTED image is corruption.
+[[ -n "$img" && -n "$(loop_of "$img")" ]] && violation "truncate on a MOUNTED image: $img"
+dry_forbids "truncate $img"
+sz=""; for ((i=1;i<=$#;i++)); do [[ "${!i}" == "-s" ]] && { j=$((i+1)); sz="${!j}"; }; done
+[[ -n "$sz" && -n "$img" ]] && /usr/bin/truncate -s "$sz" "$img"
+exit 0

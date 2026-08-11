@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# B5/B6. Growing an image that is still loop-mounted is ext4 corruption of the
+# customer's rootfs, so that is a violation rather than a simulated resize.
+# shellcheck source=tests/sim/failback/lib.sh
+. "$SIMLIB"
+img=""; for a in "$@"; do [[ -f "$a" || "$a" == */images/* ]] && img="$a"; done
+trace "truncate $*"
+[[ -n "$img" && -n "$(loop_of "$img")" ]] && violation "truncate on a MOUNTED image: $img"
+# a failback never creates a volume; a truncate that would is B4 walked past
+[[ -n "$img" && ! -f "$img" ]] && violation "truncate creating $img - this tool restores into an image that already exists"
+sz=""; for ((i=1;i<=$#;i++)); do [[ "${!i}" == "-s" ]] && { j=$((i+1)); sz="${!j}"; }; done
+dry_forbids "truncate $img"
+[[ -n "$sz" && -n "$img" ]] && command truncate -s "$sz" "$img"
+exit 0

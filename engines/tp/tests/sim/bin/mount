@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+. "$SIMLIB"
+# only form used by the engine: mount -o loop <img> <mnt>
+img=""; mnt=""; opts=""
+while (( $# )); do case "$1" in -o) opts="${2:-}"; shift 2;; *) if [[ -z $img ]]; then img=$1; else mnt=$1; fi; shift;; esac; done
+mnt="${mnt%/}"; trace "mount -o $opts $img $mnt"
+grep -qxF "$mnt" "$SIMROOT/mount.fail" 2>/dev/null && { echo "mount: fake failure" >&2; exit 32; }
+# A dry run may mount, but only read-only. Mounting ext4 read-write replays the
+# journal and updates the superblock, so a dry run that does it has written to
+# the image before deciding whether to write to the image.
+[[ ",$opts," == *,ro,* ]] || dry_forbids "read-write loop-mount of $img"
+prev=$(loop_of "$img")
+[[ -n "$prev" ]] && violation "double loop-mount of $img (already on $prev, now $mnt)"
+add_mount "$mnt"; add_loop "$img" "$mnt"; exit 0

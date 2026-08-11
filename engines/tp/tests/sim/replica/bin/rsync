@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# fake rsync: a loop-mounted image on this node -> a dataset on the backup node.
+#
+# This is where the run either works or destroys something, so this is where the
+# fake refuses to pretend the hardest. Four different disasters end up here, and
+# each of them is a violation instead of a simulated transfer.
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+dst="${*: -1}"; src="${*: -2:1}"; src="${src%/}"
+logfile=""; wants_stats=0; deletes=0; dryrun=0
+for a in "$@"; do
+  case "$a" in
+    --log-file=*) logfile="${a#--log-file=}";;
+    --stats)      wants_stats=1;;
+    --delete)     deletes=1;;
+    -n|--dry-run) dryrun=1;;
+  esac
+done
+trace "rsync $src -> $dst"
+# Every flag, recorded one per line. Without this the fake sees only src and
+# dst, and the whole option set is untestable: stripping -x, --delete,
+# --numeric-ids, --sparse and all six excludes left the suite 61/61 green.
+# -x is the flag that keeps a 2T mp0 out of a rootfs image; it was correct
+# in the tree and nothing would have said so on the day it stopped being.
+for _a in "$@"; do case "$_a" in -*) trace "rsyncopt $_a";; esac; done
+
+# The one rsync a dry run may make is one that cannot move a byte. Without -n
+# this call carries --delete, so a run that called itself dry would empty the
+# copy it was only supposed to measure.
+(( dryrun )) || dry_forbids "rsync without -n, $src -> $dst"
+
+# The engine must never put rsync in a pipeline to read its stats: that takes
+# stdout away from --info=progress2 and the operator loses the progress bar. So
+# if it asked for stats it must have asked for a file to put them in.
+(( wants_stats && ${#logfile} == 0 )) \
+  && violation "rsync --stats without --log-file (stats could only come from stdout)"
+
+# --- the source must be the loop-mount, so the bytes are the snapshot's ---
+img="$(img_at "$src")"
+if [[ -z "$img" ]]; then
+  violation "rsync reads $src, which is not a loop-mounted image"
+else
+  holder="$(fs_holder "$img")"
+  if [[ "$(fs_field "$holder" 2)" == "zfs" && "$(zfs_type "$(fs_field "$holder" 3)")" != "clone" ]]; then
+    violation "rsync carries $img off the LIVE dataset instead of the clone - R1"
+  fi
+fi
+
+# --- the destination has to be the backup node, and a real place on it ---
+if [[ "$dst" != *:* ]]; then
+  violation "rsync destination '$dst' is not remote - this would copy onto the storage node itself"
+  exit 1
+fi
+rpath="${dst#*:}"; rpath="${rpath%/}"
+ds="$(bkp_ds_of "$rpath")"
+if [[ -z "$ds" || "$(bkp_field "$ds" 2)" != "yes" ]]; then
+  # R3. An unmounted dataset is just a directory on the backup node's root
+  # filesystem, and a whole CT is about to be poured into it.
+  violation "rsync into $rpath, which no MOUNTED dataset owns - this fills the backup node's ROOT fs"
+else
+  base="${rpath##*/}"
+  if [[ "$base" =~ ^subvol-([0-9]+)-disk-0$ ]]; then
+    vmid="${BASH_REMATCH[1]}"
+    # R2. A running copy means DR was promoted and this is the live system now.
+    [[ "$(cat "$BKP/ct/$vmid.status" 2>/dev/null)" == running ]] \
+      && violation "rsync into copy $vmid while it is RUNNING - that is the promoted DR system"
+    # R4's job, and the one G7 does for ct-migrate: --delete into a dataset some
+    # OTHER guest boots from empties that guest instead of this copy. The only
+    # config allowed to name this volume is this copy's own, on the backup node.
+    mine="$BKP/fs/etc/pve/nodes/$(cat "$BKP/node" 2>/dev/null)/lxc/$vmid.conf"
+    for f in "$BKP/fs"/etc/pve/nodes/*/lxc/*.conf "$BKP/fs"/etc/pve/nodes/*/qemu-server/*.conf; do
+      [[ -e "$f" && "$f" != "$mine" ]] || continue
+      grep -qE "^rootfs:.*[:/]$base(,|\$)" "$f" \
+        && violation "rsync --delete into $rpath, which is the rootfs of ${f#"$BKP/fs"/etc/pve/nodes/}"
+    done
+  else
+    violation "rsync destination $rpath is not a per-copy subvol dataset - --delete here hits every copy under it"
+  fi
+fi
+
+# A scenario can interrupt this transfer. SIGINT goes to the engine, which is
+# where Ctrl-C lands: bash defers it until the foreground child is reaped, then
+# runs its EXIT trap and dies. Nothing after the rsync call runs - so whatever
+# has to survive a kill (the loop-mount, the clone) must be in that trap.
+if [[ -f "$SIMROOT/rsync.kill" ]]; then
+  rm -f "$SIMROOT/rsync.kill"
+  # a terminal signals the whole foreground process GROUP, and both halves are
+  # needed: bash discards a SIGINT it took while a child was running if that
+  # child exits normally, and keeps going if only the child was signalled.
+  kill -INT "$PPID" 2>/dev/null
+  kill -INT $$
+  sleep 5                              # unreachable; here so a blocked signal shows
+  exit 20
+fi
+
+n="$(cat "$SIMROOT/rsync.n" 2>/dev/null || echo 0)"
+rc="$(awk -v i="$n" 'NR==1{print $(i+1)}' "$SIMROOT/rsync.rc" 2>/dev/null)"
+[[ -z "$rc" ]] && rc=0
+echo $(( n + 1 )) > "$SIMROOT/rsync.n"
+
+# real rsync writes its --stats block with THOUSANDS SEPARATORS, so the fake
+# does too - a parser that forgets to strip commas is caught here instead of on
+# a live CT.
+if [[ -n "$logfile" ]]; then
+  read -r f_files f_lit f_sent f_total < <(cat "$SIMROOT/rsync.stats" 2>/dev/null \
+    || echo "161 2469606195 2470127483 118111600640")
+  commafy(){ sed -e :a -e 's/\(.*[0-9]\)\([0-9]\{3\}\)/\1,\2/;ta' <<<"$1"; }
+  cat >> "$logfile" <<EOF
+Number of files: 157,957 (reg: 133,163, dir: 18,610)
+Number of created files: 0
+Number of deleted files: 0
+Number of regular files transferred: $(commafy "$f_files")
+Total file size: $(commafy "$f_total") bytes
+Total transferred file size: $(commafy "$f_lit") bytes
+Literal data: $(commafy "$f_lit") bytes
+Matched data: 0 bytes
+File list size: 0
+Total bytes sent: $(commafy "$f_sent")
+Total bytes received: 3,271
+EOF
+fi
+
+# move the data, so a scenario can prove WHERE the copy came from. 11 is out of
+# space: nothing lands. 23 is partial; the destination is left half-written,
+# which is exactly why rc 23 must never be treated as a success.
+d="$BKP/fs$rpath"
+if (( ! dryrun )) && [[ -d "$d" && ( "$rc" == 0 || "$rc" == 24 || "$rc" == 23 ) ]]; then
+  (( deletes )) && find "$d" -mindepth 1 -delete 2>/dev/null
+  [[ -d "$src" ]] && cp -a "$src/." "$d/" 2>/dev/null
+fi
+exit "$rc"

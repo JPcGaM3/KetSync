@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# findmnt -no TARGET|SOURCE -T <path> - the two questions the engine asks about
+# a production image: which filesystem holds it (B3), and which dataset that is
+# (the safety snapshot before --final).
+#
+# A path that does not exist has no answer and real findmnt says so by exiting 1
+# with no output - verified against util-linux, including the case where the
+# parent IS a mountpoint. The fake does the same, because that behaviour is
+# exactly what decides whether B3 or B4 gets to speak first.
+# shellcheck source=tests/sim/failback/lib.sh
+. "$SIMLIB"
+col=""; p=""
+while (( $# )); do
+  case "$1" in
+    -no|-o) col="${2:-}"; shift 2;;
+    -T)     p="${2:-}";   shift 2;;
+    *)      shift;;
+  esac
+done
+trace "findmnt -no $col -T $p"
+[[ -e "$p" ]] || exit 1
+h="$(fs_holder "$p")"
+case "$col" in
+  TARGET) printf '%s\n' "$h";;
+  SOURCE) fs_field "$h" 3;;
+  *)      exit 1;;
+esac
+exit 0

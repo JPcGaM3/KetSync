@@ -1,0 +1,58 @@
+name: ci
+
+# Nothing here is built. The engines are deployed by copying files onto a
+# Proxmox node, so there is no compile step to break. What CI is for in this
+# repo is the thing that is easy to skip by hand: proving the test suite can
+# still fail. `make mutation` is the target that matters most in this workflow.
+#
+# The gates are at the root and delegate into engines/tp, so this runs both
+# layers. Checking only ketsync would go green while the layer that actually
+# touches customer data was broken.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: install what the suites need
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck rsync
+          python -m pip install --quiet pytest jsonschema
+
+      - name: lint both layers
+        run: make lint
+
+      - name: language rule (no Thai in code, none inside <pre>)
+        run: make -C engines/tp no-thai
+
+      - name: the engines must still be a working install
+        run: make -C engines/tp test
+
+      # A green suite means nothing until you have watched it go red for the
+      # right reason. This reintroduces a hundred and eighteen known bugs one
+      # at a time, across all three engines and the dispatcher, and fails if
+      # the simulators let any of them through.
+      - name: mutation
+        run: make mutation
+
+      # ketsync's own commands have no simulator yet. This step is here so the
+      # debt is visible in every run rather than only in tests/README.md. It is
+      # allowed to fail; when the simulator exists, delete this line.
+      - name: ketsync simulator (known debt, not yet written)
+        continue-on-error: true
+        run: make test-ketsync

@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  tp — teleport. One command for every way a container moves in this fleet.
+# -----------------------------------------------------------------------------
+#  Three engines, one repo, one config directory, one state directory:
+#
+#    tp migrate    old standalone node  ->  raw image on the storage node
+#                  (one-way, ends when the CT goes live and you mark it done)
+#    tp replica    live image here      ->  stopped copy on the backup node
+#                  (forever, every 15 minutes, the DR copy)
+#    tp failback   promoted copy        ->  back into the production image
+#                  (only during an incident, the reverse of replica)
+#
+#  Read-only helpers:
+#    tp status     what every CT's last run did, both engines, one table
+#    tp doctor     the questions nobody remembers to ask - see below
+#    tp version
+#
+#  Everything after the subcommand is passed to the engine untouched, so
+#  `tp replica --storage tank-ssd-nas` is exactly `ct-replica.sh --storage ...`.
+#
+#  This dispatcher deliberately contains no migration logic of its own. It
+#  resolves which engine to run and gets out of the way; anything it did itself
+#  would be a fourth place to look when something goes wrong at 2am.
+# =============================================================================
+set -uo pipefail
+
+# Same reason as the engines: cron hands a script PATH=/usr/bin:/bin, and half
+# of what this fleet needs (pvesm, zfs, losetup) lives in sbin.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+TP_HOME="${TP_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+export TP_HOME
+
+usage(){ sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\} \{0,1\}//'; }
+
+# The same rule the engines print between operations. doctor is five unrelated
+# checks in a row, each of which can raise the exit code on its own, so the
+# reader has to be able to see which finding came from which check.
+LOGSEP='##############################################################################'
+hr(){ printf '%s\n' "$LOGSEP"; }
+
+# ---------------------------------------------------------------------------
+#  status - one table across both engines. The run object in every state file
+#  has the same shape on purpose, so this needs no per-engine branching.
+# ---------------------------------------------------------------------------
+cmd_status(){
+  local f id tool status reason ts rc changed n=0
+  hr
+  printf '%-8s %-10s %-11s %-22s %-19s %s\n' CT TOOL STATUS REASON WHEN CHANGED
+  for f in "$TP_HOME"/state/*.json; do
+    [[ -e "$f" ]] || continue
+    id="$(basename "$f" .json)"
+    # Each tool writes state/<tool>-<ctid>.json, so the file name says which one
+    # wrote it and two tools can hold history for the same container at once.
+    # A name with no prefix is from before the split - it is still shown, because
+    # a fleet that has been running for months should not go blank on upgrade,
+    # and its tool is unknowable so it is labelled as such.
+    tool=""
+    case "$id" in
+      migrate-*)  tool=migrate;  id="${id#migrate-}";;
+      replica-*)  tool=replica;  id="${id#replica-}";;
+      failback-*) tool=failback; id="${id#failback-}";;
+      *)          tool="pre-split";;
+    esac
+    status=$(sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' "$f" | head -1)
+    reason=$(sed -n 's/.*"reason": *"\([^"]*\)".*/\1/p' "$f" | head -1)
+    ts=$(sed -n 's/.*"ts": *"\([^"]*\)".*/\1/p'         "$f" | head -1)
+    rc=$(sed -n 's/.*"rc": *\(-\{0,1\}[0-9][0-9]*\).*/\1/p' "$f" | head -1)
+    changed=$(sed -n 's/.*"literal_bytes": *\([0-9][0-9]*\).*/\1/p' "$f" | head -1)
+    printf '%-8s %-10s %-11s %-22s %-19s %s\n' \
+      "$id" "$tool" "${status:-?}" "${reason:--}" "${ts:0:19}" \
+      "$(( ${changed:-0} / 1048576 ))MiB (rc=${rc:--})"
+    n=$(( n + 1 ))
+  done
+  (( n )) || echo "(no state files yet in $TP_HOME/state/)"
+  hr
+}
+
+# ---------------------------------------------------------------------------
+#  doctor - the cross-checks that only exist because the tools now share a
+#  roof. Each one is a question that used to have no owner.
+# ---------------------------------------------------------------------------
+cmd_doctor(){
+  local rc=0 mig_inv="$TP_HOME/inventory.tsv" rep_inv="$TP_HOME/inventory-replica.tsv"
+  hr
+  echo "== live in the hybrid but not replicated"
+  # The dangerous gap: `tp migrate` finished, somebody marked the CT done and it
+  # is now serving customers from the new infrastructure - and nobody added it
+  # to the replica inventory, so it has no DR copy and nothing says so.
+  if [[ -d "$TP_HOME/done" && -f "$rep_inv" ]]; then
+    local d id newid found=0
+    for d in "$TP_HOME"/done/*.done; do
+      [[ -e "$d" ]] || continue
+      newid="$(basename "$d" .done)"
+      # the migrate inventory maps new_ctid (col 3) back to nothing we need
+      # here; the replica inventory is keyed on the id that is now live.
+      if ! awk -v n="$newid" '$1!~/^#/ && $1==n{f=1} END{exit !f}' "$rep_inv"; then
+        echo "  CT $newid went live (done/$newid.done) but is not in $(basename "$rep_inv") - it has NO DR copy"
+        found=1; rc=1
+      fi
+    done
+    (( found )) || echo "  ok"
+  else
+    echo "  skipped (no done/ or no replica inventory yet)"
+  fi
+
+  hr
+  echo "== bandwidth ceilings that do not know about each other"
+  # Until the engines share one config, two tools each believe they own the
+  # whole link. Running both at once quietly doubles the real ceiling.
+  local m r
+  m=$(sed -n 's/^BW_TOTAL_MB=\([0-9]*\).*/\1/p' "$TP_HOME/ctmig.conf" 2>/dev/null | tail -1)
+  r=$(sed -n 's/^BW_TOTAL_MB=\([0-9]*\).*/\1/p' "$TP_HOME/ctrep.conf" 2>/dev/null | tail -1)
+  if [[ -n "$m" && -n "$r" ]]; then
+    echo "  ctmig.conf=${m}m  ctrep.conf=${r}m  -> up to $(( m + r ))m if both run at once"
+    echo "  (one shared ceiling lands with the shared library - see CLAUDE.md)"
+  else
+    echo "  skipped (could not read both configs)"
+  fi
+
+  hr
+  echo "== images grown past what their config says"
+  # ct-migrate grows an image on ENOSPC (G4) but never rewrites a config that
+  # already exists (G6), because a human may have added net0 to it by then. So
+  # the image is right and the config's size= is stale, forever, and the engine
+  # can only say so once per run in a log nobody reads twice. It is bookkeeping,
+  # not corruption - but `pct resize` later computes from that stale number.
+  local sd found=0 f id cfgsz
+  for f in "$TP_HOME"/state/*.json; do
+    [[ -e "$f" ]] || continue
+    sd=$(sed -n 's/.*"size_drift": *\(true\|false\).*/\1/p' "$f" | head -1)
+    [[ "$sd" == true ]] || continue
+    id="$(basename "$f" .json)"
+    # size_drift is a ct-migrate.sh concept (G4 grew the image, G6 will not
+    # rewrite the config). Strip whichever tool prefix is there so the message
+    # names the container rather than the file.
+    id="${id#migrate-}"; id="${id#replica-}"; id="${id#failback-}"
+    cfgsz=$(sed -n 's/.*"config_size": *"\([^"]*\)".*/\1/p' "$f" | head -1)
+    echo "  CT $id: config says size=${cfgsz:-?}, image is $(sed -n 's/.*"image_size_gib": *\([0-9]*\).*/\1/p' "$f" | head -1)G"
+    found=1; rc=1
+  done
+  (( found )) && echo "  fix the rootfs line by hand on the target node when convenient" || echo "  ok"
+
+  hr
+  echo "== containers held back by hand"
+  # A pause that is forgotten is a container with no DR copy, and the only
+  # thing that knows is a file nobody looks at. Age it, because "paused" for an
+  # hour is somebody working and "paused" for three weeks is somebody who left.
+  local pf id age why found=0 now
+  now=$(date +%s)
+  for pf in "$TP_HOME"/pause/*; do
+    [[ -f "$pf" ]] || continue
+    id="$(basename "$pf")"
+    [[ "$id" == .* ]] && continue
+    age=$(( ( now - $(stat -c %Y "$pf" 2>/dev/null || echo "$now") ) / 86400 ))
+    why=$(head -1 "$pf" 2>/dev/null)
+    echo "  CT $id paused ${age}d${why:+ - $why}"
+    (( age >= 7 )) && { echo "    over a week: is this still deliberate? it has had no DR copy since."; rc=1; }
+    found=1
+  done
+  (( found )) || echo "  ok"
+
+  echo "== stale PAUSE"
+  # A PAUSE left behind after a failback stops every copy in the fleet, and the
+  # only symptom is logs that say "PAUSED" where nobody is looking.
+  if [[ -f "$TP_HOME/PAUSE" ]]; then
+    echo "  $TP_HOME/PAUSE exists - replication is STOPPED for every CT"
+    echo "  created: $(date -r "$TP_HOME/PAUSE" '+%F %T' 2>/dev/null || stat -c %y "$TP_HOME/PAUSE" 2>/dev/null)"
+    rc=1
+  else
+    echo "  ok"
+  fi
+
+  hr
+  echo "== inventories readable"
+  local f
+  for f in "$mig_inv" "$rep_inv"; do
+    if [[ -f "$f" ]]; then echo "  $(basename "$f"): $(grep -cvE '^\s*(#|$)' "$f") rows"
+    else echo "  $(basename "$f"): not present"; fi
+  done
+  return $rc
+}
+
+engine(){   # $1 = script name, rest = its arguments
+  local s="$TP_HOME/$1"; shift
+  [[ -x "$s" ]] || { echo "tp: $s is missing or not executable" >&2; exit 2; }
+  exec "$s" "$@"
+}
+
+case "${1:-}" in
+  migrate)  shift; engine ct-migrate.sh  "$@";;
+  replica)  shift; engine ct-replica.sh  "$@";;
+  failback) shift; engine ct-failback.sh "$@";;
+  status)   shift; cmd_status "$@";;
+  doctor)   shift; cmd_doctor "$@";;
+  version)  echo "tp $(cd "$TP_HOME" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;
+  ""|-h|--help|help) usage;;
+  *) echo "tp: unknown subcommand '$1'" >&2; echo; usage; exit 2;;
+esac

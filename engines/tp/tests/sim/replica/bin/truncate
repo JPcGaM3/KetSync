@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# The replica engine has no grow path: the destination is a ZFS dataset, not a
+# fixed-size image, so there is nothing here to resize. The fake exists to prove
+# that - a scenario asserts this was never called - and to catch a resize of a
+# mounted image if one ever appears.
+# shellcheck source=tests/sim/replica/lib.sh
+. "$SIMLIB"
+img=""; for a in "$@"; do [[ -f "$a" || "$a" == */images/* ]] && img="$a"; done
+trace "truncate $*"
+[[ -n "$img" && -n "$(loop_of "$img")" ]] && violation "truncate on a MOUNTED image: $img"
+dry_forbids "truncate $img"
+sz=""; for ((i=1;i<=$#;i++)); do [[ "${!i}" == "-s" ]] && { j=$((i+1)); sz="${!j}"; }; done
+[[ -n "$sz" && -n "$img" ]] && command truncate -s "$sz" "$img"
+exit 0

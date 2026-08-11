@@ -7,8 +7,9 @@
 /logs/
 /state/
 
-# the execution layer is cloned in, not committed here
-/engines/tp/
+# engines/tp is committed, not cloned. Its own runtime leftovers - state/,
+# logs/, pause/, the lock files and the real inventories - are ignored by
+# engines/tp/.gitignore, which git applies relative to itself.
 
 # editors and desktops
 .DS_Store

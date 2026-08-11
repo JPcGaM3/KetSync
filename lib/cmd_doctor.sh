@@ -41,8 +41,18 @@ cmd_doctor(){
   done
 
   echo "== the engines"
-  if [[ -x "$KS_BASE/engines/tp/tp" ]]; then echo "  tp present"
-  else echo "  engines/tp is missing - ketsync decides, tp does. Nothing can run."; rc=1; fi
+  if [[ ! -f "$KS_BASE/engines/tp/tp" ]]; then
+    echo "  engines/tp is missing - ketsync decides, tp does. Nothing can run."; rc=1
+  else
+    # Not "does the file exist" but "can cron actually run it". A checkout that
+    # crossed a filesystem which drops the mode bit - a network share, a FUSE
+    # mount, an unzip on Windows - leaves every one of these readable and not
+    # executable, and the first anybody hears of it is exit 126 at 02:00.
+    for f in tp ct-migrate.sh ct-replica.sh ct-failback.sh; do
+      if [[ -x "$KS_BASE/engines/tp/$f" ]]; then echo "  $f ok"
+      else echo "  $f is NOT EXECUTABLE - cron would exit 126. chmod +x engines/tp/$f"; rc=1; fi
+    done
+  fi
 
   return $rc
 }

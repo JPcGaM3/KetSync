@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# fake ssh: resolves root@<host> to $SIMROOT/nodes/<host>/ and runs a tiny
+# dispatcher for exactly the commands the engine issues.
+. "$SIMLIB"
+host=""; cmd=(); ctl=""; ctlpath=""
+while (( $# )); do
+  case "$1" in
+    -o) [[ "${2:-}" == ControlPath=* ]] && ctlpath="${2#ControlPath=}"
+        shift 2;;
+    -O) ctl="${2:-}"; shift 2;;        # ssh -O exit <host>
+    -*) shift;;
+    *) if [[ -z "$host" && "$1" == *@* ]]; then host="${1#*@}"; else cmd+=("$1"); fi; shift;;
+  esac
+done
+# Recorded BEFORE anything can exit: the control socket path is the only place
+# the per-run pid is visible, and a fake that throws away every -o cannot tell
+# a shared mux master from a private one.
+printf '%s\t%s\n' "$([[ -n "$ctl" ]] && echo "-O $ctl" || echo cmd)" \
+                    "${ctlpath:-<none>}" >> "$SIMROOT/ctlpath"
+[[ "$host" == "nohost" || -z "$host" ]] && exit 0
+N="$SIMROOT/nodes/$host"
+[[ -d "$N" ]] || { echo "ssh: connect to host $host: No route to host" >&2; exit 255; }
+[[ -f "$N/.down" ]] && { echo "ssh: connect to host $host: Connection refused" >&2; exit 255; }
+c="${cmd[*]}"; trace "ssh $host :: $c"
+export SIM_HOST="$host"
+case "$c" in
+  true) exit 0;;
+  "pct status "*)
+    id=$(awk '{print $3}' <<<"$c"); f="$N/ct/$id.status"
+    [[ -f "$f" ]] || { echo "Configuration file 'nodes/x/lxc/$id.conf' does not exist" >&2; exit 2; }
+    echo "status: $(cat "$f")"; exit 0;;
+  "pct config "*)
+    id=$(awk '{print $3}' <<<"$c"); f="$N/ct/$id.config"
+    [[ -f "$f" ]] || exit 2
+    cat "$f"; exit 0;;
+  "lxc-info "*)
+    id=$(awk '{print $3}' <<<"$c"); f="$N/ct/$id.pid"
+    [[ -f "$f" ]] && cat "$f" || echo 0
+    exit 0;;
+  "pct exec "*df*)
+    id=$(awk '{print $3}' <<<"$c"); u=$(cat "$N/ct/$id.used" 2>/dev/null || echo 0)
+    [[ "$u" == 0 ]] && exit 1
+    echo "Filesystem 1B-blocks Used Available Capacity Mounted on"
+    echo "/dev/loop0 999 $u 999 50% /"; exit 0;;
+  "pct mount "*)
+    id=$(awk '{print $3}' <<<"$c")
+    [[ "$(cat "$N/ct/$id.status" 2>/dev/null)" == stopped ]] || { echo "CT is running" >&2; exit 1; }
+    dry_forbids "pct mount $id on $host"
+    touch "$N/ct/$id.mounted"; trace "SRCMOUNT $host $id"; exit 0;;
+  "pct unmount "*)
+    id=$(awk '{print $3}' <<<"$c"); rm -f "$N/ct/$id.mounted"; trace "SRCUMOUNT $host $id"; exit 0;;
+  "pvesm status "*) st="${c##*--storage }"; st="${st%% *}"
+    s=$(cat "$N/storage/$st" 2>/dev/null) || { echo "storage '$st' does not exist" >&2; exit 255; }
+    echo "Name Type Status Total Used Available %"; echo "$st nfs $s 1 1 1 1%"; exit 0;;
+  "test -f /etc/pve/lxc/"*) f="${c#test -f }"; [[ -f "$N/${f#/}" ]]; exit $?;;
+  "cat /etc/pve/lxc/"*) f="${c#cat }"; cat "$N/${f#/}" 2>/dev/null; exit $?;;
+  "cat > /etc/pve/lxc/"*) f="${c#cat > }"; mkdir -p "$N/$(dirname "${f#/}")"
+    dry_forbids "config write to $f on $host"
+    id="${f##*/}"; id="${id%.conf}"
+    # A truncated config write is the dangerous one precisely because it is
+    # SILENT: the input is consumed, the exit status is 0, and only part of it
+    # reaches the file. So that is what this reproduces - not a write error.
+    if grep -qxF "$host $id" "$SIMROOT/cfgwrite.trunc" 2>/dev/null; then
+      cat > "$N/${f#/}.whole"
+      head -c 20 "$N/${f#/}.whole" > "$N/${f#/}"; rm -f "$N/${f#/}.whole"; exit 0
+    fi
+    cat > "$N/${f#/}"; exit 0;;
+  grep*rootfs*) f="${c##* }"; grep '^rootfs:' "$N/${f#/}" 2>/dev/null; exit 0;;
+esac
+exit 0
