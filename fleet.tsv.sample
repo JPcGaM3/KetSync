@@ -1,5 +1,7 @@
 # generation: 1
-# One line per container. ketsync decides placement; tp moves the data.
+# fleet.tsv - the fleet map. One line per container. ketsync decides placement;
+# tp moves the data. This is NOT one of tp's work lists: engines/tp has its own
+# inventory-migrate.tsv and inventory-replica.tsv, with different columns.
 #
 #   ct     the container id on its home node
 #   tier   which copy pool it belongs in: ssd (comes back fast) or hdd
@@ -11,6 +13,8 @@
 # rule as tp's "no defaults, never guess". Override once with --node if the
 # day comes and the written answer is wrong.
 #
-# ct   tier  home            dr
+# TAB separated; lines starting with # are ignored.
+#
+# ct	tier	home	dr
 110	hdd	pve-r32	pve-r33
 120	hdd	pve-r33	pve-r32

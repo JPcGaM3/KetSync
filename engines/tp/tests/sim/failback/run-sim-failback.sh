@@ -457,14 +457,14 @@ if scenario "13: an empty inventory is exit 2, not a quiet success"; then
 fi
 
 if scenario "13b: a MISSING inventory says so, and says which file it wanted"; then
-  # the file was renamed once - inventory.tsv belongs to ct-migrate now - and a
+  # the file was renamed once - inventory-migrate.tsv belongs to ct-migrate now - and a
   # deployment that still has the old name would otherwise look like an empty
   # workload rather than a wiring mistake
   rm -f "$WORK/inventory-replica.tsv"
   run_engine --all
   rc_is 2; clean
   has "no inventory at"
-  has "not ct-migrate's inventory.tsv"
+  has "not ct-migrate's inventory-migrate.tsv"
   untraced "ssh"; untraced "rsync"
   done_scenario
 fi

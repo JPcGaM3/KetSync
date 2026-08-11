@@ -110,7 +110,7 @@ zip: clean       ## build the deployable archive (no runtime state, no .git)
 	     '.mypy_cache/*' '.ruff_cache/*' '.venv/*' 'venv/*' \
 	     'logs/*' 'done/*' 'state/*' \
 	     '.sync-*.lock' '.node-*.lock' '.replica-*.lock' '.failback-*.lock' \
-	     'PAUSE' 'inventory.tsv' 'inventory-replica.tsv' 'bridgemap.tsv' '$(ZIP)' \
+	     'PAUSE' 'inventory-migrate.tsv' 'inventory-replica.tsv' 'bridgemap.tsv' '$(ZIP)' \
 	  && echo "built $(ZIP) ($$(unzip -l $(ZIP) | tail -1 | awk '{print $$2}') entries)"
 
 clean:           ## remove build/test leftovers (never touches state/ or done/)

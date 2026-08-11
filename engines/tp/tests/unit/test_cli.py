@@ -141,7 +141,7 @@ def test_validate_reports_a_duplicate_even_though_every_state_file_is_good(repo,
     """The state can be perfect and the next run still refuse to start."""
     pytest.importorskip("jsonschema")
     repo.write("251")
-    (repo.base / "inventory.tsv").write_text(
+    (repo.base / "inventory-migrate.tsv").write_text(
         "10.100.1.11\t251\t251\t10.100.1.31\ttank-hdd-nas\n"
         "10.100.1.12\t253\t251\t10.100.1.32\ttank-ssd-nas\n")
     rc, out, _ = run(capsys, "--base", str(repo.base), "validate")
@@ -152,11 +152,11 @@ def test_validate_reports_a_duplicate_even_though_every_state_file_is_good(repo,
 
 
 def test_validate_names_the_line_of_a_malformed_row(repo, capsys):
-    (repo.base / "inventory.tsv").write_text(
+    (repo.base / "inventory-migrate.tsv").write_text(
         "10.100.1.11\t251\t251\t10.100.1.31\ttank-hdd-nas\n"
         "10.100.1.12\t253\t253\t10.100.1.32\n")
     rc, out, _ = run(capsys, "--base", str(repo.base), "validate")
-    assert rc != 0 and "inventory.tsv:2:" in out and "four-column" in out
+    assert rc != 0 and "inventory-migrate.tsv:2:" in out and "four-column" in out
 
 
 def test_no_subcommand_behaves_like_ls(repo, capsys):

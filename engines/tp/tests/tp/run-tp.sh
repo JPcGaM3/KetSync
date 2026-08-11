@@ -46,7 +46,7 @@ new_world(){
   # is not there, so a sandbox that wants to dispatch has to carry them
   ln -s "$ROOT/ct-migrate.sh" "$ROOT/ct-replica.sh" "$ROOT/ct-failback.sh" "$HOME_DIR/"
   cp "$ROOT/ctmig.conf" "$ROOT/ctrep.conf" "$HOME_DIR/" 2>/dev/null || true
-  : > "$HOME_DIR/inventory.tsv"
+  : > "$HOME_DIR/inventory-migrate.tsv"
   : > "$HOME_DIR/inventory-replica.tsv"
 }
 
@@ -262,10 +262,10 @@ if scenario "15: doctor reports a PAUSE nobody removed after a failback"; then
 fi
 
 if scenario "16: doctor counts the rows in each inventory, and says which is missing"; then
-  printf '# comment\n\n10.100.1.11\t251\t251\t10.100.1.31\ttank-hdd-nas\n' > "$HOME_DIR/inventory.tsv"
+  printf '# comment\n\n10.100.1.11\t251\t251\t10.100.1.31\ttank-hdd-nas\n' > "$HOME_DIR/inventory-migrate.tsv"
   rm -f "$HOME_DIR/inventory-replica.tsv"
   run_tp doctor
-  has "inventory.tsv: 1 rows"
+  has "inventory-migrate.tsv: 1 rows"
   has "inventory-replica.tsv: not present"
   done_scenario
 fi

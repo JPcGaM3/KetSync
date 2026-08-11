@@ -18,7 +18,7 @@
     },
     "new_ctid":  { "type": "string", "description": "CT id on the new node - also the file name" },
     "old_ctid":  { "type": "string", "description": "CT id on the old node; often the same number" },
-    "old_node":  { "type": "string", "description": "source node, as written in inventory.tsv" },
+    "old_node":  { "type": "string", "description": "source node, as written in inventory-migrate.tsv" },
     "new_node":  { "type": "string", "description": "target node; required per row, never defaulted" },
     "storage":   { "type": "string", "description": "PVE storage id the rootfs image lives on" },
     "image":     { "type": "string", "description": "absolute path of the raw image, from pvesm path" },

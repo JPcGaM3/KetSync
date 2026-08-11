@@ -141,14 +141,14 @@
   <table>
     <tr><th>ไฟล์</th><th>คืออะไร</th><th>ต้องแก้ไหม</th></tr>
     <tr><td class="m">ct-replica.sh</td><td>ตัวโปรแกรม</td><td>ไม่ต้องแก้เด็ดขาด</td></tr>
-    <tr><td class="m">inventory.tsv</td><td>รายชื่อ CT ที่จะทำสำเนา</td><td>แก้บ่อยที่สุด</td></tr>
+    <tr><td class="m">inventory-migrate.tsv</td><td>รายชื่อ CT ที่จะทำสำเนา</td><td>แก้บ่อยที่สุด</td></tr>
     <tr><td class="m">ctrep.conf</td><td>ตั้งค่า (ความเร็ว, ปลายทาง)</td><td>ตั้งครั้งเดียวจบ</td></tr>
   </table>
   <p>โฟลเดอร์ <code class="inl">logs</code> โปรแกรมสร้างเอง ไม่ต้องไปยุ่ง</p>
 </section>
 
 <section id="s2">
-  <div class="eyebrow"><span class="num">2</span><h2>inventory.tsv — บอกว่าทำสำเนาตัวไหน เก็บชั้นไหน</h2></div>
+  <div class="eyebrow"><span class="num">2</span><h2>inventory-migrate.tsv — บอกว่าทำสำเนาตัวไหน เก็บชั้นไหน</h2></div>
   <p class="lead">หนึ่งบรรทัด = CT หนึ่งตัว ช่องแรกคือเลข CT จริง ที่เหลือใส่เท่าที่ต้องใช้</p>
 
   <div class="code"><pre>105   ssd                  <span class="c"># important customer -> fast tier</span>
@@ -222,7 +222,7 @@
 <section id="s5">
   <div class="eyebrow"><span class="num">5</span><h2>เพิ่ม CT ใหม่เข้าระบบ</h2></div>
   <ol class="steps">
-    <li><b>เปิด inventory.tsv เพิ่มหนึ่งบรรทัด</b> — เลข CT กับชั้นเก็บ
+    <li><b>เปิด inventory-migrate.tsv เพิ่มหนึ่งบรรทัด</b> — เลข CT กับชั้นเก็บ
       <div class="code"><pre><span class="p">$ </span>nano inventory-replica.tsv</pre></div></li>
     <li><b>รันมือหนึ่งรอบ</b> ให้มัน copy ก้อนแรก (ตัวใหม่รอบแรกจะนาน)
       <div class="code"><pre><span class="p">$ </span>./ct-replica.sh --ctid 105</pre></div></li>

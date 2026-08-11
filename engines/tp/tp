@@ -83,7 +83,7 @@ cmd_status(){
 #  roof. Each one is a question that used to have no owner.
 # ---------------------------------------------------------------------------
 cmd_doctor(){
-  local rc=0 mig_inv="$TP_HOME/inventory.tsv" rep_inv="$TP_HOME/inventory-replica.tsv"
+  local rc=0 mig_inv="$TP_HOME/inventory-migrate.tsv" rep_inv="$TP_HOME/inventory-replica.tsv"
   hr
   echo "== live in the hybrid but not replicated"
   # The dangerous gap: `tp migrate` finished, somebody marked the CT done and it

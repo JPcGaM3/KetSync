@@ -794,7 +794,7 @@ fi
 
 if scenario "31b: a MISSING inventory is a wiring mistake, not an empty workload"; then
   # This is the one that would have bitten on deployment day. The file was
-  # renamed - inventory.tsv is ct-migrate's now - and without this guard the
+  # renamed - inventory-migrate.tsv is ct-migrate's now - and without this guard the
   # parse block is simply skipped, the CT list comes out empty, and every cron
   # tick logs "nothing to do" and exits 0 while the whole fleet goes
   # unreplicated. Fifteen minutes at a time, looking healthy.
@@ -802,7 +802,7 @@ if scenario "31b: a MISSING inventory is a wiring mistake, not an empty workload
   run_engine
   rc_is 2; clean
   has "ERROR: no inventory at"
-  has "NOT ct-migrate's inventory.tsv"
+  has "NOT ct-migrate's inventory-migrate.tsv"
   has "cp"
   untraced "rsync"; untraced "zfs snapshot"
   st_absent 105

@@ -34,7 +34,7 @@ cmd_doctor(){
   done
 
   echo "== the files that must carry a generation"
-  for f in ketsync.conf nodes.tsv inventory.tsv; do
+  for f in ketsync.conf nodes.tsv fleet.tsv; do
     [[ -f "$KS_BASE/$f" ]] || { echo "  $f: missing"; rc=1; continue; }
     gen="$(sed -n 's/^#[[:space:]]*generation:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$KS_BASE/$f" | head -1)"
     [[ -n "$gen" ]] && echo "  $f: generation $gen" || { echo "  $f: NO generation line - sync cannot order it"; rc=1; }

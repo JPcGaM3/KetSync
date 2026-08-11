@@ -7,7 +7,7 @@
 Makefile  text eol=lf
 *.conf    text eol=lf
 
-# inventory.tsv is TAB separated and the tabs are load-bearing. Never let a
+# Every .tsv here is TAB separated and the tabs are load-bearing. Never let a
 # filter or a smudge/clean script normalise whitespace in these.
 *.tsv     text eol=lf -whitespace
 

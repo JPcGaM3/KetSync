@@ -31,7 +31,7 @@ must be mirrored in its mutation file in the same change. Never "fix" a broken
 anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
-    ct-migrate.sh   tests/mutation/run-mutation.sh            38 mutations
+    ct-migrate.sh   tests/mutation/run-mutation.sh            40 mutations
     ct-replica.sh   tests/mutation/run-mutation-replica.sh    36 mutations
     ct-failback.sh  tests/mutation/run-mutation-failback.sh   37 mutations
     tp              tests/mutation/run-mutation-tp.sh          7 mutations
@@ -113,8 +113,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 63 + 62 + 54 simulator, 16 dispatcher, 125 c2v, 82 python
-    make mutation   # 38 + 36 + 37 engine + 7 dispatcher bugs reintroduced, all caught
+    make test       # 65 + 62 + 54 simulator, 16 dispatcher, 125 c2v, 82 python
+    make mutation   # 40 + 36 + 37 engine + 7 dispatcher bugs reintroduced, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did
@@ -254,7 +254,7 @@ row on the same CT is a damaged image. 11 is out of space and triggers G4/B6.
     ct-failback.sh             the failback engine
     ctmig.conf / ctrep.conf    tuning, kept separate from the engines so
                                re-delivery never overwrites a calibrated value
-    inventory.sample.tsv       migrate rows: old_node old_ctid new_ctid
+    inventory-migrate.sample.tsv       migrate rows: old_node old_ctid new_ctid
                                new_node storage
     inventory-replica.sample.tsv
                                replica rows: src_ctid [tgt_ctid] [dest]
@@ -341,7 +341,7 @@ Putting three engines in one folder means `$BASE` is now the same directory for
 all of them. Two things had to be separated the moment that happened, and one
 still has not been:
 
-  - **inventories: done.** `ct-migrate.sh` reads `inventory.tsv`;
+  - **inventories: done.** `ct-migrate.sh` reads `inventory-migrate.tsv`;
     `ct-replica.sh` and `ct-failback.sh` read `inventory-replica.tsv`. The
     columns mean entirely different things, so one filename for both would have
     fed migrate rows to the replica parser. If you add a fourth engine, give it

@@ -163,7 +163,7 @@ def _schema_path(repo: Repo) -> Optional[Path]:
 
 
 def _check_inventory(repo: Repo) -> bool:
-    """Print what is wrong with inventory.tsv. True when something is.
+    """Print what is wrong with inventory-migrate.tsv. True when something is.
 
     Deliberately first, and deliberately stdlib-only: this is the half of
     `validate` that answers "will the engine even start", and it has to work on
@@ -171,26 +171,26 @@ def _check_inventory(repo: Repo) -> bool:
     """
     rows = load_inventory(repo.inventory_path)
     if not rows:
-        print("inventory.tsv: no rows found at %s" % repo.inventory_path)
+        print("inventory-migrate.tsv: no rows found at %s" % repo.inventory_path)
         return False
     bad = False
     for r in rows:
         if not r.ok:
-            print("inventory.tsv:%d: %s" % (r.lineno, r.error))
+            print("inventory-migrate.tsv:%d: %s" % (r.lineno, r.error))
             bad = True
     dups = duplicates(rows)
     for d in dups:
-        print("inventory.tsv: %s" % d)
+        print("inventory-migrate.tsv: %s" % d)
     if dups:
-        print("inventory.tsv: ct-migrate.sh REFUSES to run while a CT is named twice")
+        print("inventory-migrate.tsv: ct-migrate.sh REFUSES to run while a CT is named twice")
         bad = True
     if not bad:
-        print("inventory.tsv: %d row(s), no duplicates" % len(rows))
+        print("inventory-migrate.tsv: %d row(s), no duplicates" % len(rows))
     return bad
 
 
 def cmd_validate(repo: Repo, args: argparse.Namespace) -> int:
-    """Check inventory.tsv, then every state file against schema/state.schema.json."""
+    """Check inventory-migrate.tsv, then every state file against schema/state.schema.json."""
     bad_inv = _check_inventory(repo)
     print()
     # a real finding outranks "the schema half could not run": rc 2 means this
@@ -243,7 +243,7 @@ def cmd_conf(repo: Repo, args: argparse.Namespace) -> int:
           % bwlimit_mb(cfg))
     lanes = storages(load_inventory(repo.inventory_path))
     if lanes:
-        print("lanes in inventory.tsv: %s" % " ".join(lanes))
+        print("lanes in inventory-migrate.tsv: %s" % " ".join(lanes))
     return 0
 
 
@@ -269,7 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("json", help="the merged model as JSON").set_defaults(func=cmd_json)
     sub.add_parser("validate",
-                   help="check inventory.tsv for duplicates and bad rows, then "
+                   help="check inventory-migrate.tsv for duplicates and bad rows, then "
                         "every state file against the schema").set_defaults(func=cmd_validate)
     sub.add_parser("conf", help="effective configuration and lanes").set_defaults(func=cmd_conf)
     return p

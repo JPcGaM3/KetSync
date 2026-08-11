@@ -497,7 +497,7 @@ echo &quot;  arc_summary | head -12&quot;</pre></div>
 #    ctrep.conf       site tuning (backup target, dests, bandwidth) — optional
 #    inventory-replica.tsv   which CTs to copy (see
 #                            inventory-replica.sample.tsv). A separate file
-#                            from ct-migrate.sh&#x27;s inventory.tsv on purpose:
+#                            from ct-migrate.sh&#x27;s inventory-migrate.tsv on purpose:
 #                            they share a folder and their columns mean
 #                            different things
 #    exclude.tsv      CTIDs to skip when AUTO_DISCOVER=1
@@ -804,12 +804,13 @@ declare -a INV_ERRS=()
 # this the parse block below is simply skipped, the CT list comes out empty and
 # the run says &quot;nothing to do&quot; and exits 0 - which under cron is exactly what a
 # healthy night looks like, every fifteen minutes, while nothing is replicated
-# at all. The file was renamed once (it used to be inventory.tsv, which is now
-# ct-migrate&#x27;s), and that rename is precisely how a fleet stops being copied
-# without anybody being told.
+# at all. This file has been renamed once already: it used to be called
+# inventory.tsv, which is now inventory-migrate.tsv and belongs to ct-migrate.
+# A rename is precisely how a fleet stops being copied without anybody being
+# told, so a missing one has to be loud.
 if [[ ! -f &quot;$INV&quot; ]] &amp;&amp; (( ! AUTO_DISCOVER )); then
   log &quot;ERROR: no inventory at $INV - NOTHING was run&quot;
-  log &quot;ERROR:   this file is NOT ct-migrate&#x27;s inventory.tsv; the columns differ&quot;
+  log &quot;ERROR:   this file is NOT ct-migrate&#x27;s inventory-migrate.tsv; the columns differ&quot;
   log &quot;ERROR:   start from the sample:  cp $BASE/inventory-replica.sample.tsv $INV&quot;
   log &quot;ERROR:   or set AUTO_DISCOVER=1 in $CONF to replicate every CT in the cluster&quot;
   exit 2
@@ -1835,7 +1836,7 @@ RUNS_KEEP=200      # per-CT run history lines kept in state/&lt;src_ctid&gt;.run
 #  refuse up front.
 #
 #  It reads ctrep.conf and inventory-replica.tsv from its own folder - the
-#  same pair ct-replica.sh reads, never ct-migrate.sh&#x27;s inventory.tsv - so the
+#  same pair ct-replica.sh reads, never ct-migrate.sh&#x27;s inventory-migrate.tsv - so the
 #  backup
 #  node, the dest pools and any custom tgt_ctid are exactly what ct-replica
 #  uses. Nothing is configured twice.
@@ -2093,7 +2094,7 @@ if (( ! ${#CTS[@]} )); then
   # a missing file is a deployment mistake, an empty one is a choice.
   if [[ -f &quot;$INV&quot; ]]; then log &quot;ERROR: $INV names no CT, and no --ctid was given - nothing to do&quot;
   else                     log &quot;ERROR: no inventory at $INV (and no --ctid) - NOTHING was run&quot;
-                           log &quot;ERROR:   this is ct-replica&#x27;s file, not ct-migrate&#x27;s inventory.tsv&quot;
+                           log &quot;ERROR:   this is ct-replica&#x27;s file, not ct-migrate&#x27;s inventory-migrate.tsv&quot;
   fi
   exit 2
 fi
@@ -2481,7 +2482,9 @@ exit 0</pre></div>
   </details>
 
   <details class="src"><summary>โค้ดเต็ม: inventory-replica.sample.tsv (ตัวอย่างรายชื่อ CT — copy เป็น inventory-replica.tsv) — กดเปิด แล้วกดปุ่ม copy มุมขวาบน</summary>
-  <div class="code"><pre># inventory.tsv - whitespace/tab separated; &#x27;#&#x27; starts a comment (inline too)
+  <div class="code"><pre># inventory-replica.tsv - whitespace/tab separated; &#x27;#&#x27; starts a comment (inline too)
+# Read by ct-replica.sh AND ct-failback.sh. NOT ct-migrate.sh - see
+# inventory-migrate.sample.tsv, whose columns mean entirely different things.
 #
 # columns:  src_ctid  [fields in ANY order]
 #   src_ctid : CT to replicate. Must exist somewhere in the cluster; the
@@ -2513,10 +2516,11 @@ exit 0</pre></div>
 #   ct-replica.sh --storage tank-ssd-nas
 #
 # examples:
-105   ssd
-112   9112
-113   8113   tank-ssd-nas   ssd
-114                        # -&gt; tgt 8114, dest DEFAULT_DEST</pre></div>
+# src_ctid  [tgt_ctid]  [storage-assert]  [dest]      (extras in ANY order)
+105                                       ssd
+112         9112
+113         8113        tank-ssd-nas      ssd
+114                                       # -&gt; tgt 8114, dest DEFAULT_DEST</pre></div>
   </details>
 
 </section>

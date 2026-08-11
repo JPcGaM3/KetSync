@@ -137,7 +137,7 @@
 <span class="p">$ </span>ls</pre></div>
 
   <p>ถ้ามาถูกที่ จะเห็นประมาณนี้</p>
-  <div class="out">ct-migrate.sh  ctmig.conf  inventory.tsv  done  logs  state</div>
+  <div class="out">ct-migrate.sh  ctmig.conf  inventory-migrate.tsv  done  logs  state</div>
 
   <p>ถ้าไม่เห็น <code class="inl">ct-migrate.sh</code> แปลว่ายังไม่ได้อยู่ในโฟลเดอร์ที่ถูกต้อง อย่าเพิ่งพิมพ์คำสั่งอื่น</p>
 
@@ -157,7 +157,7 @@
   <table>
     <tr><th>ไฟล์</th><th>คืออะไร</th><th>ต้องแก้ไหม</th></tr>
     <tr><td class="m">ct-migrate.sh</td><td>ตัวโปรแกรม</td><td>ไม่ต้องแก้เด็ดขาด</td></tr>
-    <tr><td class="m">inventory.tsv</td><td>รายชื่อ CT ที่จะย้าย</td><td>แก้บ่อยที่สุด</td></tr>
+    <tr><td class="m">inventory-migrate.tsv</td><td>รายชื่อ CT ที่จะย้าย</td><td>แก้บ่อยที่สุด</td></tr>
     <tr><td class="m">ctmig.conf</td><td>ตั้งค่าความเร็ว</td><td>ตั้งครั้งเดียวจบ</td></tr>
   </table>
 
@@ -165,7 +165,7 @@
 </section>
 
 <section id="s2">
-  <div class="eyebrow"><span class="num">2</span><h2>inventory.tsv — บอกว่าจะย้ายตัวไหน</h2></div>
+  <div class="eyebrow"><span class="num">2</span><h2>inventory-migrate.tsv — บอกว่าจะย้ายตัวไหน</h2></div>
   <p class="lead">หนึ่งบรรทัด = CT หนึ่งตัว มี 5 ช่อง เรียงตามลำดับนี้เสมอ</p>
 
   <div class="code"><pre>10.100.1.11   100   251   10.100.1.31   tank-hdd-nas
@@ -219,7 +219,7 @@ LANES=1</pre></div>
 
   <table>
     <tr><th>คำสั่ง</th><th>ทำอะไร</th></tr>
-    <tr><td class="m">./ct-migrate.sh</td><td>ทำทุกบรรทัดใน inventory.tsv</td></tr>
+    <tr><td class="m">./ct-migrate.sh</td><td>ทำทุกบรรทัดใน inventory-migrate.tsv</td></tr>
     <tr><td class="m">--storage ...</td><td>ทำเฉพาะ CT ที่อยู่บน storage นั้น</td></tr>
     <tr><td class="m">--ctid 251</td><td>ทำเฉพาะ CT ตัวเดียว (ใส่เลขช่องที่ 3)</td></tr>
     <tr><td class="m">--ctid 251 --stopped</td><td>รอบสุดท้าย ใช้ตอน CT เก่าถูกปิดแล้วเท่านั้น</td></tr>
@@ -403,7 +403,7 @@ LANES=1</pre></div>
     </tr>
     <tr>
       <td class="m">names the same CT more than once</td>
-      <td>มี CT ซ้ำใน inventory.tsv โปรแกรมบอกเลขบรรทัดให้ด้วย <b>รอบนี้ยังไม่ได้ทำอะไรเลยสักตัว</b> แก้บรรทัดที่ซ้ำแล้วรันใหม่</td>
+      <td>มี CT ซ้ำใน inventory-migrate.tsv โปรแกรมบอกเลขบรรทัดให้ด้วย <b>รอบนี้ยังไม่ได้ทำอะไรเลยสักตัว</b> แก้บรรทัดที่ซ้ำแล้วรันใหม่</td>
     </tr>
     <tr>
       <td class="m">row is incomplete</td>

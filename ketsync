@@ -11,7 +11,7 @@
 #    when the storage node is gone, which compute node picks each one up
 #    how does every machine end up with the same inventory
 #
-#    ketsync sync         push config + inventory to every node in nodes.tsv
+#    ketsync sync         push config + fleet map to every node in nodes.tsv
 #    ketsync distribute   DR: put a copy onto a compute node and hand over
 #    ketsync recall       the return trip, once the storage node is back
 #    ketsync role         who this machine thinks it is, and why

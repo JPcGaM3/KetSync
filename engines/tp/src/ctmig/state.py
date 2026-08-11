@@ -2,7 +2,7 @@
 
 Three sources, three owners:
 
-    inventory.tsv        a human, by hand -- what is SUPPOSED to happen
+    inventory-migrate.tsv        a human, by hand -- what is SUPPOSED to happen
     state/<ctid>.json    the engine -- what actually happened, last run
     done/<ctid>.done     a human, by hand -- "stop touching this one"
 
@@ -155,7 +155,7 @@ class Repo:
     # ---------- paths ----------
     @property
     def inventory_path(self) -> Path:
-        return self.base / "inventory.tsv"
+        return self.base / "inventory-migrate.tsv"
 
     @property
     def conf_path(self) -> Path:
@@ -235,7 +235,7 @@ class Repo:
         """Every CT the tool knows about, inventory and state merged.
 
         A CT with a state file but no inventory row still shows up: that is
-        somebody having edited inventory.tsv after a sync, and silently
+        somebody having edited inventory-migrate.tsv after a sync, and silently
         dropping it would hide real work sitting on a real disk.
         """
         if rows is None:

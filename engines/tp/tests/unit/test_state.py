@@ -64,7 +64,7 @@ def test_the_done_marker_is_read_not_stored(repo):
 
 
 def test_a_state_file_with_no_inventory_row_still_appears(repo):
-    """Somebody edited inventory.tsv after a sync. That image is still on a
+    """Somebody edited inventory-migrate.tsv after a sync. That image is still on a
     real disk, so hiding it would be the worst possible behaviour."""
     repo.write("999")
     ct = by_id(repo.cts())["999"]

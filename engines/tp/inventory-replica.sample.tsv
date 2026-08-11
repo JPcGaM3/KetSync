@@ -1,4 +1,6 @@
-# inventory.tsv - whitespace/tab separated; '#' starts a comment (inline too)
+# inventory-replica.tsv - whitespace/tab separated; '#' starts a comment (inline too)
+# Read by ct-replica.sh AND ct-failback.sh. NOT ct-migrate.sh - see
+# inventory-migrate.sample.tsv, whose columns mean entirely different things.
 #
 # columns:  src_ctid  [fields in ANY order]
 #   src_ctid : CT to replicate. Must exist somewhere in the cluster; the
@@ -30,7 +32,8 @@
 #   ct-replica.sh --storage tank-ssd-nas
 #
 # examples:
-105   ssd
-112   9112
-113   8113   tank-ssd-nas   ssd
-114                        # -> tgt 8114, dest DEFAULT_DEST
+# src_ctid  [tgt_ctid]  [storage-assert]  [dest]      (extras in ANY order)
+105                                       ssd
+112         9112
+113         8113        tank-ssd-nas      ssd
+114                                       # -> tgt 8114, dest DEFAULT_DEST

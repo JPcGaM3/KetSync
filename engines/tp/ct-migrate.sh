@@ -34,7 +34,7 @@
 #    .node-<old_node>.lock          one lane at a time per source node
 #  it only READS done/<ctid>.done — that marker is created by a human.
 #
-#  before any row is touched it checks inventory.tsv for a CT named twice —
+#  before any row is touched it checks inventory-migrate.tsv for a CT named twice —
 #  the same new_ctid on two rows, or the same old CT (old_node AND old_ctid)
 #  on two rows. Either is a refusal: it names the lines and runs nothing.
 #  The same old_ctid on two DIFFERENT old nodes is normal and is allowed.
@@ -87,7 +87,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # everything lives next to this script
-INV="$BASE/inventory.tsv"
+INV="$BASE/inventory-migrate.tsv"
 CONF="$BASE/ctmig.conf"
 
 # ---------- defaults (override in ctmig.conf, never here) ----------
@@ -281,7 +281,22 @@ if ! flock -n 9; then
   log "another sync is running in lane '$LANE' - skip"
   exit 0
 fi
-[[ -f "$INV" ]] || { log "inventory not found: $INV"; exit 1; }
+# A missing inventory is a deployment mistake, and after a rename it is usually
+# THE deployment mistake. This file was called inventory.tsv until the three
+# engines moved into one folder, where one generic name for three different
+# column layouts was an accident waiting to happen. An install that still has
+# the old file gets told exactly what to type rather than "not found", because
+# under cron the difference is between a fix tonight and a fortnight of red.
+if [[ ! -f "$INV" ]]; then
+  log "ERROR: inventory not found: $INV - NOTHING was run"
+  if [[ -f "$BASE/inventory.tsv" ]]; then
+    log "ERROR:   $BASE/inventory.tsv exists. That is the OLD name for this file."
+    log "ERROR:   rename it:  mv $BASE/inventory.tsv $INV"
+  else
+    log "ERROR:   start from the sample:  cp $BASE/inventory-migrate.sample.tsv $INV"
+  fi
+  exit 1
+fi
 
 hr
 log "lane=$LANE bw=$BWLIMIT (total ${BW_TOTAL_MB}m / $LANES lanes) conf=$([[ -f $CONF ]] && echo yes || echo defaults)$( (( DRY )) && echo " mode=dry-run" )"
@@ -754,7 +769,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
 
   if [[ -z "${new_node:-}" || -z "${storage:-}" ]]; then
     # no state file for this one: without a complete row there is nothing to key
-    # it on, and a reader parsing inventory.tsv can see the broken row itself.
+    # it on, and a reader parsing inventory-migrate.tsv can see the broken row itself.
     log "[${new_ctid:-?}] ERROR: row is incomplete (need old_node old_ctid new_ctid new_node storage) - skip"
     log "[${new_ctid:-?}] ERROR:   four-column rows are from the old format; run tools/add-storage-column.sh"
     failed=$(( failed + 1 )); FAILED_IDS+=("${new_ctid:-?}"); continue
@@ -813,7 +828,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   # G2 only sees a running CT. The quiet disaster is a STOPPED one that already
   # owns this id: if its rootfs happens to be this exact volid the image below is
   # not allocated (it exists), and rsync --delete then empties somebody else's
-  # container into ours. A typo of one digit in inventory.tsv is all it takes.
+  # container into ours. A typo of one digit in inventory-migrate.tsv is all it takes.
   # A config with no rootfs: line at all is a truncated write from an earlier run
   # - refuse that too, because G6 will never rewrite it and it can never boot.
   if ssh $SSHOPT "root@$new_node" "test -f /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null; then

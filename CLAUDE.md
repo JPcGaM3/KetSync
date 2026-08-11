@@ -51,8 +51,9 @@ proves the simulator can fail. `tp` learned this the expensive way.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule, embeds
+                  # the language rule is enforced on BOTH docs/ trees now
     make test     # engines/tp's full suite. Warns that ketsync has none
-    make mutation # 118 known bugs put back. None may survive
+    make mutation # 120 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -63,12 +64,15 @@ broke, rather than something that has been red since the first commit.
 
 ## Layout
 
+    docs/start-here.html the operator's front door. If you change what an
+                         operator types, change it here too
     ketsync              the dispatcher. Contains no logic of its own
     lib/common.sh        log, config, and the two tables everything reads
     lib/cmd_*.sh         one file per subcommand
     ketsync.conf.sample  this machine's role and the master's address
     nodes.tsv.sample     name -> ip -> role. The only name resolution here
-    inventory.tsv.sample ct, tier, home node, dr node
+    fleet.tsv.sample     ct, tier, home node, dr node. The fleet map -
+                         "inventory" always means one of tp's work lists
     engines/tp/          the execution layer. Committed here, edited here
     docs/decisions.md    why it is shaped this way, and what is not built
     tests/               the debt

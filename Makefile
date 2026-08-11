@@ -11,10 +11,10 @@ SHELL   := /bin/bash
 ROOT    := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 TP      := $(ROOT)/engines/tp
 
-SHIPPED := $(ROOT)/ketsync $(ROOT)/lib/*.sh
+SHIPPED := $(ROOT)/ketsync $(ROOT)/lib/*.sh $(ROOT)/tools/*.sh
 
 .DEFAULT_GOAL := help
-.PHONY: help lint lint-ketsync lint-tp syntax shellcheck \
+.PHONY: help lint lint-ketsync lint-tp syntax shellcheck no-thai \
         test test-ketsync test-tp mutation tp-present clean
 
 help:            ## show this list
@@ -34,7 +34,7 @@ tp-present:
 # -- static checks ------------------------------------------------------------
 lint: lint-ketsync lint-tp  ## static checks for both layers, no cluster needed
 
-lint-ketsync: syntax shellcheck  ## the decision layer only
+lint-ketsync: syntax shellcheck no-thai  ## the decision layer only
 
 lint-tp: tp-present   ## the engines: bash -n, shellcheck, the language rule, doc embeds
 	@$(MAKE) --no-print-directory -C $(TP) lint
@@ -48,6 +48,9 @@ shellcheck:      ## shellcheck, if it is installed
 	  shellcheck -x -S warning $(SHIPPED) && echo "shellcheck: clean" \
 	  || { echo "shellcheck: FAILED"; exit 1; }; \
 	else echo "shellcheck not installed - skipped"; fi
+
+no-thai:         ## code is English; only docs/*.html may be Thai, never in <pre>
+	@$(ROOT)/tools/check-no-thai.sh
 
 # -- tests --------------------------------------------------------------------
 # `test` must be able to go green, because a gate that is red every single day

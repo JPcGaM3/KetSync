@@ -137,9 +137,9 @@
     <div class="eyebrow"><span class="num">01</span><h2>ติดตั้ง — โฟลเดอร์เดียวจบ (บน storage-node)</h2></div>
     <p>ทุกอย่างอยู่ในโฟลเดอร์เดียวกัน และโปรแกรมหาไฟล์ของตัวเองจากตำแหน่งที่สคริปต์วางอยู่ ไม่มี path แบบตายตัวในไฟล์เลย <b>ย้ายโฟลเดอร์ไปไหน ทุกอย่างตามไปด้วย</b></p>
     <div class="code"><button class="cp">คัดลอก</button><pre>git clone &lt;repo&gt; /root/tp &amp;&amp; cd /root/tp
-cp inventory.sample.tsv inventory.tsv
+cp inventory-migrate.sample.tsv inventory-migrate.tsv
 ./tp doctor             <span class="c"># says what is not wired up yet</span></pre></div>
-    <div class="ok"><b>สิ่งที่อยู่ในโฟลเดอร์:</b> <code class="inl">tp</code> (คำสั่งหน้าบ้าน) · <code class="inl">ct-migrate.sh</code> (ตัวโปรแกรม ห้ามแก้) · <code class="inl">ctmig.conf</code> (ตั้งความเร็ว ข้อ 05) · <code class="inl">inventory.tsv</code> (รายชื่อ CT ข้อ 04) · <code class="inl">logs/</code> <code class="inl">state/</code> <code class="inl">done/</code> (โปรแกรมสร้างเอง)</div>
+    <div class="ok"><b>สิ่งที่อยู่ในโฟลเดอร์:</b> <code class="inl">tp</code> (คำสั่งหน้าบ้าน) · <code class="inl">ct-migrate.sh</code> (ตัวโปรแกรม ห้ามแก้) · <code class="inl">ctmig.conf</code> (ตั้งความเร็ว ข้อ 05) · <code class="inl">inventory-migrate.tsv</code> (รายชื่อ CT ข้อ 04) · <code class="inl">logs/</code> <code class="inl">state/</code> <code class="inl">done/</code> (โปรแกรมสร้างเอง)</div>
   </section>
 
   <!-- 02 -->
@@ -176,7 +176,7 @@ pvesm status --storage tank-hdd-nas        <span class="c"># active on this node
 
   <!-- 04 -->
   <section id="s4">
-    <div class="eyebrow"><span class="num">04</span><h2>เขียน inventory.tsv</h2></div>
+    <div class="eyebrow"><span class="num">04</span><h2>เขียน inventory-migrate.tsv</h2></div>
     <p class="lead">ไฟล์บอกว่า "ย้ายตัวไหน ไปไหน" — 1 บรรทัดต่อ 1 CT, <b>5 ช่องครบทุกบรรทัด</b> คั่นด้วย space หรือ tab ก็ได้</p>
     <div class="code"><button class="cp">คัดลอก</button><pre><span class="c"># old_node    old_ctid  new_ctid  new_node      storage</span>
 10.100.1.11   100       251       10.100.1.31   tank-hdd-nas
@@ -324,11 +324,11 @@ grep -E 'ERROR|GUARD|WARN' logs/ctmig-all-$(date +%F).log</pre></div>
         <tr><td class="mono">still out of space after 3 grow attempts</td><td>ขยาย 3 รอบแล้วยังไม่พอ — log จะบอกคำสั่งแก้มือไว้ให้ครบ ให้คนดูแลระบบเข้ามาดู</td></tr>
         <tr><td class="mono">GUARD G5: sync FAILED ... config NOT created</td><td>rsync จบไม่สวย โปรแกรมจะ<b>ไม่สร้าง config</b> ให้ ห้าม start ตัวนั้นเด็ดขาด อ่าน log แล้วรันใหม่</td></tr>
         <tr><td class="mono">GUARD G2: copy is RUNNING on ...</td><td>ตั้งใจข้าม — ตัวใหม่เปิดอยู่ ห้ามก๊อปทับ (ไฟล์จะพัง) ถ้าจะ resync จริงต้องปิดตัวใหม่ก่อน</td></tr>
-        <tr><td class="mono">GUARD G7: CT id ... already belongs to something else</td><td>เลขช่องที่ 3 ไปชนกับ CT ตัวอื่นที่มีอยู่แล้วบนเครื่องใหม่ — เปลี่ยนเลขใน inventory.tsv อย่าฝืน</td></tr>
+        <tr><td class="mono">GUARD G7: CT id ... already belongs to something else</td><td>เลขช่องที่ 3 ไปชนกับ CT ตัวอื่นที่มีอยู่แล้วบนเครื่องใหม่ — เปลี่ยนเลขใน inventory-migrate.tsv อย่าฝืน</td></tr>
         <tr><td class="mono">GUARD G1: ... sits on the ROOT filesystem</td><td>dataset ปลายทางยังไม่ถูก mount — โปรแกรมไม่ยอมเขียนลงดิสก์ระบบ กลับไปข้อ 03</td></tr>
         <tr><td class="mono">ERROR: row is incomplete</td><td>บรรทัดนั้นใส่ไม่ครบ 5 ช่อง บรรทัดอื่นยังทำงานปกติ กลับไปแก้บรรทัดนั้น (ข้อ 04)</td></tr>
-        <tr><td class="mono">names the same CT more than once</td><td>มี CT ซ้ำใน inventory.tsv <b>รอบนี้ยังไม่ได้ทำอะไรเลยสักตัว</b> โปรแกรมบอกเลขบรรทัดให้ แก้แล้วรันใหม่</td></tr>
-        <tr><td class="mono">no row in ... matched --storage ...</td><td>พิมพ์ชื่อ storage หรือเลข ctid ผิด ไม่ตรงกับบรรทัดไหนเลย จึงไม่ได้ย้ายอะไร — เทียบกับ inventory.tsv อีกที</td></tr>
+        <tr><td class="mono">names the same CT more than once</td><td>มี CT ซ้ำใน inventory-migrate.tsv <b>รอบนี้ยังไม่ได้ทำอะไรเลยสักตัว</b> โปรแกรมบอกเลขบรรทัดให้ แก้แล้วรันใหม่</td></tr>
+        <tr><td class="mono">no row in ... matched --storage ...</td><td>พิมพ์ชื่อ storage หรือเลข ctid ผิด ไม่ตรงกับบรรทัดไหนเลย จึงไม่ได้ย้ายอะไร — เทียบกับ inventory-migrate.tsv อีกที</td></tr>
         <tr><td class="mono">SSH to ... FAILED</td><td>ยังไม่ได้ทำ key ไปเครื่องนั้น (ข้อ 02) หรือเครื่องดับ</td></tr>
         <tr><td class="mono">CT ... NOT FOUND</td><td>ช่องที่ 1 หรือช่องที่ 2 ใน inventory ผิด — เช็คด้วย <code class="inl">pct list</code> บนเครื่องเก่า</td></tr>
         <tr><td class="mono">is not running (start it first)</td><td>ตัวเก่าถูกปิดอยู่ รอบธรรมดาอ่านได้เฉพาะ CT ที่รัน (รอบสุดท้ายเท่านั้นที่อ่านตัวที่ปิดแล้ว)</td></tr>

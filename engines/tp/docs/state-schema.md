@@ -101,7 +101,7 @@ field does not take the dashboard down.
 | `schema_version` | `1`. Bumped only when a reader would break. New optional fields do not bump it. |
 | `new_ctid` | CT id on the new node, and the file name. |
 | `old_ctid` | CT id on the old node. Usually the same number, not necessarily. |
-| `old_node` | source node, verbatim from `inventory.tsv`. |
+| `old_node` | source node, verbatim from `inventory-migrate.tsv`. |
 | `new_node` | target node. Required per row, never defaulted. |
 | `storage` | PVE storage id the rootfs image lives on. Also the lane name. |
 | `image` | absolute path of the raw image, as `pvesm path` reported it. |

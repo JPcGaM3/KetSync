@@ -25,7 +25,7 @@
 #  refuse up front.
 #
 #  It reads ctrep.conf and inventory-replica.tsv from its own folder - the
-#  same pair ct-replica.sh reads, never ct-migrate.sh's inventory.tsv - so the
+#  same pair ct-replica.sh reads, never ct-migrate.sh's inventory-migrate.tsv - so the
 #  backup
 #  node, the dest pools and any custom tgt_ctid are exactly what ct-replica
 #  uses. Nothing is configured twice.
@@ -283,7 +283,7 @@ if (( ! ${#CTS[@]} )); then
   # a missing file is a deployment mistake, an empty one is a choice.
   if [[ -f "$INV" ]]; then log "ERROR: $INV names no CT, and no --ctid was given - nothing to do"
   else                     log "ERROR: no inventory at $INV (and no --ctid) - NOTHING was run"
-                           log "ERROR:   this is ct-replica's file, not ct-migrate's inventory.tsv"
+                           log "ERROR:   this is ct-replica's file, not ct-migrate's inventory-migrate.tsv"
   fi
   exit 2
 fi

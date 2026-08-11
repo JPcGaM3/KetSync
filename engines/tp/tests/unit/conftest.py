@@ -45,7 +45,7 @@ def repo(tmp_path):
     (tmp_path / "state").mkdir()
     (tmp_path / "done").mkdir()
     (tmp_path / "ct-migrate.sh").write_text("#!/usr/bin/env bash\n")
-    (tmp_path / "inventory.tsv").write_text(
+    (tmp_path / "inventory-migrate.tsv").write_text(
         "10.100.1.11\t251\t251\t10.100.1.31\ttank-hdd-nas\n"
         "10.100.1.12\t253\t253\t10.100.1.32\ttank-ssd-nas\n")
     (tmp_path / "ctmig.conf").write_text("BW_TOTAL_MB=500\nLANES=2\n")

@@ -4,7 +4,12 @@
 # it is not. This machine is outside the cluster and has neither its hosts file
 # nor its DNS, so every address it will ever use is in this table.
 #
-# name          ip              role
+# TAB separated; lines starting with # are ignored. role is one of:
+#   storage   the node the engines run on, and where the images live
+#   backup    holds the stopped DR copies, and PBS
+#   compute   mounts the images over NFS and runs the containers
+#
+# name	ip	role
 pve-storage-r17	10.100.1.17	storage
 pbs-r09	10.100.1.9	backup
 pve-r32	10.100.1.32	compute

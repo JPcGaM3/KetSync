@@ -67,7 +67,7 @@ run that really moved something.
 
 ```bash
 git clone <this repo> /root/tp && cd /root/tp
-cp inventory.sample.tsv          inventory.tsv
+cp inventory-migrate.sample.tsv          inventory-migrate.tsv
 cp inventory-replica.sample.tsv  inventory-replica.tsv
 $EDITOR ctmig.conf ctrep.conf     # the machines and the bandwidth ceiling
 ./tp doctor                       # says what is not wired up yet
@@ -102,8 +102,8 @@ from a healthy run.
 
 ```bash
 make lint        # bash -n + shellcheck + the language and separator rules
-make test        # 179 simulator + 16 dispatcher scenarios, 125 c2v, 82 python
-make mutation    # 118 known bugs reintroduced: 111 in the engines, 7 in the dispatcher, all must be caught
+make test        # 181 simulator + 16 dispatcher scenarios, 125 c2v, 82 python
+make mutation    # 120 known bugs reintroduced: 113 in the engines, 7 in the dispatcher, all must be caught
 ```
 
 `make mutation` is the target that matters. A green suite means nothing until

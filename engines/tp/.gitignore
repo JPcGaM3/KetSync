@@ -16,7 +16,7 @@
 /PAUSE
 
 # The real fleet inventories are site-specific; only the samples are tracked.
-/inventory.tsv
+/inventory-migrate.tsv
 /inventory-replica.tsv
 /bridgemap.tsv
 

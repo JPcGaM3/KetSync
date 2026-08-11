@@ -301,6 +301,20 @@ mutant "/proc is no longer excluded from the rootfs copy" \
   's{.\Q--exclude=/proc/*\E. }{}' \
   1
 
+# ---------- the inventory rename ---------------------------------------------
+# inventory.tsv became inventory-migrate.tsv when three engines moved into one
+# folder. The failure this creates on an upgrade is not subtle - the engine
+# refuses every run - but the diagnosis is, because the operator is looking at
+# a file called inventory.tsv sitting right there.
+
+mutant "a missing inventory is treated as an empty workload again" \
+  's{\Qif [[ ! -f "\E\$INV\Q" ]]; then\E}{if false; then}' \
+  64 64b
+
+mutant "an upgrade over the old inventory.tsv gets no hint about the rename" \
+  's{\Q  if [[ -f "\E\$BASE\Q/inventory.tsv" ]]; then\E}{  if false; then}' \
+  64
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

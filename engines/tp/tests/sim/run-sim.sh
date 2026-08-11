@@ -117,10 +117,10 @@ net0: name=eth0,bridge=vmbr0,ip=10.0.0.$2/24
 onboot: 1
 EOF
 }
-inventory(){ printf '%s\n' "$@" > "$WORK/inventory.tsv"; }
+inventory(){ printf '%s\n' "$@" > "$WORK/inventory-migrate.tsv"; }
 # the same, but the last line gets NO trailing newline: the shape some editors
 # leave behind, and the one that used to make the engine lose its last row
-inventory_nonl(){ local IFS=$'\n'; printf '%s' "$*" > "$WORK/inventory.tsv"; }
+inventory_nonl(){ local IFS=$'\n'; printf '%s' "$*" > "$WORK/inventory-migrate.tsv"; }
 unmount_pool(){ grep -vxF "$(cat "$SIMROOT/storage/$1.path")" "$SIMROOT/mounted" > "$SIMROOT/.m"; mv "$SIMROOT/.m" "$SIMROOT/mounted"; }
 rsync_stats(){ echo "$1 $2 $3 $4" > "$SIMROOT/rsync.stats"; }   # files literal sent total
 kill_next_rsync(){ : > "$SIMROOT/rsync.kill"; }   # Ctrl-C the engine mid-transfer, once
@@ -993,7 +993,7 @@ if scenario "49: a lane whose CTs are all frozen is not mistaken for a typo"; th
 fi
 
 if scenario "50: G7 refuses a new_ctid that already belongs to another container"; then
-  # one wrong digit in inventory.tsv points a row at an id somebody else owns.
+  # one wrong digit in inventory-migrate.tsv points a row at an id somebody else owns.
   foreign_cfg 10.100.1.31 251 "local-lvm:vm-999-disk-0"
   run_engine --ctid 251
   rc_is 1; clean
@@ -1187,6 +1187,35 @@ if scenario "63: --help prints the whole header, exit-code contract included"; t
   [[ "$rc" == 0 ]] || _err "--help exit code $rc, expected 0"
   grep -q "exit code" <<<"$out" || _err "--help does not reach the exit-code contract"
   grep -q "^#" <<<"$out" && _err "--help should print the header without its # markers"
+  done_scenario
+fi
+
+if scenario "64: an install still holding the OLD inventory.tsv is told what to rename"; then
+  # The rename this scenario guards: one folder now holds three engines whose
+  # inventories have entirely different columns, so the generic name went to
+  # nobody. An upgrade that copies the new engines over an old install leaves
+  # inventory.tsv sitting there, and "inventory not found" alone would send an
+  # operator looking for a file that is in front of them. Under cron this is
+  # every fifteen minutes until somebody reads a log.
+  rm -f "$WORK/inventory-migrate.tsv"
+  printf '10.100.1.11\t251\t251\t10.100.1.31\ttank-hdd-nas\n' > "$WORK/inventory.tsv"
+  run_engine
+  rc_is 1
+  has "inventory not found"
+  has "That is the OLD name for this file."
+  has "mv $WORK/inventory.tsv $WORK/inventory-migrate.tsv"
+  untraced "rsync"; untraced "pvesm alloc"
+  rm -f "$WORK/inventory.tsv"
+  done_scenario
+fi
+
+if scenario "64b: with neither file, it points at the sample instead"; then
+  rm -f "$WORK/inventory-migrate.tsv" "$WORK/inventory.tsv"
+  run_engine
+  rc_is 1
+  has "inventory not found"
+  has "cp $WORK/inventory-migrate.sample.tsv"
+  untraced "rsync"
   done_scenario
 fi
 

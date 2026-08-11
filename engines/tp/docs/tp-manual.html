@@ -188,11 +188,11 @@
   <h3>ไฟล์ที่มันอ่าน</h3>
   <table>
     <tr><th style="width:36%">ไฟล์</th><th>คืออะไร</th></tr>
-    <tr><td class="m">inventory.tsv</td><td>รายชื่อ CT ที่จะย้าย 5 ช่อง เว้นวรรคหรือ tab ก็ได้ · ต้นแบบอยู่ที่ <span class="m">inventory.sample.tsv</span></td></tr>
+    <tr><td class="m">inventory-migrate.tsv</td><td>รายชื่อ CT ที่จะย้าย 5 ช่อง เว้นวรรคหรือ tab ก็ได้ · ต้นแบบอยู่ที่ <span class="m">inventory-migrate.sample.tsv</span></td></tr>
     <tr><td class="m">ctmig.conf</td><td>ความเร็วและตัวเลขปรับจูน ไม่ต้องแตะถ้ายังไม่มีปัญหา</td></tr>
     <tr><td class="m">done/&lt;new_ctid&gt;.done</td><td>ไฟล์เปล่าที่<b>คนสร้างเอง</b> แปลว่า CT ตัวนี้ปิดงานแล้ว รอบต่อไปจะข้ามถาวร</td></tr>
   </table>
-  <p>ห้าช่องใน <code class="inl">inventory.tsv</code> เรียงแบบนี้ ไม่มีช่องไหนมีค่าเริ่มต้น ขาดช่องไหนแถวนั้นถูกข้ามพร้อมขึ้น ERROR</p>
+  <p>ห้าช่องใน <code class="inl">inventory-migrate.tsv</code> เรียงแบบนี้ ไม่มีช่องไหนมีค่าเริ่มต้น ขาดช่องไหนแถวนั้นถูกข้ามพร้อมขึ้น ERROR</p>
   <div class="code"><pre><span class="c"># old_node     old_ctid  new_ctid  new_node       storage</span>
 10.100.1.11    100       251       10.100.1.31    tank-hdd-nas
 10.100.1.23    998       99200     10.100.1.18    tank-ssd-nas</pre></div>
@@ -413,7 +413,7 @@ CT       TOOL       STATUS      REASON                 WHEN                CHANG
   <span class="g">ok</span>
 ##############################################################################
 == inventories readable
-  inventory.tsv: 12 rows
+  inventory-migrate.tsv: 12 rows
   inventory-replica.tsv: 9 rows</div>
 </section>
 
@@ -481,16 +481,16 @@ CT       TOOL       STATUS      REASON                 WHEN                CHANG
 
   <h3>ไม่มีไฟล์รายชื่อ</h3>
   <div class="out"><span class="r">ERROR: no inventory at /root/tp/inventory-replica.tsv - NOTHING was run</span>
-  this file is NOT ct-migrate's inventory.tsv; the columns differ</div>
+  this file is NOT ct-migrate's inventory-migrate.tsv; the columns differ</div>
   <p>สองไฟล์นี้คนละไฟล์กัน ช่องคนละความหมาย ห้ามเอามาใช้แทนกันเด็ดขาด เริ่มจากไฟล์ต้นแบบ</p>
   <div class="code"><pre><span class="p">$ </span>cp inventory-replica.sample.tsv inventory-replica.tsv    <span class="c"># replica + failback</span>
-<span class="p">$ </span>cp inventory.sample.tsv inventory.tsv                    <span class="c"># migrate only</span></pre></div>
+<span class="p">$ </span>cp inventory-migrate.sample.tsv inventory-migrate.tsv                    <span class="c"># migrate only</span></pre></div>
 
   <h3>ใส่ตัวกรองแล้วไม่ตรงกับใครเลย</h3>
   <div class="out"><span class="r">ERROR: no CT matched --storage tank-sdd-nas - nothing was replicated</span></div>
   <p>พิมพ์ชื่อผิดหนึ่งตัวอักษร งานเลยไม่ถูกทำเลยแม้แต่ตัวเดียว โปรแกรมจงใจให้จบแบบไม่สำเร็จ
      เพราะถ้าจบแบบสำเร็จทั้งที่ไม่ได้ทำอะไร cron จะดูเขียวสนิทได้เป็นเดือนโดยไม่มีสำเนาเลยสักตัว · เทียบชื่อกับไฟล์รายชื่อ</p>
-  <div class="code"><pre><span class="p">$ </span>awk '$1!~/^#/ &amp;&amp; NF&gt;=5 {print $3, $5}' inventory.tsv
+  <div class="code"><pre><span class="p">$ </span>awk '$1!~/^#/ &amp;&amp; NF&gt;=5 {print $3, $5}' inventory-migrate.tsv
 <span class="p">$ </span>pvesm status</pre></div>
 
   <h3>GUARD B7: could not snapshot</h3>

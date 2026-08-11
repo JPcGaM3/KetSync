@@ -33,7 +33,7 @@
 #    ctrep.conf       site tuning (backup target, dests, bandwidth) — optional
 #    inventory-replica.tsv   which CTs to copy (see
 #                            inventory-replica.sample.tsv). A separate file
-#                            from ct-migrate.sh's inventory.tsv on purpose:
+#                            from ct-migrate.sh's inventory-migrate.tsv on purpose:
 #                            they share a folder and their columns mean
 #                            different things
 #    exclude.tsv      CTIDs to skip when AUTO_DISCOVER=1
@@ -340,12 +340,13 @@ declare -a INV_ERRS=()
 # this the parse block below is simply skipped, the CT list comes out empty and
 # the run says "nothing to do" and exits 0 - which under cron is exactly what a
 # healthy night looks like, every fifteen minutes, while nothing is replicated
-# at all. The file was renamed once (it used to be inventory.tsv, which is now
-# ct-migrate's), and that rename is precisely how a fleet stops being copied
-# without anybody being told.
+# at all. This file has been renamed once already: it used to be called
+# inventory.tsv, which is now inventory-migrate.tsv and belongs to ct-migrate.
+# A rename is precisely how a fleet stops being copied without anybody being
+# told, so a missing one has to be loud.
 if [[ ! -f "$INV" ]] && (( ! AUTO_DISCOVER )); then
   log "ERROR: no inventory at $INV - NOTHING was run"
-  log "ERROR:   this file is NOT ct-migrate's inventory.tsv; the columns differ"
+  log "ERROR:   this file is NOT ct-migrate's inventory-migrate.tsv; the columns differ"
   log "ERROR:   start from the sample:  cp $BASE/inventory-replica.sample.tsv $INV"
   log "ERROR:   or set AUTO_DISCOVER=1 in $CONF to replicate every CT in the cluster"
   exit 2

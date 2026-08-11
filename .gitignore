@@ -1,7 +1,7 @@
 # the live tables are per-site; only the samples are tracked
 /ketsync.conf
 /nodes.tsv
-/inventory.tsv
+/fleet.tsv
 
 # runtime
 /logs/

@@ -12,7 +12,7 @@
 #  OLDER than what it already has refuses it, so a master that was promoted by
 #  mistake and then demoted cannot walk its stale inventory back over everyone.
 # =============================================================================
-KS_SYNCED=(ketsync.conf nodes.tsv inventory.tsv)
+KS_SYNCED=(ketsync.conf nodes.tsv fleet.tsv)
 
 ks_generation(){  # $1 = file -> its generation, or 0
   sed -n 's/^#[[:space:]]*generation:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -1

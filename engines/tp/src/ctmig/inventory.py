@@ -1,4 +1,4 @@
-"""Parse inventory.tsv.
+"""Parse inventory-migrate.tsv.
 
 Five tab-separated columns, all required:
 

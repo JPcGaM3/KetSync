@@ -21,7 +21,7 @@ KS_MASTER_IP=""               # the machine that owns the inventory
 KS_SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
 KS_CONF="$KS_BASE/ketsync.conf"
 KS_NODES="$KS_BASE/nodes.tsv"
-KS_INV="$KS_BASE/inventory.tsv"
+KS_INV="$KS_BASE/fleet.tsv"
 # these are read by the cmd_* files that source this one
 [[ -f "$KS_CONF" ]] && . "$KS_CONF"
 

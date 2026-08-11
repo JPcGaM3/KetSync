@@ -51,12 +51,19 @@ that copy and skips.
 
 Split-brain still happens. It just stops costing anything.
 
-## 3. One writer for the inventory, ordered by a generation number
+## 3. One writer for the fleet map, ordered by a generation number
+
+The three synced files are `ketsync.conf`, `nodes.tsv` and `fleet.tsv`. That
+last one is deliberately not called an inventory: `engines/tp` already has two
+files with that word in the name and entirely different columns, and one word
+meaning three things is how somebody edits the wrong table during a DR.
+`fleet.tsv` is the map - which container lives where, and where it goes when
+its home is gone. tp's inventories are work lists.
 
 Every synced file carries `# generation: N` and the number goes up on every
 edit. `ketsync sync` refuses to push a file over a newer one, so a master that
-was promoted by mistake and then demoted cannot walk its stale inventory back
-over the fleet.
+was promoted by mistake and then demoted cannot walk its stale map back over
+the fleet.
 
 A new machine joins by being added to `nodes.tsv` and receiving a sync. There
 is no membership protocol, because with manual promotion there is nothing for
@@ -130,7 +137,7 @@ and therefore has neither its `/etc/hosts` nor its DNS.
 
 ## 9. What is built today
 
-    ketsync sync     real. pushes config + inventory, generation-ordered
+    ketsync sync     real. pushes config + fleet map, generation-ordered
     ketsync role     real. reports, and refuses to flip the role for you
     ketsync doctor   real. reachability, the generation lines, ssh to every
                      compute node, and whether tp is actually present

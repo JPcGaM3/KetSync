@@ -1,5 +1,9 @@
 # ketsync
 
+**New here? Open [`docs/start-here.html`](docs/start-here.html) first.** One
+page, in Thai: which file is which, what goes on which machine, and what to
+type in what order. Everything below is the summary.
+
 The layer above [`tp`](engines/README.md). `ketsync` decides who does what and
 where; `tp` does it, with the guards it already has.
 
@@ -31,7 +35,7 @@ git clone <this repo> /root/ketsync && cd /root/ketsync
 
 cp ketsync.conf.sample  ketsync.conf
 cp nodes.tsv.sample     nodes.tsv
-cp inventory.tsv.sample inventory.tsv
+cp fleet.tsv.sample     fleet.tsv
 $EDITOR nodes.tsv          # every address this machine will ever use
 ./ketsync doctor           # says what is not wired up yet
 ```
@@ -60,16 +64,27 @@ the inventory does, written down in advance; `--node` overrides it on the day.
 ```
 ketsync              the dispatcher, and lib/ behind it — the decision layer
 engines/tp/          the three engines that do the moving, committed in full
+docs/start-here.html the operator's front door, in Thai
 docs/decisions.md    why it is shaped this way, and what is not built
 tests/               the debt
+```
+
+Three tables, and they are not interchangeable — that is why none of them share
+a name any more:
+
+```
+fleet.tsv                          the map: which CT lives where, and where it
+                                   goes when its home is gone
+engines/tp/inventory-migrate.tsv   a work list: which CTs to move in
+engines/tp/inventory-replica.tsv   a work list: which CTs to copy nightly
 ```
 
 ## The gates
 
 ```bash
 make lint       # both layers: bash -n, shellcheck, the language rule, doc embeds
-make test       # engines/tp: 179 simulator scenarios, the dispatcher, c2v, python
-make mutation   # 118 known bugs put back one at a time; none may survive
+make test       # engines/tp: 181 simulator scenarios, the dispatcher, c2v, python
+make mutation   # 120 known bugs put back one at a time; none may survive
 ```
 
 `make -C engines/tp test-replica` and friends still work if you want one engine.
