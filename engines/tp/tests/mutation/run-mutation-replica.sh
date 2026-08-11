@@ -363,6 +363,20 @@ mutant "the IO-stall timeout is dropped, so a hung receiver hangs the lane" \
   's{\Q"--bwlimit=\E\$BWLIMIT\Q" --timeout=300\E}{"--bwlimit=\$BWLIMIT"}' \
   1
 
+# ---------- the backup node's identity ---------------------------------------
+# Nobody types a pmxcfs name any more; the node is asked. Both halves of that
+# have to keep working: adopting what it says, and refusing a pinned value that
+# disagrees with it. Getting this wrong writes copy configs into a directory
+# belonging to another cluster member, and every check before it passes.
+
+mutant "a pinned BKP_NODE is adopted instead of checked" \
+  's{\Qelif [[ "\E\$_bknode\Q" != "\E\$BKP_NODE\Q" ]]; then\E}{elif false; then}' \
+  41
+
+mutant "the name the node reports is thrown away, leaving BKP_NODE empty" \
+  's{\Q  BKP_NODE="\E\$_bknode\Q"\E}{  :}' \
+  41b 1
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

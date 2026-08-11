@@ -7,14 +7,25 @@ type in what order. Everything below is the summary.
 The layer above [`tp`](engines/README.md). `ketsync` decides who does what and
 where; `tp` does it, with the guards it already has.
 
+One command covers both layers. You should not have to know that
+`engines/tp` exists to run a replica round.
+
 ```
-ketsync sync         push config + inventory to every node in nodes.tsv
+ketsync migrate      old node -> a raw image here          -> tp
+ketsync replica      live image here -> copy on the backup -> tp
+ketsync failback     promoted copy -> back into production -> tp
+ketsync status       the last run of every container       -> tp
+ketsync tp <...>     anything else, straight through       -> tp
+
+ketsync sync         push the tables to every node in nodes.tsv
 ketsync role         who this machine thinks it is
+ketsync doctor       the cross-checks nobody remembers to run, both layers
 ketsync distribute   DR: put a copy onto a compute node and hand over   (stub)
 ketsync recall       the return trip, once the storage node is back     (stub)
-ketsync status       every container: where it is, where its copy is    (stub)
-ketsync doctor       the cross-checks nobody remembers to run
 ```
+
+tp's commands are passed through untouched — same flags, same guards, same
+exit codes. This layer adds nothing to them and must never start to.
 
 ## Why it exists
 
@@ -40,9 +51,12 @@ $EDITOR nodes.tsv          # every address this machine will ever use
 ./ketsync doctor           # says what is not wired up yet
 ```
 
-`nodes.tsv` is the only place a PVE node name becomes an address. Nothing here
-resolves a hostname, which is what lets it run from a machine that is outside
-the cluster on purpose.
+Everything you type is an IP. `nodes.tsv` is an address and a role, with no
+name column, and nothing here resolves a hostname — which is what lets it run
+from a machine that is outside the cluster on purpose and therefore has neither
+its `/etc/hosts` nor its DNS. PVE node names are still needed to write a guest
+config; they are discovered from the cluster and cached in `nodes.map`, which
+nobody edits.
 
 ## What it will not do
 
@@ -83,8 +97,8 @@ engines/tp/inventory-replica.tsv   a work list: which CTs to copy nightly
 
 ```bash
 make lint       # both layers: bash -n, shellcheck, the language rule, doc embeds
-make test       # engines/tp: 181 simulator scenarios, the dispatcher, c2v, python
-make mutation   # 120 known bugs put back one at a time; none may survive
+make test       # engines/tp: 184 simulator scenarios, the dispatcher, c2v, python
+make mutation   # 124 known bugs put back one at a time; none may survive
 ```
 
 `make -C engines/tp test-replica` and friends still work if you want one engine.

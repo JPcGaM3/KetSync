@@ -5,8 +5,11 @@
 #
 #   ct     the container id on its home node
 #   tier   which copy pool it belongs in: ssd (comes back fast) or hdd
-#   home   the node it normally runs on, by NAME (looked up in nodes.tsv)
-#   dr     the node that picks it up when home is gone, by NAME
+#   home   the node it normally runs on, by IP
+#   dr     the node that picks it up when home is gone, by IP
+#
+# Addresses, not names - every address here must have a row in nodes.tsv, and
+# 'ketsync doctor' refuses to stay quiet about one that does not.
 #
 # dr is written down rather than chosen at the time. Placing a customer by
 # free RAM at 3am is how a customer ends up on the wrong machine; the same
@@ -16,5 +19,5 @@
 # TAB separated; lines starting with # are ignored.
 #
 # ct	tier	home	dr
-110	hdd	pve-r32	pve-r33
-120	hdd	pve-r33	pve-r32
+110	hdd	10.100.1.32	10.100.1.33
+120	hdd	10.100.1.33	10.100.1.32

@@ -1,28 +1,30 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  ketsync — the layer above tp. It decides WHO does WHAT and WHERE; tp does it
+#  ketsync — one command for the whole system. It decides WHO does WHAT and
+#  WHERE, and hands the moving to tp, which lives inside this repo.
 # -----------------------------------------------------------------------------
-#  tp already moves a container between two machines safely, and it is anchored
-#  by 179 simulator scenarios and 117 mutations. ketsync does not repeat any of
-#  that. It answers the questions tp does not:
+#  You should not have to know that engines/tp exists to run a replica round.
+#  Everything is reachable from here:
 #
-#    which machine is in charge right now
-#    where does each container live, and where should its copy go
-#    when the storage node is gone, which compute node picks each one up
-#    how does every machine end up with the same inventory
+#    the work                          the decisions
+#    ketsync migrate    old node -> here        ketsync sync    push the tables
+#    ketsync replica    here -> backup node     ketsync role    who is in charge
+#    ketsync failback   copy -> back into prod  ketsync doctor  is this wired up
+#    ketsync status     the last run of every container
 #
-#    ketsync sync         push config + fleet map to every node in nodes.tsv
-#    ketsync distribute   DR: put a copy onto a compute node and hand over
-#    ketsync recall       the return trip, once the storage node is back
-#    ketsync role         who this machine thinks it is, and why
-#    ketsync status       one table: every container, where it is, where its
-#                         copy is, when it was last synced
-#    ketsync doctor       the cross-checks nobody remembers to run
+#    ketsync distribute   DR: put a copy onto a compute node   (not built)
+#    ketsync recall       the return trip, once storage is back (not built)
 #
-#  Everything talks over IP. Node NAMES exist because PVE stores configs under
-#  /etc/pve/nodes/<name>/, so they cannot be avoided - but they are translated
-#  to an address in exactly one place, nodes.tsv, and nothing else resolves a
-#  hostname. That is what makes this work from a machine outside the cluster.
+#    ketsync tp <anything>   pass straight through to the engines, for a flag
+#                            this dispatcher has not been taught
+#
+#  migrate, replica, failback and status are tp's. They are passed through
+#  untouched, flags and all, so every guard and every exit code is tp's too -
+#  this file adds nothing to them and must never start doing so.
+#
+#  Everything a human types here is an IP. PVE node NAMES exist because configs
+#  live under /etc/pve/nodes/<name>/, but nobody types one: they are discovered
+#  from the cluster and cached in nodes.map. See docs/decisions.md section 8.
 #
 #  exit code: 0 = nothing needs attention, 1 = something does,
 #             2 = refused before touching anything.
@@ -48,13 +50,35 @@ not_built(){    # $1 = subcommand, $2 = which section of docs/decisions.md
   exit 2
 }
 
+# Hand off to tp and become it. exec rather than a call: tp's exit code is the
+# contract cron reads, and anything that runs after the engine here is a chance
+# to lose it or add to it. There is nothing this layer could usefully do after
+# a transfer that it could not do before one.
+TP="$BASE/engines/tp/tp"
+run_tp(){
+  if [[ ! -x "$TP" ]]; then
+    log "ERROR: $TP is missing or not executable - NOTHING was run"
+    log "ERROR:   the engines are committed in this repo, so this is a broken"
+    log "ERROR:   checkout rather than a clone step somebody skipped."
+    log "ERROR:   check it with:  ./ketsync doctor"
+    exit 2
+  fi
+  exec "$TP" "$@"
+}
+
 case "${1:-}" in
+  # --- tp's, passed through untouched ---
+  migrate|replica|failback|status)
+              run_tp "$@";;
+  tp)         shift; run_tp "$@";;
+
+  # --- this layer's own ---
   sync)       shift; . "$BASE/lib/cmd_sync.sh";     cmd_sync "$@";;
   role)       shift; . "$BASE/lib/cmd_role.sh";     cmd_role "$@";;
   doctor)     shift; . "$BASE/lib/cmd_doctor.sh";   cmd_doctor "$@";;
-  status)     shift; not_built status     "section 6";;
   distribute) shift; not_built distribute "section 4";;
   recall)     shift; not_built recall     "section 5";;
+
   version)    echo "ketsync $(cd "$BASE" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;
   ""|-h|--help|help) usage;;
   *) echo "ketsync: unknown subcommand '$1'" >&2; echo; usage; exit 2;;

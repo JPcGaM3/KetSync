@@ -31,10 +31,14 @@ then prints the `pct start`. Same rule as every engine in `tp`.
 stop, never a guessed address. Placement comes from the inventory's `dr`
 column, not from free RAM. Guessing puts a customer on the wrong machine.
 
-**5. Everything is an IP.** PVE forces node *names* on us because it stores
-configs under `/etc/pve/nodes/<name>/`. `nodes.tsv` is the single place a name
-becomes an address; nothing else resolves a hostname. That is what lets this
-run from outside the cluster.
+**5. Everything a human types is an IP.** PVE forces node *names* on us because
+it stores configs under `/etc/pve/nodes/<name>/` — but nobody types one.
+`nodes.tsv` is an address and a role. Names are discovered from the cluster via
+the backup node and cached in `nodes.map`; the engines read `BKP_NODE` off the
+backup node's own `/etc/pve/local`. Nothing here resolves a hostname, which is
+what lets this run from outside the cluster. Do not add a name column back: a
+name that is typed is a name that can be stale, and a stale one writes a guest
+config into another member's directory.
 
 **6. Every engine and command sets its own PATH.** cron gives you
 `/usr/bin:/bin` and `pvesm`, `zfs` and `losetup` live in sbin. Check required
@@ -53,7 +57,7 @@ proves the simulator can fail. `tp` learned this the expensive way.
     make lint     # both layers: bash -n, shellcheck, the language rule, embeds
                   # the language rule is enforced on BOTH docs/ trees now
     make test     # engines/tp's full suite. Warns that ketsync has none
-    make mutation # 120 known bugs put back. None may survive
+    make mutation # 124 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -70,7 +74,8 @@ broke, rather than something that has been red since the first commit.
     lib/common.sh        log, config, and the two tables everything reads
     lib/cmd_*.sh         one file per subcommand
     ketsync.conf.sample  this machine's role and the master's address
-    nodes.tsv.sample     name -> ip -> role. The only name resolution here
+    nodes.tsv.sample     ip -> role. No name column, on purpose
+    nodes.map            ip -> PVE node name. GENERATED. Never hand-edited
     fleet.tsv.sample     ct, tier, home node, dr node. The fleet map -
                          "inventory" always means one of tp's work lists
     engines/tp/          the execution layer. Committed here, edited here

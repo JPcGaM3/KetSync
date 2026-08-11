@@ -3,6 +3,9 @@
 /nodes.tsv
 /fleet.tsv
 
+# generated from the cluster, never edited by hand
+/nodes.map
+
 # runtime
 /logs/
 /state/

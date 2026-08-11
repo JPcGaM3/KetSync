@@ -127,13 +127,37 @@ the transfer runs between two machines while the orchestrator touches neither.
 That second point is not a complication - it is exactly the capability the
 disaster case needs, since the orchestrator will not be the storage node.
 
-## 8. Everything is an IP
+## 8. Everything a human types is an IP, and the one name nobody types
 
-PVE stores container configs under `/etc/pve/nodes/<name>/`, so node names
-cannot be avoided. Resolving them can be. `nodes.tsv` is the only place a name
-becomes an address, and nothing else in this repo resolves a hostname - which
-is what lets it work from a machine that is deliberately outside the cluster
-and therefore has neither its `/etc/hosts` nor its DNS.
+PVE stores container configs under `/etc/pve/nodes/<name>/`, so a node name is
+unavoidable as *data*. Typing one is avoidable, and that is the part that
+matters: this machine sits outside the cluster on purpose, so it has neither
+the cluster's `/etc/hosts` nor its DNS, and an address that only works while a
+name server answers is an address that stops working during the exact incident
+this tool exists for.
+
+So `nodes.tsv` has no name column - an IP and a role, and that is the whole
+table. `fleet.tsv` addresses its home and dr nodes the same way, and
+`ketsync doctor` refuses to stay quiet about one that has no row.
+
+The names are discovered instead. `ketsync` asks the backup node - a cluster
+member - for `pvesh get /cluster/status` and caches the ip-to-name map in
+`nodes.map`, which is generated and never hand-edited. The engines do the same
+thing one level down: `BKP_NODE` is read from the backup node's own
+`/etc/pve/local` symlink rather than a config file. A name that is typed is a
+name that can be wrong today, or right today and stale after a rename, and
+being wrong writes a guest config into a directory belonging to another cluster
+member - past every check that would have caught anything else.
+
+Setting `BKP_NODE` by hand still works and now means something different: not
+"here is the name" but "refuse the run if the machine at `BKP_SSH` is not this
+one". A pinned value is verified, never trusted. That is worth keeping, so it
+stayed.
+
+The cache exists because discovery needs a reachable cluster and the run that
+needs this most is the one during an outage. A cached name a week old is still
+right; PVE node names effectively never change, and if one does, `ketsync
+doctor` says so on the next good day.
 
 ## 9. What is built today
 

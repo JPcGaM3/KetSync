@@ -260,9 +260,13 @@ mutant "a --dest that matched no row still exits 0" \
   's{\Qif (( matched == 0 )) && [[ -n "\E\$ONLY_DEST\Q" ]]; then\E}{if false; then}' \
   9
 
+# Scenario 39 used to be the third witness here. It no longer is: an
+# unreachable backup node is now refused for the whole run before any CT is
+# read, so it never reaches this counter. 11 and 12 still do - a CT that is not
+# in the cluster at all, and a CT that turns out to be a copy.
 mutant "a CT that cannot be resolved is skipped quietly instead of failing" \
   's{\Q    failed=\E\$\Q(( failed + 1 )); FAILED_IDS+=("\E\$ct\Q"); continue\E}{    continue}' \
-  11 12 39
+  11 12
 
 # 0 and 24 are success; 23 is a partial transfer, which leaves the customer's
 # rootfs half written and would be handed over as ready to start.
@@ -353,6 +357,19 @@ mutant "the restore stops being --delete, so files deleted during DR come back" 
 mutant "the bandwidth ceiling is dropped from the restore" \
   's{\Q "--bwlimit=\E\$BWLIMIT\Q"\E}{}' \
   1
+
+# ---------- the backup node's identity ---------------------------------------
+# This engine uses the name to tell a copy from a production CT. A wrong one
+# points a restore at the wrong side of the transfer, and an absent one means
+# there is no connection to the machine every question goes through.
+
+mutant "a backup node that will not say who it is is carried on with anyway" \
+  's{\Qif [[ -z "\E\$_bknode\Q" ]]; then\E}{if false; then}' \
+  39
+
+mutant "a pinned BKP_NODE is adopted instead of checked" \
+  's{\Qelif [[ "\E\$_bknode\Q" != "\E\$BKP_NODE\Q" ]]; then\E}{elif false; then}' \
+  38b
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

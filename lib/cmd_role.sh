@@ -16,8 +16,8 @@ cmd_role(){
     log "master ip: ${KS_MASTER_IP:-<unset>}"
     log "this host: $(hostname) $(hostname -I 2>/dev/null | awk '{print $1}')"
     [[ "$KS_ROLE" == master ]] \
-      && log "this machine owns the inventory; run 'ketsync sync' after every edit" \
-      || log "this machine receives the inventory; edit it on ${KS_MASTER_IP:-the master}, not here"
+      && log "this machine owns the tables; run 'ketsync sync' after every edit" \
+      || log "this machine receives the tables; edit them on ${KS_MASTER_IP:-the master}, not here"
     exit 0
   fi
   case "$want" in

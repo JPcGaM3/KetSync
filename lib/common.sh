@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash disable=SC2034,SC1090,SC1091
 # =============================================================================
-#  common.sh — log, config, and the two tables everything reads.
+#  common.sh — log, config, and the tables everything reads.
 #  Sourced, never executed. KS_BASE is set by the dispatcher.
 # =============================================================================
 KS_LOGDIR="$KS_BASE/logs"
@@ -17,32 +17,83 @@ die(){ log "ERROR: $*"; exit 2; }
 # always wins. Same split as tp's ctmig.conf / ctrep.conf, for the same reason:
 # re-delivering the code must never overwrite a calibrated value.
 KS_ROLE=slave                 # master | slave. Changed by hand. See section 2.
-KS_MASTER_IP=""               # the machine that owns the inventory
+KS_MASTER_IP=""               # the machine that owns the tables
 KS_SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
 KS_CONF="$KS_BASE/ketsync.conf"
 KS_NODES="$KS_BASE/nodes.tsv"
 KS_INV="$KS_BASE/fleet.tsv"
-# these are read by the cmd_* files that source this one
+KS_NODEMAP="$KS_BASE/nodes.map"     # generated, never edited by hand
 [[ -f "$KS_CONF" ]] && . "$KS_CONF"
 
 # ---------- nodes.tsv --------------------------------------------------------
-# The ONLY place a PVE node name becomes an address. PVE stores configs under
-# /etc/pve/nodes/<name>/, so the name is unavoidable; resolving it is not this
-# machine's business, and it is outside the cluster so it has neither the
-# cluster's /etc/hosts nor its DNS. One table, checked in, edited by hand.
+# An IP and a role. That is the whole table.
 #
-#   <name> <TAB> <ip> <TAB> <role>      role: storage | compute | backup
-node_ip(){      awk -v n="$1" '$1!~/^#/ && $1==n{print $2; exit}' "$KS_NODES" 2>/dev/null; }
-node_role(){    awk -v n="$1" '$1!~/^#/ && $1==n{print $3; exit}' "$KS_NODES" 2>/dev/null; }
-nodes_of_role(){ awk -v r="$1" '$1!~/^#/ && $3==r{print $2}'      "$KS_NODES" 2>/dev/null; }
-all_node_ips(){ awk '$1!~/^#/ && NF>=2{print $2}'                 "$KS_NODES" 2>/dev/null; }
+#   <ip> <TAB> <role>       role: storage | backup | compute
+#
+# There is no name column and nothing here resolves a hostname. That is not
+# tidiness, it is what lets this run from the storage node, which sits OUTSIDE
+# the cluster on purpose and therefore has neither the cluster's /etc/hosts nor
+# its DNS. An address that only works when a name server answers is an address
+# that stops working during the exact incident this tool exists for.
+ks_rows(){ awk '$1!~/^#/ && NF>=2 {print}' "$KS_NODES" 2>/dev/null; }
+node_role(){     awk -v i="$1" '$1!~/^#/ && $1==i{print $2; exit}' "$KS_NODES" 2>/dev/null; }
+nodes_of_role(){ awk -v r="$1" '$1!~/^#/ && $2==r{print $1}'       "$KS_NODES" 2>/dev/null; }
+all_node_ips(){  awk '$1!~/^#/ && NF>=2{print $1}'                 "$KS_NODES" 2>/dev/null; }
+ip_of_role(){    nodes_of_role "$1" | head -1; }
 
-# A name with no row is a hard stop, never a guess. Guessing an address puts a
-# customer's rootfs on a machine nobody meant.
-require_ip(){   # $1 = node name -> its ip, or refuse
-  local ip; ip="$(node_ip "$1")"
-  [[ -n "$ip" ]] || die "node '$1' is not in $(basename "$KS_NODES") - add it, do not guess its address"
-  printf '%s' "$ip"
+# An address with no row is a hard stop, never a guess. Guessing puts a
+# customer's rootfs on a machine nobody meant. Same rule as tp's rule 5.
+require_node(){   # $1 = ip -> confirm it is in the table, or refuse
+  [[ -n "$(node_role "$1")" ]] \
+    || die "$1 is not in $(basename "$KS_NODES") - add it, do not guess what it is"
+  printf '%s' "$1"
 }
 
 ks_ssh(){ ssh $KS_SSH_OPTS "root@$1" "${@:2}" </dev/null; }
+
+# ---------- nodes.map: the name nobody types ---------------------------------
+# PVE keeps a guest's config at /etc/pve/nodes/<NAME>/lxc/<id>.conf, so a node
+# name is unavoidable as *data*. Typing one is avoidable, and typing one is
+# where the damage comes from: a name that is wrong, or right and then stale,
+# writes a config into a directory belonging to a different machine.
+#
+# So the map is discovered from the cluster rather than maintained. The storage
+# node is not a member and cannot ask directly, so it asks the backup node -
+# which is - exactly the way ct-failback.sh asks about a production CT.
+#
+# The result is cached because discovery needs a quorate cluster, and the run
+# that needs this most is the one during an outage. A cached name that is a
+# week old is still right; PVE node names effectively never change, and if one
+# does, `ketsync doctor` says so on the next good day.
+nodemap_refresh(){   # -> writes ip<TAB>name, one node per line. rc 1 if it could not
+  local bkp out
+  bkp="$(ip_of_role backup)"
+  [[ -n "$bkp" ]] || { log "no backup node in $(basename "$KS_NODES") - cannot discover node names"; return 1; }
+  out="$(ks_ssh "$bkp" "pvesh get /cluster/status --output-format yaml 2>/dev/null" 2>/dev/null)"
+  [[ -n "$out" ]] || return 1
+  # One record per node, fields in any order; the cluster itself is also a
+  # record and has a name but no ip, which is what type: node filters out.
+  out="$(printf '%s\n' "$out" | awk '
+    function flush(){ if (t=="node" && n!="" && i!="") print i "\t" n; n=""; i=""; t="" }
+    /^-/                        { flush() }
+    /^[[:space:]]*name:[[:space:]]/ { n=$2; gsub(/^["\x27]|["\x27]$/,"",n) }
+    /^[[:space:]]*ip:[[:space:]]/   { i=$2; gsub(/^["\x27]|["\x27]$/,"",i) }
+    /^[[:space:]]*type:[[:space:]]/ { t=$2; gsub(/^["\x27]|["\x27]$/,"",t) }
+    END { flush() }')"
+  [[ -n "$out" ]] || return 1
+  printf '# generated by ketsync from the cluster. Do not edit - it is rewritten.\n# ip\tpve node name\n%s\n' "$out" > "$KS_NODEMAP"
+  return 0
+}
+
+node_name(){   # $1 = ip -> its PVE node name from the cache, or empty
+  awk -v i="$1" '$1!~/^#/ && $1==i{print $2; exit}' "$KS_NODEMAP" 2>/dev/null; }
+
+# The same refusal as require_node, for the half that cannot be guessed at all.
+# Nothing may write into /etc/pve/nodes/<name>/ on a name this did not return.
+require_node_name(){   # $1 = ip -> its PVE node name, or refuse
+  local n; n="$(node_name "$1")"
+  [[ -n "$n" ]] && { printf '%s' "$n"; return 0; }
+  nodemap_refresh >/dev/null 2>&1 && n="$(node_name "$1")"
+  [[ -n "$n" ]] || die "no PVE node name known for $1 - run 'ketsync doctor' while the cluster is up"
+  printf '%s' "$n"
+}

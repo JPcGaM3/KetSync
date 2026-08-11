@@ -58,6 +58,19 @@ if [[ -f "$BKP/.down" ]]; then
 fi
 
 case "$c" in
+  # ---- who this node is, in pmxcfs terms ----
+  # /etc/pve/local is a symlink to nodes/<this node>. The engine reads it
+  # rather than being told, so bkp_identity in the harness is the only place
+  # the sandbox decides what the backup node is called.
+  #
+  # What comes back is what the engine's whole remote command produces, not
+  # what readlink alone would: the sed that strips the "nodes/" prefix runs on
+  # the far side, and this fake answers a command string rather than running a
+  # shell. Printing the raw symlink here would hand the engine "nodes/bkp02",
+  # which is not a node name and matches nothing.
+  *"readlink /etc/pve/local"*)
+    cat "$BKP/node" 2>/dev/null; exit 0;;
+
   # ---- B1: is the PRODUCTION CT stopped, asked through the cluster API ----
   # The backup node is a cluster member, so it can answer for a node this host
   # cannot reach. A member that is gone gives back a proxy error and no status

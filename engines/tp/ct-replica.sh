@@ -133,8 +133,10 @@ CONF="$BASE/ctrep.conf"
 EXC="$BASE/exclude.tsv"
 
 # ---------- defaults (override in ctrep.conf, never here) ----------
-BKP_SSH="root@100.100.100.35"    # backup node (bkp02), key auth required
-BKP_NODE="bkp02"                 # its PVE node name (pmxcfs path component)
+BKP_SSH="root@100.100.100.35"    # backup node, by IP. key auth required
+BKP_NODE=""                      # its pmxcfs name. LEAVE EMPTY: the engine asks
+                                 # the node itself. Set it only to pin a value,
+                                 # and it is then verified, never trusted
 BKP_DESTS="hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"
 DEFAULT_DEST="hdd"               # rows without a dest, and auto-discovered CTs
 SRC_STORAGES="tank-hdd-nas tank-ssd-nas"  # storages this tool may read from
@@ -416,11 +418,20 @@ if [[ -z "$_bknode" ]]; then
   log "ERROR:   check: ssh $BKP_SSH 'readlink /etc/pve/local'"
   exit 2
 fi
-if [[ "$_bknode" != "$BKP_NODE" ]]; then
+# Nobody should have to type a pmxcfs name. The node knows its own, this
+# engine is already talking to it, and a name that is typed is a name that can
+# be wrong today or right today and stale next month. An empty BKP_NODE is
+# therefore the normal case and not a missing setting. A value that IS set is
+# still checked rather than believed - pinning it is a way of saying "refuse if
+# this is not the machine I think it is", which is worth keeping.
+if [[ -z "$BKP_NODE" ]]; then
+  BKP_NODE="$_bknode"
+  log "backup node identifies itself as '$_bknode' (BKP_NODE is unset in $CONF, which is fine)"
+elif [[ "$_bknode" != "$BKP_NODE" ]]; then
   log "ERROR: BKP_NODE='$BKP_NODE' but $BKP_SSH is really node '$_bknode' - NOTHING was run"
   log "ERROR:   copy configs would land in a directory that is not this machine's"
   log "ERROR:   nodes visible there: ${_bknodes:-<none>}"
-  log "ERROR:   fix BKP_NODE in $CONF (set it to '$_bknode')"
+  log "ERROR:   fix BKP_NODE in $CONF (set it to '$_bknode', or remove the line)"
   exit 2
 fi
 

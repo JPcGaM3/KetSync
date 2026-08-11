@@ -108,6 +108,7 @@
     <a href="#s1">2 ชั้น</a>
     <a href="#s2">ไฟล์ไหนคืออะไร</a>
     <a href="#s3">3 ตาราง</a>
+    <a href="#s3b">ไม่มี hostname</a>
     <a href="#s4">ติดตั้ง</a>
     <a href="#s5">ลำดับคำสั่ง</a>
     <a href="#s6">งานประจำ</a>
@@ -137,6 +138,17 @@
   </table>
   <p>กติกาเดียวที่ต้องจำ: <b>ของที่แตะข้อมูลลูกค้าอยู่ใน tp ทั้งหมด</b> ส่วน ketsync ไม่เคยเขียนข้อมูลเอง
      ถ้าวันไหนเห็น rsync โผล่ในฝั่ง ketsync แปลว่ามีคนวางผิดที่</p>
+  <p>แต่<b>ไม่ต้องเข้าไปเรียก tp เองในโฟลเดอร์ข้างใน</b> — สั่งจาก <code class="inl">./ketsync</code> ตัวเดียวได้หมด
+     คำสั่งฝั่ง tp ถูกส่งต่อไปแบบไม่แตะอะไรเลย flag เดิม ผลเดิม รหัสออกเดิม</p>
+  <table>
+    <tr><th>พิมพ์</th><th>มันไปเรียก</th></tr>
+    <tr><td class="m">./ketsync migrate  &lt;flags&gt;</td><td class="m">engines/tp/tp migrate</td></tr>
+    <tr><td class="m">./ketsync replica  &lt;flags&gt;</td><td class="m">engines/tp/tp replica</td></tr>
+    <tr><td class="m">./ketsync failback &lt;flags&gt;</td><td class="m">engines/tp/tp failback</td></tr>
+    <tr><td class="m">./ketsync status</td><td class="m">engines/tp/tp status</td></tr>
+    <tr><td class="m">./ketsync doctor</td><td>ตรวจฝั่ง ketsync แล้วต่อด้วย <span class="m">tp doctor</span> ให้เลย</td></tr>
+    <tr><td class="m">./ketsync tp ...</td><td>ทางลัดตรงไปที่ tp เผื่อมี flag ที่ยังไม่ได้สอน dispatcher</td></tr>
+  </table>
   <div class="tip"><p><b>ตอนนี้ใช้ได้จริงคือ tp เท่านั้น</b> ฝั่ง ketsync มี <code class="inl">sync</code>,
      <code class="inl">role</code>, <code class="inl">doctor</code> ที่ทำงานจริง ส่วน
      <code class="inl">status</code>, <code class="inl">distribute</code>, <code class="inl">recall</code>
@@ -151,8 +163,9 @@
   <table>
     <tr><th>ไฟล์</th><th>คืออะไร</th><th>แก้บ่อยแค่ไหน</th></tr>
     <tr><td class="m">ketsync.conf</td><td>เครื่องนี้เป็น master หรือ slave, master อยู่ IP ไหน</td><td>ตอนติดตั้ง</td></tr>
-    <tr><td class="m">nodes.tsv</td><td>ชื่อ node → IP → บทบาท ที่เดียวในระบบที่แปลงชื่อเป็นเลข</td><td>ตอนมีเครื่องใหม่</td></tr>
-    <tr><td class="m">fleet.tsv</td><td><b>แผนที่ฟลีต</b> — CT ตัวไหนอยู่บ้านไหน พังแล้วไปไหน</td><td>ตอนรับลูกค้าใหม่</td></tr>
+    <tr><td class="m">nodes.tsv</td><td>ทุกเครื่องที่ระบบนี้จะคุยด้วย — <b>IP กับบทบาท</b> ไม่มีคอลัมน์ชื่อ</td><td>ตอนมีเครื่องใหม่</td></tr>
+    <tr><td class="m">fleet.tsv</td><td><b>แผนที่ฟลีต</b> — CT ตัวไหนอยู่บ้านไหน พังแล้วไปไหน (เป็น IP)</td><td>ตอนรับลูกค้าใหม่</td></tr>
+    <tr><td class="m">nodes.map</td><td>IP → ชื่อ node ของ PVE <b>ระบบสร้างเอง</b> ห้ามแก้มือ</td><td>ไม่ต้องแตะ</td></tr>
     <tr><td class="m">engines/tp/inventory-migrate.tsv</td><td><b>ใบงาน migrate</b> — จะย้าย CT ตัวไหนจากเครื่องเก่ามาที่นี่</td><td>ช่วงย้ายของ แล้วเลิกใช้</td></tr>
     <tr><td class="m">engines/tp/inventory-replica.tsv</td><td><b>ใบงาน replica</b> — จะก๊อป CT ตัวไหนไปเครื่อง backup ทุกคืน</td><td>แก้บ่อยที่สุด</td></tr>
     <tr><td class="m">engines/tp/ctmig.conf</td><td>ค่าปรับจูนของ migrate (bandwidth, lane)</td><td>นานๆ ครั้ง</td></tr>
@@ -173,10 +186,11 @@
 
   <h3>fleet.tsv — แผนที่ ไม่ใช่ใบงาน</h3>
   <div class="code"><pre># ct	tier	home	dr
-110	hdd	pve-r32	pve-r33
-120	hdd	pve-r33	pve-r32</pre></div>
-  <p>อ่านว่า “CT 110 ปกติอยู่ที่ pve-r32 ถ้า pve-r32 ล่ม ให้ไปขึ้นที่ pve-r33” เขียนไว้ล่วงหน้า
-     ไม่ใช่ให้เครื่องเลือกเองตอนตี 3</p>
+110	hdd	10.100.1.32	10.100.1.33
+120	hdd	10.100.1.33	10.100.1.32</pre></div>
+  <p>อ่านว่า “CT 110 ปกติอยู่ที่ 10.100.1.32 ถ้าเครื่องนั้นล่ม ให้ไปขึ้นที่ 10.100.1.33” เขียนไว้ล่วงหน้า
+     ไม่ใช่ให้เครื่องเลือกเองตอนตี 3 ทุก IP ที่เขียนตรงนี้ต้องมีแถวใน <code class="inl">nodes.tsv</code>
+     ไม่งั้น <code class="inl">ketsync doctor</code> จะฟ้อง</p>
 
   <h3>inventory-migrate.tsv — ใบงานย้ายเข้ามา</h3>
   <div class="code"><pre># old_node    old_ctid  new_ctid  new_node      storage
@@ -194,6 +208,27 @@
   <div class="tip"><p>ทุกไฟล์ <code class="inl">.tsv</code> มีบรรทัดหัวตารางเป็นคอมเมนต์อยู่ข้างบนแถวข้อมูลแล้ว
      เปิดไฟล์ปุ๊บเห็นเลยว่าคอลัมน์ไหนคืออะไร ไม่ต้องเปิดคู่มือ บรรทัดที่ขึ้นต้นด้วย
      <code class="inl">#</code> ทุก parser ข้ามหมด</p></div>
+</section>
+
+<section id="s3b">
+  <div class="eyebrow"><span class="num">3</span><h2>ไม่มีตรงไหนให้พิมพ์ hostname เลย</h2></div>
+  <p>ทุกช่องที่คนกรอกเป็น IP หมด ทั้ง <code class="inl">nodes.tsv</code>,
+     <code class="inl">fleet.tsv</code> และ <code class="inl">inventory-migrate.tsv</code>
+     เหตุผลไม่ใช่ความสวยงาม แต่เพราะเครื่อง storage อยู่นอก cluster โดยตั้งใจ มันไม่มีทั้ง
+     <code class="inl">/etc/hosts</code> ของ cluster และ DNS ของ cluster — ที่อยู่ซึ่งใช้ได้ต่อเมื่อมีคนตอบชื่อให้
+     คือที่อยู่ที่จะใช้ไม่ได้พอดีในวันที่เกิดเหตุ</p>
+  <p>แต่ PVE เก็บ config ของ CT ไว้ที่ <code class="inl">/etc/pve/nodes/&lt;node-name&gt;/</code> ฉะนั้น
+     “ชื่อ node” ยังจำเป็นในฐานะ<b>ข้อมูล</b> — แค่ไม่จำเป็นในฐานะ<b>สิ่งที่คนต้องพิมพ์</b>
+     ระบบจะไปถามเอาเองแล้วเก็บไว้ที่ <code class="inl">nodes.map</code></p>
+  <table>
+    <tr><th>ชื่อ node ที่ไหน</th><th>ได้มาจาก</th></tr>
+    <tr><td class="m">nodes.map</td><td>ketsync ถาม cluster ผ่านเครื่อง backup ตอนสั่ง <span class="m">doctor</span></td></tr>
+    <tr><td class="m">BKP_NODE</td><td>engine อ่าน <span class="m">/etc/pve/local</span> ของเครื่อง backup เอง ไม่ต้องตั้ง</td></tr>
+    <tr><td class="m">CT_NODE</td><td>engine อ่านจาก path ของ config ที่เจอใน <span class="m">/etc/pve</span></td></tr>
+  </table>
+  <div class="tip"><p><b>ยังตั้ง BKP_NODE เองได้อยู่</b> แต่ความหมายเปลี่ยนไป มันไม่ใช่ “บอกให้รู้”
+     แต่แปลว่า “ถ้าเครื่องปลายทางไม่ใช่ตัวนี้ ให้ปฏิเสธ” engine จะตรวจค่าที่ตั้งไว้เสมอ ไม่เชื่อตามที่พิมพ์
+     ถ้าไม่ได้ตั้ง มันก็ถามเอาเองแล้วบอกใน log ว่าได้ชื่ออะไรมา</p></div>
 </section>
 
 <section id="s4">
@@ -224,17 +259,18 @@ cp inventory-migrate.sample.tsv  inventory-migrate.tsv   <span class="c"># only 
   <ol class="steps">
     <li><b>เช็กว่าต่อกันติดก่อน</b> ยังไม่แตะข้อมูลอะไรทั้งนั้น
       <div class="code"><pre>cd /root/ketsync
-./ketsync doctor
-./engines/tp/tp doctor</pre></div>
-      <p><code class="inl">ketsync doctor</code> ตอบว่า ssh ถึงทุกเครื่องไหม, engine อยู่ครบและสั่งรันได้ไหม,
-         ทุกไฟล์มีเลข generation ไหม ส่วน <code class="inl">tp doctor</code> ตอบเรื่อง storage กับ state</p></li>
+./ketsync doctor</pre></div>
+      <p>คำสั่งเดียวตรวจทั้งสองชั้น: ssh ถึงเครื่องไหนบ้าง, ชื่อ node ดึงมาได้ไหม, ทุกไฟล์มีเลข generation ไหม,
+         IP ใน <code class="inl">fleet.tsv</code> มีแถวใน <code class="inl">nodes.tsv</code> ครบไหม,
+         engine อยู่ครบและสั่งรันได้ไหม แล้วปิดท้ายด้วย <code class="inl">tp doctor</code> เรื่อง storage กับ state
+         รหัสออกเป็นตัวที่แย่กว่าของสองชั้น</p></li>
     <li><b>ซ้อมก่อน ด้วย CT ที่ไม่สำคัญตัวเดียว</b> — <code class="inl">--dry-run</code> เดินผ่าน guard ทุกด่านเหมือนของจริง
         ต่างกันแค่ไม่เขียนอะไรลงดิสก์เลย
-      <div class="code"><pre>./engines/tp/tp replica --dry-run --ctid 110</pre></div></li>
+      <div class="code"><pre>./ketsync replica --dry-run --ctid 110</pre></div></li>
     <li><b>ถ้าซ้อมผ่าน ค่อยรันจริงทีละตัว</b>
-      <div class="code"><pre>./engines/tp/tp replica --ctid 110</pre></div></li>
+      <div class="code"><pre>./ketsync replica --ctid 110</pre></div></li>
     <li><b>รันทั้ง lane</b> แยกตาม storage เพราะ bandwidth ceiling คิดเป็น lane
-      <div class="code"><pre>./engines/tp/tp replica --storage tank-hdd-nas</pre></div></li>
+      <div class="code"><pre>./ketsync replica --storage tank-hdd-nas</pre></div></li>
     <li><b>ค่อยใส่ cron</b> — ใส่ทีละ lane ไม่ใส่พร้อมกันสองอัน
       <div class="code"><pre>*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-hdd-nas
 */15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-ssd-nas</pre></div></li>
@@ -250,10 +286,11 @@ cp inventory-migrate.sample.tsv  inventory-migrate.tsv   <span class="c"># only 
   <div class="eyebrow"><span class="num">6</span><h2>งานประจำ มี 3 อย่าง</h2></div>
   <table>
     <tr><th>อยากทำอะไร</th><th>สั่ง</th></tr>
-    <tr><td>ย้าย CT จากเครื่องเก่าเข้าฟลีต</td><td class="m">tp migrate --storage &lt;id&gt;</td></tr>
-    <tr><td>ก๊อป CT ไปเครื่อง backup (ทุกคืน)</td><td class="m">tp replica --storage &lt;id&gt;</td></tr>
-    <tr><td>เอาข้อมูลจากตัวสำรองกลับเข้าตัวจริง</td><td class="m">tp failback --list</td></tr>
-    <tr><td>ดูว่ารอบล่าสุดของแต่ละ CT เป็นยังไง</td><td class="m">tp status</td></tr>
+    <tr><td>ย้าย CT จากเครื่องเก่าเข้าฟลีต</td><td class="m">./ketsync migrate --storage &lt;id&gt;</td></tr>
+    <tr><td>ก๊อป CT ไปเครื่อง backup (ทุกคืน)</td><td class="m">./ketsync replica --storage &lt;id&gt;</td></tr>
+    <tr><td>เอาข้อมูลจากตัวสำรองกลับเข้าตัวจริง</td><td class="m">./ketsync failback --list</td></tr>
+    <tr><td>ดูว่ารอบล่าสุดของแต่ละ CT เป็นยังไง</td><td class="m">./ketsync status</td></tr>
+    <tr><td>ตรวจว่าทุกอย่างต่อกันติดไหม</td><td class="m">./ketsync doctor</td></tr>
   </table>
   <p>failback เริ่มด้วย <code class="inl">--list</code> เสมอ มันจะบอกว่าตอนนี้ CT ตัวไหนพร้อมเอากลับบ้าง
      และเครื่องไหนที่คุยไม่ได้ ห้ามข้ามไป <code class="inl">--final</code> เลย เพราะ
@@ -298,7 +335,7 @@ cp /root/tp/ctrep.conf             ./ctrep.conf
 cp -a /root/tp/state               ./state</pre></div>
       <p>ถ้าลืมเปลี่ยนชื่อ engine จะไม่เดาให้ แต่จะบอกว่าไฟล์ชื่อเก่ายังอยู่และให้ rename เป็นอะไร</p></li>
     <li>ซ้อมด้วย CT ที่ไม่สำคัญตัวเดียว ตอนนี้ cron ยังชี้ของเก่าอยู่ ยังไม่มีอะไรเปลี่ยน
-      <div class="code"><pre>./tp replica --dry-run --ctid &lt;one unimportant ctid&gt;</pre></div></li>
+      <div class="code"><pre>./ketsync replica --dry-run --ctid &lt;one unimportant ctid&gt;</pre></div></li>
     <li>ย้าย cron ทีละ lane ไม่ย้ายพร้อมกัน ดูสักรอบสองรอบว่า log ออกมาปกติก่อนค่อยย้าย lane ถัดไป</li>
     <li>ถอยกลับได้เสมอ — ของเก่ายังอยู่ครบ แค่ชี้ cron กลับไปที่ path เดิม ไม่ต้อง restore อะไร</li>
   </ol>

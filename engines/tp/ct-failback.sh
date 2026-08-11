@@ -24,21 +24,24 @@
 #  Only conditions that are wrong for the whole run (bad config, missing PAUSE)
 #  refuse up front.
 #
-#  It reads ctrep.conf and inventory-replica.tsv from its own folder - the
-#  same pair ct-replica.sh reads, never ct-migrate.sh's inventory-migrate.tsv - so the
-#  backup
-#  node, the dest pools and any custom tgt_ctid are exactly what ct-replica
-#  uses. Nothing is configured twice.
+#  It reads ctrep.conf and inventory-replica.tsv from its own folder - the same
+#  pair ct-replica.sh reads, never ct-migrate.sh's inventory-migrate.tsv - so
+#  the backup node, the dest pools and any custom tgt_ctid are exactly what
+#  ct-replica uses. Nothing is configured twice.
 #
 #  This tool does NOT do cutover. Stopping copies, starting production CTs,
 #  putting each copy's network back on the mock bridge and removing PAUSE are
 #  done by hand - it prints the list when it finishes.
 #
-#  BEFORE YOU NEED THIS, run `ct-failback.sh --list` on an ordinary day. B1
-#  asks each production node whether its container is stopped, over ssh, by the
-#  pmxcfs node NAME. This host is outside the cluster on purpose, so it gets
-#  neither the cluster's /etc/hosts nor its keys for free, and a failback whose
-#  ssh was never set up refuses every CT at B1. --list says so and exits 1.
+#  BEFORE YOU NEED THIS, run `ct-failback.sh --list` on an ordinary day. B1 has
+#  to know whether each production CT is stopped, and this host is outside the
+#  cluster on purpose - it has neither the cluster's /etc/hosts nor a key to any
+#  compute node, and it never will. So it asks the BACKUP node, which is a
+#  member, over the cluster API. That makes the ssh to the backup node the one
+#  connection this engine cannot work without: it carries the CT configs, the
+#  statuses, the node's own identity and the data itself. --list is where you
+#  find out that it is missing, on a Tuesday rather than mid-incident, and it
+#  exits 1 rather than 0 while saying so.
 #
 #  exit code: 0 = all ok, 1 = at least one CT failed or was skipped,
 #             2 = refused before touching anything.
@@ -95,7 +98,7 @@ INV="$BASE/inventory-replica.tsv"
 
 # ---------- defaults (ctrep.conf wins; they are the same knobs) ----------
 BKP_SSH="root@100.100.100.35"
-BKP_NODE="bkp02"
+BKP_NODE=""                      # pmxcfs name, discovered - see ct-replica.sh
 BKP_DESTS="hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"
 DEFAULT_DEST="hdd"
 OFFSET=8000
@@ -300,6 +303,7 @@ if (( ${#_missing[@]} )); then
   log "ERROR: required command(s) not found: ${_missing[*]} (PATH=$PATH) - NOTHING was run"; exit 2
 fi
 
+
 # ---------- B2, whole-run half: PAUSE must exist before any final delta -----
 # The dry run checks this too. Every other DRY gate in this file skips a WRITE;
 # this one used to skip the CHECK, which is the one thing a dry run must never
@@ -319,6 +323,31 @@ if (( FINAL )) && [[ ! -f "$BASE/PAUSE" ]]; then
     log "GUARD B2:   fix, then run again:  touch $BASE/PAUSE"
     exit 2
   fi
+fi
+
+# ---------- who the backup node actually is ---------------------------------
+# Same rule as ct-replica.sh: nobody types a pmxcfs name. /etc/pve/local is a
+# symlink to nodes/<this node>, so it is the authoritative identity - safer
+# than hostname, which can drift from it after a badly done rename. This engine
+# uses the name to tell "a CT that lives on the backup node" (a copy, not a
+# source) from a production CT, and getting that backwards points a restore at
+# the wrong side of the transfer.
+_bknode=$(ssh $SSH_OPT "$BKP_SSH" 'readlink /etc/pve/local 2>/dev/null | sed "s|.*/||"' \
+          </dev/null 2>/dev/null | head -1)
+if [[ -z "$_bknode" ]]; then
+  log "ERROR: cannot read the PVE node identity of $BKP_SSH - NOTHING was run"
+  log "ERROR:   every question this engine asks about a production CT goes through"
+  log "ERROR:   that node, so there is nothing it can safely do without it."
+  log "ERROR:   check: ssh $BKP_SSH 'readlink /etc/pve/local'"
+  exit 2
+fi
+if [[ -z "$BKP_NODE" ]]; then
+  BKP_NODE="$_bknode"
+elif [[ "$_bknode" != "$BKP_NODE" ]]; then
+  log "ERROR: BKP_NODE='$BKP_NODE' but $BKP_SSH is really node '$_bknode' - NOTHING was run"
+  log "ERROR:   a copy would be mistaken for a production CT, or the other way round"
+  log "ERROR:   fix BKP_NODE in $CONF (set it to '$_bknode', or remove the line)"
+  exit 2
 fi
 
 # ---------- per-CT plumbing ----------

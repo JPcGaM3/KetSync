@@ -182,7 +182,6 @@ bkp_cfg(){ # node ctid - move a production config to another node in the cluster
 write_conf(){
   cat > "$WORK/ctrep.conf" <<EOF
 BKP_SSH="root@100.100.100.35"
-BKP_NODE="bkp02"
 BKP_DESTS="hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"
 DEFAULT_DEST="hdd"
 OFFSET=8000
@@ -799,12 +798,32 @@ if scenario "38: a copy whose dataset has no mountpoint is an error, not a guess
   done_scenario
 fi
 
-if scenario "39: an unreachable backup node fails every CT and restores none"; then
+if scenario "38b: a pinned BKP_NODE that is wrong refuses before any CT is read"; then
+  # Pinning is optional and this is what it is for: "refuse if this is not the
+  # machine I think it is". Mistaking a copy for a production CT points a
+  # restore at the wrong side of the transfer.
+  conf_set BKP_NODE '"bkp02"'
+  bkp_identity pve03
+  run_engine --all
+  rc_is 2; clean
+  has "ERROR: BKP_NODE='bkp02' but root@100.100.100.35 is really node 'pve03' - NOTHING was run"
+  untraced "rsync"
+  done_scenario
+fi
+
+if scenario "39: an unreachable backup node refuses the run, rather than failing every CT"; then
+  # This used to report three identical per-CT failures and exit 1. It is one
+  # fact about the whole run, not three about three containers - the backup
+  # node is where every config, every status and every byte of source data
+  # comes from, so there is nothing a per-CT loop could usefully try. It is
+  # found earlier now because the node-name discovery needs that connection
+  # before any CT is looked at, and exit 2 is the honest code: refused before
+  # touching anything.
   bkp_down
   run_engine --all
-  rc_is 1; clean
-  has "[105] ERROR: cannot resolve this CT in the cluster"
-  has "ok=0 skipped=0 failed=3"
+  rc_is 2; clean
+  has "ERROR: cannot read the PVE node identity of root@100.100.100.35 - NOTHING was run"
+  has "there is nothing it can safely do without it"
   untraced "rsync"
   image_has 105 "generation 1"
   done_scenario

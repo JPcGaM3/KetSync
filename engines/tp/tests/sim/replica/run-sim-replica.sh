@@ -152,7 +152,6 @@ cluster_resources(){ # vmid:type... - what pvesh answers under AUTO_DISCOVER
 write_conf(){
   cat > "$WORK/ctrep.conf" <<EOF
 BKP_SSH="root@100.100.100.35"
-BKP_NODE="bkp02"
 BKP_DESTS="hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"
 DEFAULT_DEST="hdd"
 SRC_STORAGES="tank-hdd-nas tank-ssd-nas"
@@ -946,9 +945,32 @@ if scenario "40: a dest that is not active on the backup node is caught before a
   done_scenario
 fi
 
+if scenario "41b: an unset BKP_NODE is the normal case - the node is asked, and says so"; then
+  # Nobody should have to type a pmxcfs name into a config file. write_conf no
+  # longer sets one, so every other scenario in this file is running this path
+  # too; this is the one that states it out loud.
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "backup node identifies itself as 'bkp02' (BKP_NODE is unset in"
+  traced "rsync"
+  done_scenario
+fi
+
+if scenario "41c: a node that will not say who it is refuses the run"; then
+  bkp_identity "" ""
+  run_engine
+  rc_is 2; clean
+  has "ERROR: cannot read the PVE node identity of root@100.100.100.35 - NOTHING was run"
+  untraced "rsync"; untraced "zfs snapshot"
+  done_scenario
+fi
+
 if scenario "41: the backup node not being the node ctrep.conf names refuses the run"; then
   # every check below this would pass, the whole rootfs would transfer, and only
-  # the config write would fail - or worse, succeed on a compute node
+  # the config write would fail - or worse, succeed on a compute node.
+  # Pinning BKP_NODE is optional now, and this is what pinning it is FOR: it
+  # means "refuse if this is not the machine I think it is".
+  conf_set BKP_NODE '"bkp02"'
   bkp_identity pve03 "bkp02 pve01 pve02 pve03"
   run_engine
   rc_is 2; clean

@@ -1,16 +1,23 @@
 # generation: 1
-# The only place a PVE node name becomes an address. PVE stores container
-# configs under /etc/pve/nodes/<name>/, so the name is unavoidable - resolving
-# it is not. This machine is outside the cluster and has neither its hosts file
-# nor its DNS, so every address it will ever use is in this table.
+# nodes.tsv - every machine this system will ever talk to, by address.
+#
+# There is no name column, on purpose. This machine sits OUTSIDE the PVE
+# cluster, so it has neither the cluster's /etc/hosts nor its DNS, and an
+# address that only works while a name server answers is an address that stops
+# working during the exact incident this tool exists for. PVE node names are
+# still needed to write a guest config - they are discovered from the cluster
+# and cached in nodes.map, which nobody edits by hand.
 #
 # TAB separated; lines starting with # are ignored. role is one of:
 #   storage   the node the engines run on, and where the images live
-#   backup    holds the stopped DR copies, and PBS
-#   compute   mounts the images over NFS and runs the containers
+#   backup    holds the stopped DR copies and PBS. Everything leans on this one:
+#             the config sync, the node-name discovery, and every question a
+#             failback asks about a production CT
+#   compute   mounts the images over NFS and runs the containers. No ssh from
+#             here is expected or needed - they are asked through the cluster API
 #
-# name	ip	role
-pve-storage-r17	10.100.1.17	storage
-pbs-r09	10.100.1.9	backup
-pve-r32	10.100.1.32	compute
-pve-r33	10.100.1.33	compute
+# ip	role
+10.100.1.17	storage
+10.100.1.9	backup
+10.100.1.32	compute
+10.100.1.33	compute
