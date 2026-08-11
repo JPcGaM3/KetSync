@@ -1,0 +1,16 @@
+# generation: 1
+# One line per container. ketsync decides placement; tp moves the data.
+#
+#   ct     the container id on its home node
+#   tier   which copy pool it belongs in: ssd (comes back fast) or hdd
+#   home   the node it normally runs on, by NAME (looked up in nodes.tsv)
+#   dr     the node that picks it up when home is gone, by NAME
+#
+# dr is written down rather than chosen at the time. Placing a customer by
+# free RAM at 3am is how a customer ends up on the wrong machine; the same
+# rule as tp's "no defaults, never guess". Override once with --node if the
+# day comes and the written answer is wrong.
+#
+# ct   tier  home            dr
+110	hdd	pve-r32	pve-r33
+120	hdd	pve-r33	pve-r32

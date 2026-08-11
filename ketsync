@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  ketsync — the layer above tp. It decides WHO does WHAT and WHERE; tp does it
+# -----------------------------------------------------------------------------
+#  tp already moves a container between two machines safely, and it is anchored
+#  by 179 simulator scenarios and 117 mutations. ketsync does not repeat any of
+#  that. It answers the questions tp does not:
+#
+#    which machine is in charge right now
+#    where does each container live, and where should its copy go
+#    when the storage node is gone, which compute node picks each one up
+#    how does every machine end up with the same inventory
+#
+#    ketsync sync         push config + inventory to every node in nodes.tsv
+#    ketsync distribute   DR: put a copy onto a compute node and hand over
+#    ketsync recall       the return trip, once the storage node is back
+#    ketsync role         who this machine thinks it is, and why
+#    ketsync status       one table: every container, where it is, where its
+#                         copy is, when it was last synced
+#    ketsync doctor       the cross-checks nobody remembers to run
+#
+#  Everything talks over IP. Node NAMES exist because PVE stores configs under
+#  /etc/pve/nodes/<name>/, so they cannot be avoided - but they are translated
+#  to an address in exactly one place, nodes.tsv, and nothing else resolves a
+#  hostname. That is what makes this work from a machine outside the cluster.
+#
+#  exit code: 0 = nothing needs attention, 1 = something does,
+#             2 = refused before touching anything.
+# =============================================================================
+set -uo pipefail
+
+# cron hands a script PATH=/usr/bin:/bin, and pvesm, zfs and losetup all live
+# in sbin. Same reason as every engine in tp - see its CLAUDE.md rule 8.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export KS_BASE="$BASE"
+# shellcheck source=lib/common.sh
+. "$BASE/lib/common.sh"
+
+usage(){ awk 'NR>1{ if (/^#/) { sub(/^#[ ]?/,""); print } else exit }' "${BASH_SOURCE[0]}"; }
+
+not_built(){    # $1 = subcommand, $2 = which section of docs/decisions.md
+  log "ketsync $1 is designed but not built yet - see docs/decisions.md $2"
+  log "  it is a stub on purpose: a command that half works is worse than one"
+  log "  that says it does not, especially the one you reach for during a DR."
+  exit 2
+}
+
+case "${1:-}" in
+  sync)       shift; . "$BASE/lib/cmd_sync.sh";     cmd_sync "$@";;
+  role)       shift; . "$BASE/lib/cmd_role.sh";     cmd_role "$@";;
+  doctor)     shift; . "$BASE/lib/cmd_doctor.sh";   cmd_doctor "$@";;
+  status)     shift; not_built status     "section 6";;
+  distribute) shift; not_built distribute "section 4";;
+  recall)     shift; not_built recall     "section 5";;
+  version)    echo "ketsync $(cd "$BASE" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;
+  ""|-h|--help|help) usage;;
+  *) echo "ketsync: unknown subcommand '$1'" >&2; echo; usage; exit 2;;
+esac

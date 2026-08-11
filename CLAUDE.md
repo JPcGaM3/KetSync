@@ -1,0 +1,73 @@
+# Working in this repository
+
+Read this before you change anything. `ketsync` sits above `tp`, and the rules
+that matter most here are `tp`'s — read `engines/tp/CLAUDE.md` too.
+
+## What this is
+
+`ketsync` decides **who** does **what** and **where**. `tp` does it.
+
+Nothing in this repo may move customer data by itself. If you find yourself
+writing an rsync here, stop: either it belongs in a `tp` engine where the
+guards and the mutation suite are, or you are about to reintroduce a bug that
+`tp` already caught once.
+
+## The rules
+
+**1. English everywhere.** Code, comments, commit messages, docs. The only
+exception is Thai prose in operator guides, and never inside `<pre>` or
+`<code>` — commands get pasted at 2am.
+
+**2. Nothing decides who is master.** `KS_ROLE` is a line in a config file that
+a human edits. Two machines cannot tell "the master is dead" from "I cannot
+reach the master", and being wrong means two machines writing into one dataset.
+Do not add an election, a heartbeat, or an automatic promotion. The full
+argument is in `docs/decisions.md` section 2.
+
+**3. Nothing starts a container.** `distribute` moves data and writes a config,
+then prints the `pct start`. Same rule as every engine in `tp`.
+
+**4. No defaults, no guessing.** A node with no row in `nodes.tsv` is a hard
+stop, never a guessed address. Placement comes from the inventory's `dr`
+column, not from free RAM. Guessing puts a customer on the wrong machine.
+
+**5. Everything is an IP.** PVE forces node *names* on us because it stores
+configs under `/etc/pve/nodes/<name>/`. `nodes.tsv` is the single place a name
+becomes an address; nothing else resolves a hostname. That is what lets this
+run from outside the cluster.
+
+**6. Every engine and command sets its own PATH.** cron gives you
+`/usr/bin:/bin` and `pvesm`, `zfs` and `losetup` live in sbin. Check required
+commands **before** taking any lock: `flock` missing reads as "the lock is
+held", and the run exits 0 having done nothing.
+
+**7. A stub says it is a stub.** `status`, `distribute` and `recall` exit 2
+with a pointer into `docs/decisions.md`. Do not make one half work.
+
+**8. `tests/` is empty and that is a debt.** Read `tests/README.md`. Nothing
+that writes to a real machine ships without a simulator and a mutation that
+proves the simulator can fail. `tp` learned this the expensive way.
+
+## Before you say you are done
+
+    make lint     # bash -n + shellcheck
+    make test     # fails today, on purpose - there is no simulator yet
+
+## Layout
+
+    ketsync              the dispatcher. Contains no logic of its own
+    lib/common.sh        log, config, and the two tables everything reads
+    lib/cmd_*.sh         one file per subcommand
+    ketsync.conf.sample  this machine's role and the master's address
+    nodes.tsv.sample     name -> ip -> role. The only name resolution here
+    inventory.tsv.sample ct, tier, home node, dr node
+    engines/tp/          the execution layer, cloned in, never edited here
+    docs/decisions.md    why it is shaped this way, and what is not built
+    tests/               the debt
+
+## Style
+
+Comments explain **why**, not what. The reader is somebody debugging a failed
+failover under time pressure, who needs to know what a line is defending
+against. Prose is plain: no marketing, no hedging, no bullet lists where a
+sentence works.

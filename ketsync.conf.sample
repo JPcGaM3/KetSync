@@ -1,0 +1,15 @@
+# generation: 1
+# =============================================================================
+#  ketsync.conf — this machine's identity. Copy to ketsync.conf and edit.
+#
+#  Bump the generation line on EVERY edit. `ketsync sync` refuses to push a
+#  file over a newer one, and that number is the only thing that orders them.
+# =============================================================================
+
+# master owns the inventory and pushes it. slave receives it.
+# Changed BY HAND, on the machine taking over, and only once you are certain
+# the other one is not writing - see docs/decisions.md section 2.
+KS_ROLE=slave
+
+# the machine that owns the inventory right now. An IP, never a name.
+KS_MASTER_IP=10.100.1.17

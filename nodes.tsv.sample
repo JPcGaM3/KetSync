@@ -1,0 +1,11 @@
+# generation: 1
+# The only place a PVE node name becomes an address. PVE stores container
+# configs under /etc/pve/nodes/<name>/, so the name is unavoidable - resolving
+# it is not. This machine is outside the cluster and has neither its hosts file
+# nor its DNS, so every address it will ever use is in this table.
+#
+# name          ip              role
+pve-storage-r17	10.100.1.17	storage
+pbs-r09	10.100.1.9	backup
+pve-r32	10.100.1.32	compute
+pve-r33	10.100.1.33	compute

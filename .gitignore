@@ -1,0 +1,19 @@
+# the live tables are per-site; only the samples are tracked
+/ketsync.conf
+/nodes.tsv
+/inventory.tsv
+
+# runtime
+/logs/
+/state/
+
+# the execution layer is cloned in, not committed here
+/engines/tp/
+
+# editors and desktops
+.DS_Store
+._*
+*.swp
+*~
+.idea/
+.vscode/
