@@ -57,7 +57,7 @@ proves the simulator can fail. `tp` learned this the expensive way.
     make lint     # both layers: bash -n, shellcheck, the language rule, embeds
                   # the language rule is enforced on BOTH docs/ trees now
     make test     # engines/tp's full suite. Warns that ketsync has none
-    make mutation # 124 known bugs put back. None may survive
+    make mutation # 126 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

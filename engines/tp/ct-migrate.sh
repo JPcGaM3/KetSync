@@ -39,10 +39,18 @@
 #  on two rows. Either is a refusal: it names the lines and runs nothing.
 #  The same old_ctid on two DIFFERENT old nodes is normal and is allowed.
 #
-#  exit code: 0 = nothing needs attention, 1 = at least one CT failed,
-#             2 = the inventory is broken, nothing was run at all.
+#  exit code: 0 = all ok, 1 = at least one CT failed or was skipped,
+#             2 = refused before touching anything.
+#
+#  FLAGS EVERY ENGINE TAKES, spelled the same way on purpose:
+#    --all               every row in the inventory
+#    --ctid <id>         one container only
+#    --dry-run           run every guard, write nothing, print the plan
+#    -h | --help         this header
+#  A filter that matches no row exits NON-ZERO: under cron, exit 0 with no work
+#  done looks exactly like a healthy night.
 # -----------------------------------------------------------------------------
-#  THE SEVEN GUARDS (G1..G7)
+#  THE GUARDS (G1..G7)
 #  Each one exists because of a real incident on this fleet. The reason is not
 #  visible from the code alone, which is exactly why it is written down here.
 #  If you refactor this script, keep them and keep their ORDER.
@@ -126,6 +134,12 @@ while (( $# )); do
                LANE_STORAGE="$2"; shift 2;;
     --ctid)    [[ $# -ge 2 ]] || { echo "--ctid needs a value" >&2; exit 2; }
                ONLY_CTID="$2";    shift 2;;
+    # Accepted everywhere so one command shape works across all three engines.
+    # Here it is what happens anyway, which is the point: an operator should not
+    # have to remember that this engine defaults to the whole inventory and
+    # ct-failback.sh insists on being told. Refusing a flag that means exactly
+    # what the tool already does teaches nothing and costs a run.
+    --all)     shift;;
     --stopped) STOPPED=1; shift;;
     --dry-run) DRY=1; shift;;
     # Walks the comment block instead of counting lines: a fixed range used to

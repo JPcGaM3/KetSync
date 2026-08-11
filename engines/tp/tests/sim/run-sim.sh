@@ -1190,6 +1190,16 @@ if scenario "63: --help prints the whole header, exit-code contract included"; t
   done_scenario
 fi
 
+if scenario "63b: --all means the same thing here as it does in ct-failback.sh"; then
+  # It is a no-op for this engine, and that is the point: one command shape has
+  # to work across all three, or an operator has to remember which of them
+  # insists on being told to do what it does by default.
+  run_engine --all
+  rc_is 0; clean
+  has "ok=2 skipped=0 frozen=0 failed=0"
+  done_scenario
+fi
+
 if scenario "64: an install still holding the OLD inventory.tsv is told what to rename"; then
   # The rename this scenario guards: one folder now holds three engines whose
   # inventories have entirely different columns, so the generic name went to

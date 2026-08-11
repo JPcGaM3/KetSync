@@ -31,8 +31,8 @@ must be mirrored in its mutation file in the same change. Never "fix" a broken
 anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
-    ct-migrate.sh   tests/mutation/run-mutation.sh            40 mutations
-    ct-replica.sh   tests/mutation/run-mutation-replica.sh    38 mutations
+    ct-migrate.sh   tests/mutation/run-mutation.sh            41 mutations
+    ct-replica.sh   tests/mutation/run-mutation-replica.sh    39 mutations
     ct-failback.sh  tests/mutation/run-mutation-failback.sh   39 mutations
     tp              tests/mutation/run-mutation-tp.sh          7 mutations
 
@@ -113,8 +113,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 65 + 64 + 55 simulator, 16 dispatcher, 125 c2v, 82 python
-    make mutation   # 40 + 38 + 39 engine + 7 dispatcher bugs reintroduced, all caught
+    make test       # 66 + 65 + 55 simulator, 16 dispatcher, 125 c2v, 82 python
+    make mutation   # 41 + 39 + 39 engine + 7 dispatcher bugs reintroduced, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did

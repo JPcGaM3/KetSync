@@ -284,6 +284,21 @@ cp inventory-migrate.sample.tsv  inventory-migrate.tsv   <span class="c"># only 
 
 <section id="s6">
   <div class="eyebrow"><span class="num">6</span><h2>งานประจำ มี 3 อย่าง</h2></div>
+  <p>ทั้ง 3 engine ใช้ flag ชุดเดียวกัน ตั้งใจให้จำชุดเดียวพอ</p>
+  <table>
+    <tr><th>flag</th><th>แปลว่า</th><th>ใช้ได้กับ</th></tr>
+    <tr><td class="m">--all</td><td>ทุกแถวใน inventory</td><td>ทั้ง 3 ตัว</td></tr>
+    <tr><td class="m">--ctid &lt;id&gt;</td><td>เฉพาะ CT ตัวเดียว</td><td>ทั้ง 3 ตัว</td></tr>
+    <tr><td class="m">--dry-run</td><td>เดินผ่าน guard ครบ ไม่เขียนอะไร แล้วพิมพ์แผนออกมา</td><td>ทั้ง 3 ตัว</td></tr>
+    <tr><td class="m">--storage &lt;id&gt;</td><td>ทำเฉพาะ lane นั้น</td><td>migrate, replica</td></tr>
+    <tr><td class="m">--dest hdd|ssd</td><td>เฉพาะ CT ที่ตัวสำรองอยู่ pool นั้น</td><td>failback</td></tr>
+    <tr><td class="m">--list</td><td>ดูอย่างเดียว ใครอยู่ไหน สถานะอะไร</td><td>failback</td></tr>
+    <tr><td class="m">--final</td><td>รอบสุดท้าย ทับ image ตัวจริง</td><td>failback</td></tr>
+    <tr><td class="m">--stopped</td><td>ต้นทางถูกปิดอยู่ ไม่ต้องรอ</td><td>migrate</td></tr>
+  </table>
+  <p>รหัสออกก็ชุดเดียวกันทั้ง 3 ตัว: <code class="inl">0</code> ปกติ,
+     <code class="inl">1</code> มีอย่างน้อยหนึ่ง CT ไม่ผ่านหรือถูกข้าม,
+     <code class="inl">2</code> ปฏิเสธตั้งแต่ยังไม่แตะอะไร ตัวกรองที่ไม่ match แถวไหนเลยไม่คืน 0 เด็ดขาด</p>
   <table>
     <tr><th>อยากทำอะไร</th><th>สั่ง</th></tr>
     <tr><td>ย้าย CT จากเครื่องเก่าเข้าฟลีต</td><td class="m">./ketsync migrate --storage &lt;id&gt;</td></tr>

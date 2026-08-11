@@ -49,10 +49,18 @@
 #  before any CT is touched the inventory is refused whole if it names the
 #  same src_ctid twice or resolves two rows to the same target VMID.
 #
-#  exit code: 0 = all ok, 1 = at least one CT needs attention,
-#             2 = inventory/conf/mocknet is broken, nothing was run at all.
+#  exit code: 0 = all ok, 1 = at least one CT failed or was skipped,
+#             2 = refused before touching anything.
+#
+#  FLAGS EVERY ENGINE TAKES, spelled the same way on purpose:
+#    --all               every row in the inventory
+#    --ctid <id>         one container only
+#    --dry-run           run every guard, write nothing, print the plan
+#    -h | --help         this header
+#  A filter that matches no row exits NON-ZERO: under cron, exit 0 with no work
+#  done looks exactly like a healthy night.
 # -----------------------------------------------------------------------------
-#  THE GUARDS (R1..R11) — same contract as ct-migrate's G1..G7: each exists
+#  THE GUARDS (R1..R12) — same contract as ct-migrate's G1..G7: each exists
 #  because of a real incident on this fleet; keep them and keep their ORDER.
 #
 #   R1  point-in-time source, never a moving one. A ZFS-backed storage is
@@ -176,6 +184,12 @@ while (( $# )); do
                LANE_STORAGE="$2"; shift 2;;
     --ctid)    [[ $# -ge 2 ]] || { echo "--ctid needs a value" >&2; exit 2; }
                ONLY_CTID="$2";    shift 2;;
+    # Accepted everywhere so one command shape works across all three engines.
+    # Here it is what happens anyway, which is the point: an operator should not
+    # have to remember that this engine defaults to the whole inventory and
+    # ct-failback.sh insists on being told. Refusing a flag that means exactly
+    # what the tool already does teaches nothing and costs a run.
+    --all)     shift;;
     --dry-run) DRY=1; shift;;
     # Walks the comment block instead of counting lines: a fixed range used to
     # stop short of the exit-code contract, which is the half of the header

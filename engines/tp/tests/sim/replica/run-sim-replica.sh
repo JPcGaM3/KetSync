@@ -945,6 +945,14 @@ if scenario "40: a dest that is not active on the backup node is caught before a
   done_scenario
 fi
 
+if scenario "41a: --all means the same thing here as it does in ct-failback.sh"; then
+  # A no-op for this engine, on purpose: one command shape across all three.
+  run_engine --all
+  rc_is 0; clean
+  traced "rsync"
+  done_scenario
+fi
+
 if scenario "41b: an unset BKP_NODE is the normal case - the node is asked, and says so"; then
   # Nobody should have to type a pmxcfs name into a config file. write_conf no
   # longer sets one, so every other scenario in this file is running this path

@@ -377,6 +377,13 @@ mutant "the name the node reports is thrown away, leaving BKP_NODE empty" \
   's{\Q  BKP_NODE="\E\$_bknode\Q"\E}{  :}' \
   41b 1
 
+# --all is a no-op here and has to stay accepted. Dropping it turns one command
+# shape across three engines back into three, and the failure is an exit 2 in
+# the middle of a cron line that has worked for months.
+mutant "--all is refused again, so one command shape stops working" \
+  's{\Q    --all)     shift;;\E}{}' \
+  41a
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

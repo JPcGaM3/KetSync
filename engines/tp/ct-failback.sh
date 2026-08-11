@@ -45,8 +45,16 @@
 #
 #  exit code: 0 = all ok, 1 = at least one CT failed or was skipped,
 #             2 = refused before touching anything.
+#
+#  FLAGS EVERY ENGINE TAKES, spelled the same way on purpose:
+#    --all               every row in the inventory
+#    --ctid <id>         one container only
+#    --dry-run           run every guard, write nothing, print the plan
+#    -h | --help         this header
+#  A filter that matches no row exits NON-ZERO: under cron, exit 0 with no work
+#  done looks exactly like a healthy night.
 # -----------------------------------------------------------------------------
-#  THE GUARDS (B1..B6). Failback is the one direction where a mistake destroys
+#  THE GUARDS (B1..B7). Failback is the one direction where a mistake destroys
 #  PRODUCTION data rather than a copy, so these refuse rather than warn.
 #
 #   B1  the production CT must be STOPPED on its own node. Its rootfs is a raw
