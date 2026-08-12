@@ -1290,6 +1290,50 @@ if scenario "62: a whole storage being down is ONE fact, and it is not a failure
   done_scenario
 fi
 
+
+# ---------- R13: a live DR placement owns the newest data --------------------
+if scenario "49: R13 a live 9xxx placement stops the copy being overwritten"; then
+  # The hole PAUSE could never cover. The storage node dies with no warning, so
+  # nobody types `touch PAUSE` and the file would have been on the machine that
+  # died anyway. distribute puts the container on a compute node as 9105, the
+  # customer works there for hours, the storage node comes back, and cron fires
+  # on schedule. R2 does not shield 8105 - a DR copy is stopped by design - so
+  # the PRE-DISASTER production image lands on top of it. Nothing is lost that
+  # second, but 8105 now LOOKS like a fresh copy while holding data from before
+  # the outage, and the next person to read a green status skips the recall.
+  bkp_cfg pve01 9105 <<'EOF'
+arch: amd64
+hostname: ct105-dr
+rootfs: local-lvm:vm-9105-disk-0,size=8G
+EOF
+  run_engine --ctid 105
+  rc_is 1; clean
+  has "GUARD R13: CT 9105 exists - a DR placement for this container is live"
+  has "/etc/pve/nodes/pve01/lxc/9105.conf"
+  has "recall 9105 first, then destroy it"
+  st_is 105 last.reason r13_dr_active
+  untraced "rsync"
+  done_scenario
+fi
+
+if scenario "50: R13 blocks only the containers that moved, not the whole fleet"; then
+  # A DR is rarely all-or-nothing: the important containers get placed and the
+  # rest stay where they are. Those still have their production image as the
+  # newest copy, and they must keep being replicated - during a long outage
+  # that is the only thing standing between them and a second failure.
+  bkp_cfg pve01 9105 <<'EOF'
+arch: amd64
+hostname: ct105-dr
+rootfs: local-lvm:vm-9105-disk-0,size=8G
+EOF
+  run_engine
+  rc_is 1
+  has "GUARD R13: CT 9105 exists"
+  hasnt "GUARD R13: CT 9113 exists"
+  traced "rsync"                       # 113 went, 105 did not
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

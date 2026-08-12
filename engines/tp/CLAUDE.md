@@ -33,9 +33,9 @@ anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
     ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
-    ct-replica.sh    tests/mutation/run-mutation-replica.sh     43 mutations
+    ct-replica.sh    tests/mutation/run-mutation-replica.sh     47 mutations
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    45 mutations
-    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  35 mutations
+    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  38 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
@@ -177,7 +177,7 @@ and a dry run may mount only `ro`.
     G7  the new_ctid must be free on the new node, or already own exactly the
         volume this row would write
 
-`ct-replica.sh` — R1..R11:
+`ct-replica.sh` — R1..R13:
 
     R1   point-in-time source: snapshot + clone, read the images from the clone
     R2   never rsync into a copy that is RUNNING (DR was promoted)
@@ -198,6 +198,15 @@ and a dry run may mount only `ro`.
          containers are SKIPPED, said once, and the run still refuses to exit
          0. It clears itself when the storage returns - which is the whole
          difference from pause/<ctid>, which a human has to undo
+    R13  a live 9xxx placement means the DR copy is the last data from before
+         the outage and the NEWEST data is somewhere else. R2 does not shield a
+         DR copy - it is stopped by design - and PAUSE cannot help, because the
+         storage node dies with no warning and the file lives on the machine
+         that died. So the copy is left alone while ct-distribute.sh's 9<id>
+         config exists anywhere in the cluster. Per-container, so the ones that
+         never moved keep being replicated; it clears itself when somebody runs
+         the `pct destroy 9<id>` the DR guide already ends with; and the run
+         refuses to exit 0 while it is true
 
 `ct-failback.sh` — B1..B6:
 

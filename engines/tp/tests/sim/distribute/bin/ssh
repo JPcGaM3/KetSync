@@ -99,6 +99,13 @@ if [[ ! -d "$T" ]]; then
       id="$(awk '{print $3}' <<<"$c")"; f="$N/ct/$id.status"
       [[ -f "$f" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
       printf 'status: %s\n' "$(cat "$f")"; exit 0;;
+    # onboot, which is the difference between "it is down" and "it will STAY
+    # down when the storage node comes back".
+    "pct config "*)
+      id="$(awk '{print $3}' <<<"$c")"
+      [[ -f "$N/ct/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+      printf 'arch: amd64\nhostname: ct%s\nonboot: %s\n' "$id" "$(cat "$N/ct/$id.onboot" 2>/dev/null || echo 0)"
+      exit 0;;
     true) exit 0;;
   esac
   violation "command the simulator does not model on production node $host: $c"
@@ -121,6 +128,15 @@ case "$c" in
     id="$(awk '{print $3}' <<<"$c")"; f="$SIMROOT/nodes/$(cat "$T/node")/ct/$id.status"
     [[ -f "$f" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
     printf 'status: %s\n' "$(cat "$f")"; exit 0;;
+
+  # D1 reads onboot from here. A container that is stopped today and onboot: 1
+  # is one that starts ITSELF the moment the storage node comes back - the
+  # engine has to be able to see the difference, so the fake has to report it.
+  "pct config "*)
+    id="$(awk '{print $3}' <<<"$c")"; d="$SIMROOT/nodes/$(cat "$T/node")/ct"
+    [[ -f "$d/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+    printf 'arch: amd64\nhostname: ct%s\nonboot: %s\n' "$id" "$(cat "$d/$id.onboot" 2>/dev/null || echo 0)"
+    exit 0;;
 
   # The engine checks this BEFORE allocating anything, because the transfer is
   # issued here and pulls from the backup node. A scenario can take that path

@@ -614,6 +614,9 @@ BKP_DESTS=&quot;hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd&qu
 DEFAULT_DEST=&quot;hdd&quot;               # rows without a dest, and auto-discovered CTs
 SRC_STORAGES=&quot;tank-hdd-nas tank-ssd-nas&quot;  # storages this tool may read from
 OFFSET=8000                      # default tgt_ctid = src_ctid + OFFSET
+DR_OFFSET=9000                   # src_ctid + this = the temporary DR copy R13
+                                 # looks for. Same knob, same ctrep.conf, as
+                                 # ct-distribute.sh - they must never disagree
 AUTO_DISCOVER=0                  # 1 = every lxc in the cluster minus exclude.tsv
 LIVE_FALLBACK=0                  # 1 = allow syncing from LIVE images on non-ZFS
 MOCKNET=1                        # 1 = copy the source&#x27;s real net* onto the island
@@ -669,7 +672,7 @@ if [[ -f &quot;$CONF&quot; ]]; then
   # shellcheck source=/dev/null
   . &quot;$CONF&quot; || { echo &quot;failed to read $CONF&quot; &gt;&amp;2; exit 1; }
 fi
-for _v in OFFSET AUTO_DISCOVER LIVE_FALLBACK MOCKNET \
+for _v in OFFSET DR_OFFSET AUTO_DISCOVER LIVE_FALLBACK MOCKNET \
           BW_TOTAL_MB LANES BW_MIN_MB RUNS_KEEP LOG_KEEP_DAYS; do
   if [[ ! &quot;${!_v}&quot; =~ ^[0-9]+$ ]]; then
     echo &quot;ctrep.conf: $_v=&#x27;${!_v}&#x27; is not a plain integer&quot; &gt;&amp;2; exit 1
@@ -1325,6 +1328,9 @@ trap cleanup EXIT
 
 # ---------- main loop ----------
 ok=0; skipped=0; failed=0
+# CTs R13 held back because a DR placement is still live. Separate from failed:
+# nothing is wrong with them, but the run must not read as a healthy night.
+DR_ACTIVE_IDS=()
 matched=0            # CTs that survived --storage/--ctid; 0 = the flag is wrong
 FAILED_IDS=()
 
@@ -1487,6 +1493,48 @@ for CT in &quot;${CTS[@]}&quot;; do
   if [[ &quot;$st&quot; == &quot;running&quot; ]]; then
     log &quot;[$CT] GUARD R2: copy $TGT is RUNNING on $BKP_NODE (DR active?) - SKIP + check by hand&quot;
     st_skip r2_running; continue
+  fi
+
+  # --- R13: a DR placement is live for this CT, so the copy is the last one ---
+  # R2 only shields a copy that is RUNNING. A DR copy is stopped by design -
+  # onboot 0, on a bridge with no uplink - so R2 never shields it, and PAUSE was
+  # the only thing that did.
+  #
+  # PAUSE cannot be relied on, because of how this actually fails. The storage
+  # node dies with no warning; nobody gets to type `touch PAUSE`, and the file
+  # would have been on the machine that died anyway. When it comes back, cron
+  # fires on schedule and copies the PRE-DISASTER production image over the DR
+  # copy. Nothing is lost immediately - the newest data is on the 9xxx running
+  # on a compute node - but $TGT now looks like a fresh, healthy copy while
+  # holding data from before the outage. Somebody reads a green `tp status`,
+  # believes it, skips the recall, and loses every hour the customer worked
+  # during the DR.
+  #
+  # The fact that settles it is one PVE wrote itself: ct-distribute.sh creates
+  # 9&lt;id&gt; in pmxcfs, and only after a good transfer (D6). If that config exists
+  # anywhere in the cluster, a DR placement for this container is live and has
+  # not been cleaned up. It needs no marker in anybody&#x27;s rootfs, no timestamp
+  # and nothing for a human to remember, it is per-container rather than
+  # fleet-wide - the containers that never moved keep being replicated, which
+  # matters during a long outage - and it clears itself the moment somebody
+  # runs the `pct destroy 9&lt;id&gt;` that the DR guide already ends with.
+  _dr=$(( CT + DR_OFFSET ))
+  _dract=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; \
+      &quot;ls /etc/pve/nodes/*/lxc/$_dr.conf 2&gt;/dev/null&quot; &lt;/dev/null 2&gt;/dev/null | head -1)
+  if [[ -n &quot;$_dract&quot; ]]; then
+    log &quot;[$CT] GUARD R13: CT $_dr exists - a DR placement for this container is live&quot;
+    log &quot;[$CT] GUARD R13:   $_dract&quot;
+    log &quot;[$CT] GUARD R13:   copy $TGT is the last data from before the outage, and the&quot;
+    log &quot;[$CT] GUARD R13:   newest data is on $_dr. Overwriting $TGT now would make it&quot;
+    log &quot;[$CT] GUARD R13:   LOOK current while holding neither.&quot;
+    log &quot;[$CT] GUARD R13:   recall $_dr first, then destroy it. This clears itself.&quot;
+    # Skipped, not failed - nothing is wrong with this container. But the run
+    # must not exit 0 while it is true, for the same reason R12 does not: a
+    # nightly cron reporting success while several containers have no fresh
+    # copy is how a DR turns into a second incident. Counted separately from
+    # `failed` so the summary still tells them apart.
+    DR_ACTIVE_IDS+=(&quot;$CT/$_dr&quot;)
+    st_skip r13_dr_active; continue
   fi
 
   # --- R4: the target VMID must not belong to any OTHER guest, anywhere ---
@@ -1734,12 +1782,22 @@ if (( _down )); then
   log &quot;SOURCE DOWN:   config follows them; the next round picks up their new home.&quot;
 fi
 
+if (( ${#DR_ACTIVE_IDS[@]} )); then
+  log &quot;DR ACTIVE: ${#DR_ACTIVE_IDS[@]} container(s) not replicated - their newest data is on a 9xxx&quot;
+  log &quot;DR ACTIVE:   ${DR_ACTIVE_IDS[*]}   (production/DR)&quot;
+  log &quot;DR ACTIVE:   recall each one, then destroy the 9xxx. This clears itself.&quot;
+fi
+
 if (( failed &gt; 0 )); then
   log &quot;NEEDS ATTENTION -&gt; CT: ${FAILED_IDS[*]}&quot;
   [[ -n &quot;$HEALTH_URL&quot; ]] &amp;&amp; { curl -fsS -m 10 &quot;$HEALTH_URL/fail&quot; &gt;/dev/null 2&gt;&amp;1 || true; }
   exit 1
 fi
 if (( _down )); then
+  [[ -n &quot;$HEALTH_URL&quot; ]] &amp;&amp; { curl -fsS -m 10 &quot;$HEALTH_URL/fail&quot; &gt;/dev/null 2&gt;&amp;1 || true; }
+  exit 1
+fi
+if (( ${#DR_ACTIVE_IDS[@]} )); then
   [[ -n &quot;$HEALTH_URL&quot; ]] &amp;&amp; { curl -fsS -m 10 &quot;$HEALTH_URL/fail&quot; &gt;/dev/null 2&gt;&amp;1 || true; }
   exit 1
 fi

@@ -412,6 +412,29 @@ mutant "the fallback log directory is not the engine's own" \
   's{\QLOGDIR="\E\$BASE\Q/logs"\E}{LOGDIR="\$BASE/../logs"}' \
   1
 
+# ---------- R13: a live DR placement owns the newest data --------------------
+# PAUSE could never cover this. The storage node dies with no warning, so
+# nobody types `touch PAUSE` and the file would have been on the machine that
+# died. When it comes back, cron copies the PRE-DISASTER image over the DR copy
+# and the copy then LOOKS current while holding neither the old data nor the
+# new. The fact that settles it is one PVE wrote itself: ct-distribute.sh
+# creates 9<id> in pmxcfs, and only after a good transfer.
+mutant "R13 stops looking for a live DR placement" \
+  's{\Q  if [[ -n "\E\$_dract\Q" ]]; then\E}{  if false; then}' \
+  49
+
+mutant "R13 looks for the DR copy under the backup node only, not across the cluster" \
+  's{\Qls /etc/pve/nodes/*/lxc/\E\$_dr\Q.conf\E}{ls /etc/pve/nodes/\$BKP_NODE/lxc/\$_dr.conf}' \
+  49
+
+mutant "R13 computes the DR id with the wrong offset, so it never finds one" \
+  's{\Q  _dr=\E\$\(\( CT \+ DR_OFFSET \)\)}{  _dr=\$(( CT + OFFSET ))}' \
+  49
+
+mutant "a held-back container leaves the night reading as healthy" \
+  's{\Qif (( \E\$\{#DR_ACTIVE_IDS\[\@\]\}\Q )); then\E\n\Q  [[ -n "\E\$HEALTH_URL\Q" ]]\E}{if false; then\n  [[ -n "\$HEALTH_URL" ]]}' \
+  49
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

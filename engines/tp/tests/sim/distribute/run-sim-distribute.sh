@@ -97,7 +97,8 @@ prod_ct(){   # ctid node status - a production CT that exists in pmxcfs
   mkdir -p "$PVE/nodes/$2/lxc" "$SIMROOT/nodes/$2/ct"
   printf 'arch: amd64\nhostname: ct%s\nrootfs: tank-hdd-nas:%s/vm-%s-disk-0.raw,size=20G\n' "$1" "$1" "$1" \
     > "$PVE/nodes/$2/lxc/$1.conf"
-  printf '%s\n' "$3" > "$SIMROOT/nodes/$2/ct/$1.status"; }
+  printf '%s\n' "$3" > "$SIMROOT/nodes/$2/ct/$1.status"
+  printf '%s\n' "${4:-0}" > "$SIMROOT/nodes/$2/ct/$1.onboot"; }
 
 add_target(){ # ip nodename
   local d="$SIMROOT/targets/$1"
@@ -287,6 +288,42 @@ if scenario "5: D1 lets it through when production is stopped, not merely absent
   rc_is 0; clean
   hasnt "GUARD D1"
   cfg_exists pve01 9300
+  done_scenario
+fi
+
+if scenario "5b: GUARD D1 - a production node that does not answer is UNVERIFIED"; then
+  # The header always claimed unreachable counted as not-verified; the code
+  # logged "taking the storage outage as the reason" and carried on. That is
+  # the guess every other guard here refuses, and it is the one that ends with
+  # two containers on one IP. It refuses now.
+  # A production node that is NOT also the placement target, so "cannot reach
+  # the machine that runs it" is expressible on its own. pve01 and pve02 are
+  # both targets here; pve03 is only ever a production node.
+  add_prod_node pve03; node_down pve03
+  prod_ct 300 pve03 stopped
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "production CT 300 is UNVERIFIED"
+  has "unreachable is not stopped"
+  untraced "pvesm alloc"
+  no_cfg pve01 9300
+  done_scenario
+fi
+
+if scenario "5c: GUARD D1 - stopped with onboot 1 is a container that comes back by itself"; then
+  # The hole the fleet found: the storage node dies with no warning, the DR is
+  # placed, and then the storage node comes back. An onboot: 1 container starts
+  # itself the moment its rootfs is readable again - nobody types anything -
+  # and now production and the 9xxx are both live on one IP, each writing a
+  # rootfs that can never be merged with the other.
+  prod_ct 300 pve01 stopped 1; node_up pve01
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "has onboot: 1 on pve01"
+  has "start ITSELF the moment the storage node comes back"
+  has "pct set 300 --onboot 0"
+  untraced "pvesm alloc"
+  no_cfg pve01 9300
   done_scenario
 fi
 

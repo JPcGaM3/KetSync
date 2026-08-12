@@ -285,6 +285,22 @@ mutant "the fallback placement table is not the engine's own" \
   's{\QFLEET="\E\$BASE\Q/fleet.tsv"      # ketsync\E.\Qs placement table\E}{FLEET="\$BASE/../fleet.tsv"}' \
   1
 
+# D1's two new halves. The header always said unreachable counted as
+# not-verified; the code logged a reason and carried on. And "stopped" says
+# nothing about whether it STAYS stopped - an onboot: 1 container starts itself
+# the moment the storage node comes back, with nobody typing anything.
+mutant "D1 treats a node that did not answer as one that said stopped" \
+  's{\Q    if [[ -z "\E\$pstat\Q" ]]; then\E}{    if false; then}' \
+  5b
+
+mutant "D1 stops caring whether production comes back on its own" \
+  's{\Q    if [[ "\E\$\{ponboot:-0\}\Q" == 1 ]]; then\E}{    if false; then}' \
+  5c
+
+mutant "D1 reads onboot from the wrong container" \
+  's{\Qponboot=\E\$\Q(rsh "\E\$pip\Q" "pct config \E\$ct\Q}{ponboot=\$(rsh "\$pip" "pct config \$CT_DR}' \
+  5c
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

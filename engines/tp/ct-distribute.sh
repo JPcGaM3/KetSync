@@ -70,12 +70,23 @@
 #  THE GUARDS (D1..D7). This engine runs during the worst hour this fleet will
 #  have, so every one of them refuses rather than warns.
 #
-#   D1  the PRODUCTION container must be verifiably down. The copy carries the
-#       production IP and MAC on purpose, so a 9xxx started while 300 is still
-#       up puts two machines on one address. The storage node being dead
-#       usually means it is down, but "usually" is not a guard: it is checked
-#       on the node itself, and unreachable counts as not-verified. This is B1,
-#       restated for the other direction.
+#   D1  the PRODUCTION container must be verifiably down, and must STAY down.
+#       The copy carries the production IP and MAC on purpose, so a 9xxx placed
+#       while 300 can still answer puts two machines on one address. Three
+#       things are checked on the node itself, and each of them refuses:
+#         running        the obvious one
+#         unreachable    not-verified is not stopped. This used to log a reason
+#                        and carry on, which is the guess every other guard here
+#                        refuses to make
+#         onboot: 1      stopped today, and it starts ITSELF the moment the
+#                        storage node comes back or the node reboots. Nobody
+#                        types a command for that, PAUSE cannot help because the
+#                        machine holding it is the machine that died, and the
+#                        result is production and the 9xxx both live on one IP,
+#                        each writing a rootfs that can never be merged
+#       This is B1, restated for the other direction, plus the half B1 does not
+#       need: failback runs when the storage node is back, so nothing re-arms
+#       behind it.
 #
 #   D2  the source copy must exist on the backup node and be STOPPED. Copying
 #       out of a rootfs that something is writing to is a torn copy, and the
@@ -523,7 +534,38 @@ do_ct(){   # $1 = production ctid
       log "[$ct] GUARD D1:   stop it first:  ssh root@$pip pct shutdown $ct"
       st_skip "$ct" prod_running; return 1
     fi
-    [[ -z "$pstat" ]] && log "[$ct] D1: $pnode ($pip) did not answer - taking the storage outage as the reason"
+    # Unreachable is NOT stopped. This used to log "taking the storage outage as
+    # the reason" and carry on, which is the guess every other guard in this repo
+    # refuses to make - and the header above has always claimed it refused.
+    # The claim is now true. It also lines up with what the next check needs: a
+    # node you cannot reach is a node on which you cannot have cleared onboot,
+    # so proceeding means placing a second copy of a container that may still be
+    # able to come back on its own.
+    if [[ -z "$pstat" ]]; then
+      log "[$ct] GUARD D1: $pnode ($pip) did not answer - production CT $ct is UNVERIFIED"
+      log "[$ct] GUARD D1:   unreachable is not stopped. The copy carries the production IP"
+      log "[$ct] GUARD D1:   and MAC, so placing one without knowing is how two machines end"
+      log "[$ct] GUARD D1:   up on one address during the hour you can least afford it."
+      log "[$ct] GUARD D1:   fix the ssh to $pip, or say so by hand with --to on a node you"
+      log "[$ct] GUARD D1:   have checked yourself."
+      st_skip "$ct" prod_unverified; return 1
+    fi
+    # Stopped is not enough: the storage node coming back re-arms an onboot=1
+    # container the moment its rootfs is readable again, and nobody types a
+    # command for that to happen. Then production and the 9xxx are both live,
+    # on one IP and one MAC, writing into two rootfs that can never be merged.
+    # PAUSE cannot help - the machine that holds it is the machine that died.
+    local ponboot
+    ponboot=$(rsh "$pip" "pct config $ct 2>/dev/null" | sed -n 's/^onboot:[[:space:]]*//p' | head -1)
+    if [[ "${ponboot:-0}" == 1 ]]; then
+      log "[$ct] GUARD D1: production CT $ct is stopped but has onboot: 1 on $pnode ($pip)"
+      log "[$ct] GUARD D1:   it will start ITSELF the moment the storage node comes back, or"
+      log "[$ct] GUARD D1:   the next time that node reboots. Two containers on one IP, each"
+      log "[$ct] GUARD D1:   writing its own rootfs, and no way to merge them afterwards."
+      log "[$ct] GUARD D1:   make it stay down first:  ssh root@$pip pct set $ct --onboot 0"
+      log "[$ct] GUARD D1:   put it back to 1 after the recall - the DR guide says where."
+      st_skip "$ct" prod_onboot; return 1
+    fi
   fi
 
   # ---- GUARD D2: the source copy must be STOPPED -------------------------

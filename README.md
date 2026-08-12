@@ -113,8 +113,8 @@ engines/tp/inventory-replica.tsv   a work list: which CTs to copy nightly
 
 ```bash
 make lint       # both layers: bash -n, shellcheck, the language rule, doc embeds
-make test       # 223 tp scenarios + 21 for ketsync sync, the dispatcher, c2v, python
-make mutation   # 196 known bugs put back one at a time; none may survive
+make test       # 232 tp scenarios + 21 for ketsync sync, the dispatcher, c2v, python
+make mutation   # 203 known bugs put back one at a time; none may survive
 ```
 
 `make -C engines/tp test-replica` and friends still work if you want one engine.
