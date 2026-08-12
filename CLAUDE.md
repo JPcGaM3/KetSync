@@ -74,6 +74,8 @@ being separate when they stopped being empty.
 
 ## Layout
 
+    docs/index.html      which of the five guides to open. Every guide links
+                         back to it, so a reader who lands anywhere can get out
     docs/infrastructure-setup.html
                          build the whole thing from nothing. Written for a
                          reader who does not do infra for a living: every step
@@ -85,7 +87,8 @@ being separate when they stopped being empty.
                          carries the PAUSE-before-cron step that is the
                          difference between a recovery and a data loss
     docs/start-here.html the operator's front door. If you change what an
-                         operator types, change it here too
+                         operator types, change it here too. Section 4 is the
+                         master/slave sync setup - the part people got wrong
     docs/c2v-el.html     CT to VM, the EL path
     docs/c2v-debian.html CT to VM, the Debian/Ubuntu path
     ketsync              the dispatcher. Contains no logic of its own

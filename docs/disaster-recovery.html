@@ -109,10 +109,10 @@
     <a href="#s1">เตรียมก่อน</a>
     <a href="#s2">1 ยืนยัน</a>
     <a href="#s3">2 ปลุกสำเนา</a>
-    <a href="#s4">3 ระหว่างรัน</a>
+    <a href="#s4">3 recall</a>
     <a href="#s5">4 storage กลับมา</a>
-    <a href="#s6">5 เอาข้อมูลกลับ</a>
-    <a href="#s7">6 คืนสภาพ</a>
+    <a href="#s6">5 ตัดกลับ</a>
+    <a href="#s7">6 เก็บกวาด</a>
   </div>
 </div>
 
@@ -125,20 +125,44 @@
 </header>
 
 <section id="s0">
-  <div class="eyebrow"><span class="num">0</span><h2>ตอนนี้ทำได้แค่ไหน — อ่านก่อน</h2></div>
-  <p>พูดตรงๆ ว่ายังไม่ครบ จะได้ไม่ไปคาดหวังผิดตอนเกิดเหตุจริง</p>
+  <div class="eyebrow"><span class="num">0</span><h2>ภาพรวม 6 ขั้น — อ่านให้จบก่อนเริ่มขั้นแรก</h2></div>
+  <p>ทั้งเหตุการณ์มี 6 ขั้น และแต่ละขั้นมีคำสั่งของมันครบแล้ว ไม่มีขั้นไหนที่ต้องทำมือ
+     ตัวเลขที่เห็นในคำสั่งไม่ต้องพิมพ์เอง เครื่องมือคิดให้จากเลข CT ตัวจริงตัวเดียว</p>
   <table>
-    <tr><th>อยากทำ</th><th>ตอนนี้</th></tr>
-    <tr><td>ปลุกสำเนาขึ้นมารันที่เครื่อง backup</td><td><b>ทำได้</b> ด้วยมือ ตามหน้านี้</td></tr>
-    <tr><td>เอาข้อมูลกลับเข้าตัวจริงตอน storage ฟื้น</td><td><b>ทำได้</b> ด้วย <span class="m">ketsync failback</span></td></tr>
-    <tr><td>กระจายสำเนาไปรันที่เครื่อง compute (9xxx)</td><td><b>ทำได้ด้วยคำสั่ง</b> — <span class="m">ketsync distribute</span> ดูข้อ 3</td></tr>
-    <tr><td>ดึงข้อมูลจาก 9xxx กลับเข้าตัวจริง</td><td><b>ทำได้ด้วยมือ</b> ตามข้อ 6ก — <span class="m">ketsync recall</span> ยังไม่ได้สร้าง</td></tr>
-    <tr><td>ก๊อปข้อมูลต่อระหว่างที่รันอยู่ที่ compute</td><td><b>ยังทำไม่ได้</b> ช่วงนั้นไม่มีสำเนาสำรอง</td></tr>
+    <tr><th>ขั้น</th><th>ทำอะไร</th><th>คำสั่ง</th><th>ข้อมูลไปทางไหน</th></tr>
+    <tr><td>1</td><td>กันตัวจริงไม่ให้บูตเอง</td>
+        <td class="m">pct set 300 --onboot 0</td><td>—</td></tr>
+    <tr><td>2</td><td>ปลุกสำเนาไปรันที่ compute</td>
+        <td class="m">ketsync distribute --all</td><td class="m">8300 &rarr; 9300</td></tr>
+    <tr><td>3</td><td>ก๊อปกลับมาเก็บ ทำซ้ำได้เรื่อยๆ</td>
+        <td class="m">ketsync recall --all</td><td class="m">9300 &rarr; 8300</td></tr>
+    <tr><td>4</td><td>storage กลับมา ไล่ช่องว่างให้แคบ</td>
+        <td class="m">recall + failback</td><td class="m">9300 &rarr; 8300 &rarr; 300</td></tr>
+    <tr><td>5</td><td>ตัดกลับตัวจริง</td>
+        <td class="m">--final ทั้งสองคำสั่ง</td><td class="m">9300 &rarr; 8300 &rarr; 300</td></tr>
+    <tr><td>6</td><td>เก็บกวาด</td>
+        <td class="m">pct destroy 9300</td><td>—</td></tr>
   </table>
-  <p>แปลว่าเครื่อง backup คือ<b>ที่เก็บของ</b> ไม่ใช่ที่รันของ และไม่ใช่ที่รัน engine ด้วย —
-     ตัว <code class="inl">ct-replica.sh</code> กับ <code class="inl">ct-failback.sh</code>
-     อ่านและเขียนไฟล์ดิสก์ที่อยู่บนเครื่อง storage ทั้งคู่ พอเครื่องนั้นตาย ก็ไม่มีอะไรให้มันทำ
-     ของต้องถูกก๊อปต่อไปที่เครื่อง compute แล้วรันที่นั่น ซึ่งตอนนี้มีคำสั่งทำให้แล้ว</p>
+  <p>สิ่งที่หน้านี้จะย้ำอยู่เรื่อยๆ มีอยู่สองเรื่อง เรื่องแรกคือ<b>เลข 9 นำหน้า แปลว่าของชั่วคราว</b>
+     — ข้อมูลในนั้นไม่มีใครก๊อปให้เลยจนกว่าจะสั่ง <span class="m">recall</span>
+     เรื่องที่สองคือ<b>ไม่มีคำสั่งไหนในชุดนี้เปิดหรือปิด container ให้</b>
+     มันย้ายข้อมูล เขียน config แล้วพิมพ์คำสั่งเปิดออกมาให้คนกดเอง</p>
+
+  <h3>ทำไมต้องอ้อมผ่านเครื่อง backup</h3>
+  <p>ตอนเอาข้อมูลกลับ ทางที่สั้นที่สุดคือ compute → storage ตรงๆ แต่เราไม่ทำแบบนั้น
+     เราให้ <span class="m">recall</span> พา 9300 กลับไปที่ 8300 บนเครื่อง backup ก่อน
+     แล้วค่อยให้ <span class="m">failback</span> พา 8300 กลับเข้าไฟล์ดิสก์ตัวจริง เหตุผลมีสองข้อ</p>
+  <ul class="clean">
+    <li><b>มีของสำรองอยู่ตลอดเวลา</b> ทุกวินาทีจะมีข้อมูลชุดใหม่อยู่อย่างน้อยสองที่เสมอ
+        ถ้าเลือกทางลัด ช่วงที่กำลังเขียนทับไฟล์ดิสก์ตัวจริงคือช่วงที่มีข้อมูลชุดเดียวในโลก</li>
+    <li><b>ขั้นสุดท้ายมี snapshot ให้ถอยกลับ</b> การเขียนทับไฟล์ดิสก์ตัวจริงทำโดย
+        <span class="m">failback</span> ซึ่งด่าน B7 ของมันสั่ง snapshot ก่อนเสมอ
+        ถ้าอ้อมทางนี้ ขั้นที่อันตรายที่สุดจะได้ตาข่ายมาฟรีๆ</li>
+  </ul>
+  <div class="tip"><p><b>ถอยได้ทุกขั้น</b> ระหว่างขั้น 3 กับ 4 ถ้าอะไรดูไม่ถูก ตัว 9300 ยังรันอยู่
+     ยังให้บริการลูกค้าอยู่ และยังเป็นข้อมูลชุดที่ใหม่ที่สุด — หยุดตรงไหนก็ได้แล้วคิดต่อ
+     ไม่มีขั้นไหนก่อนขั้น 5 ที่ทำแล้วถอยไม่ได้</p></div>
+
   <div class="warn"><p><b>ข้อจำกัดที่ต้องยอมรับ</b> ต่อให้กระจายไปหลายเครื่องแล้ว
      ก็ยังไม่พอรัน CT ทุกตัวพร้อมกัน ต้องเลือกเฉพาะตัวสำคัญ
      เรียงลำดับไว้ล่วงหน้าดีกว่ามานั่งเลือกตอนตี 3</p></div>
@@ -148,40 +172,64 @@
   <div class="eyebrow"><span class="num">1</span><h2>เตรียมไว้ก่อน ตอนยังไม่มีอะไรเกิด</h2></div>
   <p>สามอย่างนี้ทำวันธรรมดา ใช้เวลารวมไม่ถึง 10 นาที และเป็นตัวตัดสินว่าคืนนั้นจะราบรื่นหรือไม่</p>
   <ol class="steps">
-    <li><b>ก๊อปตัวโปรแกรมไว้ที่เครื่อง backup ด้วย</b> ถ้ารอไปทำตอนเกิดเหตุ เครื่องที่เก็บโค้ดอาจตายไปแล้ว
+    <li>ก๊อปตัวโปรแกรมไว้ที่เครื่อง backup ด้วย ถ้ารอไปทำตอนเกิดเหตุ เครื่องที่เก็บโค้ดอาจตายไปแล้ว
       <div class="code"><pre><span class="c"># on the BACKUP node</span>
-git clone &lt;this repo&gt; /root/ketsync</pre></div></li>
-    <li><b>เขียนลำดับความสำคัญไว้</b> ว่า CT ตัวไหนต้องขึ้นก่อน ใส่ในไฟล์ธรรมดาก็ได้
+git clone &lt;this repo&gt; /root/ketsync</pre></div>
+      <p>ต้องเป็น <code class="inl">/root/ketsync</code> เท่ากันทุกเครื่อง เพราะ
+         <span class="m">ketsync sync</span> ส่งตารางไปที่ path ที่ตัวเองติดตั้งอยู่
+         ถ้า clone ไว้ที่อื่นจะไม่ได้รับอะไรเลย</p></li>
+    <li>เขียนลำดับความสำคัญไว้ ว่า CT ตัวไหนต้องขึ้นก่อน ใส่ในไฟล์ธรรมดาก็ได้
       <div class="code"><pre><span class="c"># on the BACKUP node</span>
 cat &gt; /root/dr-order.txt &lt;&lt;'EOF'
-8105    shop  - customer facing, first
-8113    api   - second
-9121    batch - can wait
-EOF</pre></div></li>
-    <li><b>ซ้อมอ่านเดือนละครั้ง</b> คำสั่งนี้ไม่แตะอะไรเลย มันบอกว่าถ้าวันนี้ต้องกู้จริงจะติดตรงไหน
+300   shop  - customer facing, first
+113   api   - second
+121   batch - can wait
+EOF</pre></div>
+      <p>เขียนเลข CT ตัวจริง ไม่ต้องเขียน 8xxx หรือ 9xxx — ทุกคำสั่งในชุดนี้รับเลขตัวจริงเสมอ</p></li>
+    <li>ซ้อมอ่านเดือนละครั้ง สามคำสั่งนี้ไม่แตะอะไรเลย มันบอกว่าถ้าวันนี้ต้องกู้จริงจะติดตรงไหน
       <div class="code"><pre><span class="c"># on the STORAGE node, on an ordinary day</span>
-./ketsync failback --list</pre></div></li>
+./ketsync doctor
+./ketsync failback --list
+<span class="c"># on the BACKUP node - the machine you will actually be typing on</span>
+./ketsync distribute --list</pre></div>
+      <p>อันสุดท้ายสำคัญที่สุด เพราะมันคือคำสั่งที่ต้องใช้ตอนเครื่อง storage ตาย
+         ถ้าวันธรรมดามันยังรันไม่ได้ ตอนตี 3 ก็จะรันไม่ได้เหมือนกัน</p></li>
   </ol>
 </section>
 
 <section id="s2">
-  <div class="eyebrow"><span class="num">2</span><h2>ยืนยันก่อนว่าตายจริง</h2></div>
+  <div class="eyebrow"><span class="num">2</span><h2>ขั้น 1 — ยืนยันว่าตายจริง แล้วกันตัวจริงไม่ให้กลับมาเอง</h2></div>
   <p>อย่ารีบ ปลุกสำเนาขึ้นมาทั้งที่ตัวจริงยังรันอยู่ = มีสองเครื่องใช้ IP เดียวกัน
      ซึ่งพังหนักกว่าเดิมและแก้ยากกว่า</p>
   <div class="code"><pre><span class="c"># on the BACKUP node</span>
 ping -c3 10.100.1.17
 ssh -o ConnectTimeout=5 root@10.100.1.17 true; echo "rc=$?"</pre></div>
-  <p>ถ้ายัง ping ติดหรือ ssh เข้าได้ <b>อย่าเพิ่งทำต่อ</b> เครื่องอาจแค่ช้าหรือ NFS ค้าง
-     ให้ไปแก้ที่ต้นเหตุก่อน สำเนายังอยู่ครบ ไม่ได้หายไปไหน</p>
-  <div class="stop"><p><b>ถ้าเครื่อง storage ยังพอมีชีวิต ให้ปิด cron ก่อนเป็นอย่างแรก</b>
-     ไม่งั้นรอบถัดไปมันจะพยายามก๊อปทับสำเนา ตอนที่คุณกำลังจะใช้สำเนานั้น</p>
-     <div class="code"><pre><span class="c"># on the STORAGE node, if you can still reach it</span>
-touch /root/ketsync/engines/tp/PAUSE</pre></div></div>
+  <ul class="clean">
+    <li>ถ้ายัง ping ติดหรือ ssh เข้าได้ อย่าเพิ่งทำต่อ เครื่องอาจแค่ช้าหรือ NFS ค้าง
+       ให้ไปแก้ที่ต้นเหตุก่อน สำเนายังอยู่ครบ ไม่ได้หายไปไหน</li>
+    <li>ถ้าเครื่อง storage ยังพอมีชีวิต ให้ปิด cron ก่อนเป็นอย่างแรก
+       ไม่งั้นรอบถัดไปมันจะพยายามก๊อปทับสำเนา ตอนที่คุณกำลังจะใช้สำเนานั้น
+      <div class="code"><pre><span class="c"># on the STORAGE node, if you can still reach it</span>
+touch /root/ketsync/engines/tp/PAUSE</pre></div></li>
+  </ul>
+
+  <h3>แล้วกัน 300 ไม่ให้บูตขึ้นมาเอง</h3>
+  <p>อันนี้คือขั้นที่คนลืมบ่อยที่สุด และเป็นขั้นที่ <span class="m">distribute</span>
+     จะปฏิเสธถ้ายังไม่ทำ CT ที่ตั้ง <code class="inl">onboot: 1</code> ไว้
+     จะสตาร์ตตัวเองทันทีที่เครื่อง storage กลับมา หรือทันทีที่เครื่อง compute รีบูต
+     โดยไม่มีใครพิมพ์คำสั่งอะไรเลย ตอนนั้นจะมี 300 กับ 9300 อยู่บน IP เดียวกัน
+     ต่างคนต่างเขียน rootfs ของตัวเอง แล้วรวมกันไม่ได้อีกเลย</p>
+  <div class="code"><pre><span class="c"># on each COMPUTE node, for each CT you are about to move</span>
+pct set 300 --onboot 0</pre></div>
+  <div class="stop"><p><b>PAUSE ช่วยเรื่องนี้ไม่ได้</b> เครื่อง storage ตายโดยไม่บอกล่วงหน้า
+     ไม่มีใครทันพิมพ์ <code class="inl">touch PAUSE</code> และไฟล์นั้นก็อยู่บนเครื่องที่ตายไปแล้วด้วย
+     ด่าน D1 จึงไปอ่าน <code class="inl">onboot</code> จากเครื่อง compute โดยตรง
+     และปฏิเสธจนกว่าจะเป็น 0</p></div>
 </section>
 
 <section id="s3">
-  <div class="eyebrow"><span class="num">3</span><h2>ย้ายสำเนาไปรันชั่วคราวที่เครื่อง compute</h2></div>
-  <p>สำเนาอยู่ที่เครื่อง backup ก็จริง แต่<b>ไม่ได้เอาไปรันที่นั่น</b> เครื่อง backup มีหน้าที่เก็บของ
+  <div class="eyebrow"><span class="num">3</span><h2>ขั้น 2 — ย้ายสำเนาไปรันที่เครื่อง compute</h2></div>
+  <p>สำเนาอยู่ที่เครื่อง backup ก็จริง แต่ไม่ได้เอาไปรันที่นั่น เครื่อง backup มีหน้าที่เก็บของ
      ไม่ได้มีแรงพอจะรัน CT ทั้งฟลีต ของต้องถูกก๊อปต่ออีกทอดไปลงดิสก์ในตัวเครื่อง compute เอง
      ซึ่งเป็นที่เก็บของที่เดียวในตึกที่ไม่ได้พึ่งเครื่องที่เพิ่งตายไป</p>
 
@@ -189,14 +237,11 @@ touch /root/ketsync/engines/tp/PAUSE</pre></div></div>
   <table>
     <tr><th>เลข</th><th>คืออะไร</th><th>อยู่ที่ไหน</th></tr>
     <tr><td class="m">300</td><td>ตัวจริง</td><td>ดิสก์บนเครื่อง storage ผ่าน NFS</td></tr>
-    <tr><td class="m">8300</td><td>สำเนาที่ก๊อปทุกคืน ปิดอยู่</td><td>เครื่อง backup</td></tr>
-    <tr><td class="m">9300</td><td><b>ตัวชั่วคราวตอนฉุกเฉิน</b></td><td>local-lvm ของเครื่อง compute</td></tr>
+    <tr><td class="m">8300</td><td>สำเนาที่ก๊อปทุก 15 นาที ปิดอยู่</td><td>เครื่อง backup</td></tr>
+    <tr><td class="m">9300</td><td>ตัวชั่วคราวตอนฉุกเฉิน</td><td>local-lvm ของเครื่อง compute</td></tr>
   </table>
-  <p>เห็นเลข 9 นำหน้าเมื่อไหร่ให้รู้ทันทีว่านี่คือของชั่วคราวที่ต้องเก็บกวาดทีหลัง ไม่ใช่ตัวจริง</p>
-
-  <div class="tip"><p><b>มีคำสั่งทำให้แล้ว ไม่ต้องทำมือ</b> ขั้นตอนที่เคยต้องพิมพ์ทีละบรรทัด
-     ตอนนี้อยู่ใน <code class="inl">ketsync distribute</code> ครบ พร้อมด่านตรวจ 7 ด่าน
-     ขั้นตอนแบบมือยังเก็บไว้ท้ายหัวข้อนี้ เผื่อวันที่ต้องแกะดูว่ามันทำอะไรอยู่</p></div>
+  <p>เห็นเลข 9 นำหน้าเมื่อไหร่ให้รู้ทันทีว่านี่คือของชั่วคราว ข้อมูลข้างในไม่มีใครก๊อปให้
+     และต้องมีคนเก็บกวาดทีหลัง</p>
 
   <h3>ขั้นที่ 1 — ดูก่อนว่ามันจะทำอะไร ยังไม่แตะอะไร</h3>
   <div class="code"><pre>cd /root/ketsync
@@ -214,81 +259,62 @@ touch /root/ketsync/engines/tp/PAUSE</pre></div></div>
 ./ketsync distribute --ctid 300 --to 10.100.1.33          <span class="c"># override the placement</span>
 ./ketsync distribute --ctid 300 --to 10.100.1.33 --dst local-zfs</pre></div>
   <p>มันจะจองเนื้อที่บนเครื่องปลายทาง ทำ filesystem ก๊อปข้อมูลจากเครื่อง backup
-     แล้วเขียน config ให้ — <b>แต่ไม่เปิดให้</b> มันจะพิมพ์คำสั่งเปิดออกมาให้คนกดเอง
-     เหมือนทุกเครื่องมือในชุดนี้</p>
-  <div class="out">[300] placed: CT 9300 on pve01, local-lvm:vm-9300-disk-0, rsync rc=0 in 412s
+     แล้วเขียน config ให้ — แต่ไม่เปิดให้ มันจะพิมพ์คำสั่งเปิดออกมาให้คนกดเอง</p>
+  <div class="out"><pre>[300] placed: CT 9300 on pve01, local-lvm:vm-9300-disk-0, rsync rc=0 in 412s
 [300]   its network is still on the copy's bridge. Check it, then start it BY HAND:
 [300]     ssh root@10.100.1.32 pct config 9300
 [300]     ssh root@10.100.1.32 pct set 9300 --net0 &lt;the production bridge&gt;
-[300]     ssh root@10.100.1.32 pct start 9300</div>
+[300]     ssh root@10.100.1.32 pct start 9300</pre></div>
 
   <h3>ขั้นที่ 4 — ทั้งฟลีตทีเดียว เมื่อซ้อมตัวแรกผ่านแล้ว</h3>
   <div class="code"><pre>./ketsync distribute --all</pre></div>
   <p>ตัวไหนพลาดมันข้ามไปตัวถัดไป ไม่หยุดทั้งชุด แล้วสรุปตอนท้ายว่าตัวไหนไม่ผ่านเพราะอะไร</p>
 
-  <div class="stop"><p><b>ด่านที่จะเจอบ่อยที่สุดคือ D1</b> — ถ้า CT ตัวจริงยังรันอยู่ มันจะไม่ยอมวางสำเนา
-     เพราะสำเนาถือ IP กับ MAC เดียวกัน สองตัวตอบพร้อมกันแย่กว่าเหตุที่กำลังแก้อยู่
-     ให้ปิดตัวจริงก่อน แล้วค่อยสั่งใหม่</p></div>
-
-  <h3>ทำมือ (ถ้าอยากรู้ว่าคำสั่งข้างบนทำอะไร)</h3>
-  <p>สามขั้นล่างนี้คือสิ่งที่ <code class="inl">ketsync distribute</code> ทำให้
-     ไม่ต้องพิมพ์เองแล้ว เก็บไว้เผื่อต้องแกะปัญหา</p>
-
-  <h3>ขั้นที่ 1 — จองเนื้อที่บนเครื่อง compute</h3>
-  <p>ดูขนาดจาก config ของสำเนาก่อน แล้วจองเท่านั้น</p>
-  <div class="code"><pre><span class="c"># on the BACKUP node - read the size and keep the whole config</span>
-pct config 8300 | tee /tmp/8300.conf | grep rootfs</pre></div>
-  <div class="out">rootfs: replica-hdd:subvol-8300-disk-0,size=20G</div>
-  <div class="code"><pre><span class="c"># on the COMPUTE node that will run it</span>
-pvesm alloc local-lvm 9300 vm-9300-disk-0 20G
-mkfs.ext4 -F /dev/pve/vm-9300-disk-0</pre></div>
-
-  <h3>ขั้นที่ 2 — ก๊อปข้อมูลจากเครื่อง backup มาลง</h3>
-  <div class="code"><pre><span class="c"># on the COMPUTE node</span>
-mkdir -p /mnt/dr-9300
-mount /dev/pve/vm-9300-disk-0 /mnt/dr-9300
-
-rsync -aHAX --numeric-ids --sparse --info=progress2 \
-  root@10.100.1.9:/replica-hdd/ct/subvol-8300-disk-0/ /mnt/dr-9300/
-
-sync
-umount /mnt/dr-9300</pre></div>
-  <p>ถ้า rsync จบด้วยรหัส 0 หรือ 24 ถือว่าผ่าน (24 แปลว่ามีไฟล์หายไประหว่างก๊อป ซึ่งปกติ)
-     รหัส 23 คือก๊อปได้ไม่ครบ ให้สั่งซ้ำอีกรอบก่อนไปต่อ</p>
-
-  <h3>ขั้นที่ 3 — เขียน config ให้ตัวชั่วคราว</h3>
-  <p>เอา config ของสำเนามาแก้สองบรรทัด: ชี้ rootfs ไปที่ดิสก์ที่เพิ่งทำ และย้าย net กลับเน็ตจริง</p>
-  <div class="code"><pre><span class="c"># on the COMPUTE node - $(hostname) is this node's own pmxcfs directory</span>
-sed -e 's|^rootfs:.*|rootfs: local-lvm:vm-9300-disk-0,size=20G|' \
-    -e 's|bridge=vmbr99|bridge=vmbr0|' \
-    /tmp/8300.conf &gt; /etc/pve/nodes/$(hostname)/lxc/9300.conf
-
-pct config 9300</pre></div>
-  <p>ก๊อปไฟล์ <code class="inl">/tmp/8300.conf</code> จากเครื่อง backup มาก่อนด้วย
-     <code class="inl">scp</code> เปลี่ยน <code class="inl">vmbr0</code>
-     เป็นชื่อ bridge จริงของเครื่อง compute ตัวนั้น <b>อย่าแก้ hwaddr กับ ip</b>
-     เพราะระบบอื่นที่คุยกับ CT ตัวนี้จำค่าพวกนั้นอยู่ และตัวจริงตายไปแล้วจึงไม่ชนกัน</p>
-
-  <h3>ขั้นที่ 4 — เปิด แล้วเช็ก</h3>
-  <div class="code"><pre>pct start 9300
-pct status 9300
-pct exec 9300 -- systemctl is-system-running</pre></div>
-  <p>ผ่านแล้วค่อยทำตัวถัดไป</p>
-
-  <div class="tip"><p><b>ทำไมต้อง local-lvm ไม่ใช่ NFS อีกอัน</b> เพราะทั้งหมดนี้เกิดจากการที่
-     shared storage ตาย การไปพึ่ง shared storage อีกก้อนคือแก้ปัญหาด้วยของชนิดเดียวกับที่เพิ่งพัง
-     ดิสก์ในตัวเครื่อง compute เป็นที่เดียวที่ไม่ขึ้นกับใคร</p></div>
-
-  <div class="tip"><p><b>ถ้ามี CT แค่ตัวสองตัวและเร่งมาก</b> ปลุกที่เครื่อง backup ตรงๆ ก็ได้
-     (<code class="inl">pct set 8300 --net0 ...bridge=vmbr0...</code> แล้ว
-     <code class="inl">pct start 8300</code>) เร็วกว่าเพราะไม่ต้องก๊อป
-     แต่เป็นทางลัดสำหรับกรณีเล็กเท่านั้น ไม่ใช่แผนหลัก และต้องจำไว้ว่าตอนเอากลับจะคนละเส้นทางกัน</p></div>
+  <h3>ด่านที่จะเจอบ่อยที่สุด</h3>
+  <table>
+    <tr><th>ขึ้นว่า</th><th>แปลว่า</th><th>ทำยังไง</th></tr>
+    <tr><td class="m">GUARD D1 ... is RUNNING</td><td>CT ตัวจริงยังรันอยู่</td>
+        <td>ปิดก่อน สำเนาถือ IP กับ MAC เดียวกัน</td></tr>
+    <tr><td class="m">GUARD D1 ... UNVERIFIED</td><td>ติดต่อเครื่อง compute ไม่ได้</td>
+        <td>ติดต่อไม่ได้ ≠ ปิดอยู่ ต้องแก้ ssh ก่อน</td></tr>
+    <tr><td class="m">GUARD D1 ... onboot: 1</td><td>ปิดอยู่ แต่จะบูตเองเมื่อ storage กลับมา</td>
+        <td><span class="m">pct set 300 --onboot 0</span></td></tr>
+    <tr><td class="m">GUARD D4 ... not ACTIVE</td><td>storage ปลายทางไม่พร้อม</td>
+        <td>ดูชื่อ storage ในคอลัมน์ dst ให้ตรงกับที่เครื่องนั้นมีจริง</td></tr>
+    <tr><td class="m">GUARD D8 ... is locked</td><td>มีอีกเครื่องกำลังทำตัวนี้อยู่</td>
+        <td>รอ หรือดูว่าใครถือ — มันพิมพ์ชื่อเครื่องกับ pid ให้</td></tr>
+  </table>
 </section>
 
 <section id="s4">
-  <div class="eyebrow"><span class="num">4</span><h2>ระหว่างที่รันอยู่บนเครื่อง backup</h2></div>
-  <p>ข้อมูลใหม่ของลูกค้าตอนนี้อยู่บน local-lvm ของเครื่อง compute แต่ละเครื่อง
-     กระจายกันอยู่ ไม่ได้รวมที่เดียว ตัวเลขที่ต้องเฝ้าคือเนื้อที่ของแต่ละเครื่อง</p>
+  <div class="eyebrow"><span class="num">4</span><h2>ขั้น 3 — ก๊อปข้อมูลกลับมาเก็บ ระหว่างที่ 9xxx ยังให้บริการอยู่</h2></div>
+  <div class="stop"><p><b>นี่คือขั้นที่ห้ามข้าม</b> ตั้งแต่วินาทีที่ 9300 เริ่มรับงาน
+     ทุกอย่างที่ลูกค้าทำอยู่บนดิสก์ในตัวเครื่อง compute เครื่องเดียว ไม่มีอะไรก๊อปไปไหนเลย
+     เครื่องมือที่แก้ปัญหา single point of failure อันหนึ่ง เพิ่งสร้างอันใหม่ขึ้นมา
+     <span class="m">ketsync recall</span> คือสิ่งที่ปิดช่องนั้น</p></div>
+
+  <div class="code"><pre><span class="c"># read only, changes nothing</span>
+./ketsync recall --list
+<span class="c"># 9300 -&gt; 8300, repeatable, run it as often as you like</span>
+./ketsync recall --all</pre></div>
+  <p>มันก๊อปจาก 9300 กลับเข้าสำเนา 8300 บนเครื่อง backup — ทิศทางตรงข้ามกับ
+     <span class="m">distribute</span> รอบแรกนานหน่อย รอบต่อๆ ไปย้ายเฉพาะส่วนที่เปลี่ยน
+     สั่งได้บ่อยเท่าที่อยากสั่ง ทุกชั่วโมงก็ได้ ลูกค้ายังใช้งานได้ตามปกติระหว่างนั้น</p>
+  <div class="out"><pre>[300] OK -&gt; 8300 (rc=0) changed=<span class="g">2.2GiB</span> files=161 in 94s</pre></div>
+  <p>ตัวเลข <code class="inl">changed=</code> คือสิ่งที่ต้องเฝ้า พอมันไม่ลดลงแล้ว
+     แปลว่ารอบตัดจริงจะสั้นมาก</p>
+
+  <h3>ทิศทางมาจากไหน — ทำไมสลับข้างไม่ได้</h3>
+  <p>คำสั่งนี้เขียนทับสำเนา DR ด้วย <code class="inl">--delete</code>
+     ถ้าสลับข้างจะลบงานหลายชั่วโมงของลูกค้าทิ้งทันที และไม่มีอะไรให้กู้กลับ
+     มันจึงไม่รับทิศทางเป็นอาร์กิวเมนต์ และไม่ดูวันเวลาไฟล์ตัดสินว่าข้างไหนใหม่กว่า —
+     rsync รักษา mtime ไว้ ไฟล์ในสำเนาจึงอาจดู "ใหม่กว่า" ทั้งที่ข้อมูลเก่ากว่า</p>
+  <p>สิ่งที่มันดูคือ<b>ที่มา</b> ตอน <span class="m">distribute</span> สร้าง 9300
+     มันเขียนบรรทัดหนึ่งลงใน config บอกว่าตัวนี้เกิดจากสำเนาไหนของ CT ไหน
+     ด่าน C3 อ่านบรรทัดนั้น ไม่มีบรรทัดนั้นก็ไม่ทำ นี่คือข้อเท็จจริงที่ PVE ถืออยู่
+     ไม่ใช่การเดา</p>
+
+  <h3>เฝ้าเนื้อที่บนเครื่อง compute ไปด้วย</h3>
   <div class="code"><pre><span class="c"># on each COMPUTE node running a 9xxx container</span>
 free -h
 lvs pve
@@ -296,112 +322,97 @@ df -h /</pre></div>
   <p>RAM ใกล้เต็มแปลว่าย้ายมาเพิ่มไม่ได้แล้ว เนื้อที่ pool ใกล้เต็มอันตรายกว่ามาก:
      thin pool ที่เต็มไม่ได้แค่เขียนไม่ได้ มันทำให้ทั้ง pool กลายเป็น read-only
      ซึ่งลาก CT ทุกตัวบนเครื่องนั้นลงไปด้วย เหลือน้อยกว่า 20% เมื่อไหร่ให้หยุดย้ายเพิ่มทันที</p>
-  <div class="stop"><p><b>ช่วงนี้ไม่มีสำเนาสำรองเลย</b> ตัว 9xxx ที่รันอยู่คือข้อมูลชุดเดียวที่ใหม่ที่สุด
-     ตัว 8xxx ที่เครื่อง backup หยุดอยู่ที่ข้อมูลตอนก่อนเครื่องตาย และไม่มีอะไรก๊อป 9xxx ไปไหนอีก
-     ถ้ามี PBS ให้สั่ง backup ตัวสำคัญไว้ระหว่างนี้ — นี่คือช่วงที่เปราะที่สุดของทั้งเหตุการณ์</p></div>
+  <div class="tip"><p>ถ้ามี PBS สั่ง backup ตัวสำคัญไว้ระหว่างนี้ด้วยก็ยิ่งดี —
+     <span class="m">recall</span> ทำให้มีสำเนาสองที่แล้ว แต่สำรองเพิ่มอีกชั้นไม่เคยเสียหาย</p></div>
 </section>
 
 <section id="s5">
-  <div class="eyebrow"><span class="num">5</span><h2>เครื่อง storage กลับมา — จุดอันตรายที่สุดอยู่ตรงนี้</h2></div>
-  <div class="stop"><p><b>อ่านให้จบก่อนเปิดเครื่อง storage</b> พอมันบูตขึ้นมา cron จะเริ่มทำงานภายใน 15 นาที
-     แล้วมันจะเห็นว่า “ดิสก์ตัวจริงกลับมาแล้ว” จึงก๊อปทับสำเนาตามหน้าที่ของมัน —
-     ทับข้อมูลใหม่ที่ลูกค้าเพิ่งใช้มาหลายชั่วโมงด้วยข้อมูลเก่าตอนก่อนเครื่องตาย และกู้กลับไม่ได้</p></div>
-  <p>มีด่านกันอยู่ชั้นหนึ่งคือ guard R2 — มันจะไม่ยอมเขียนทับสำเนาที่กำลัง<b>รันอยู่</b>
-     แต่พอไหร่ที่คุณสั่งปิดสำเนาเพื่อเอาข้อมูลกลับ ด่านนั้นก็หมดผล
-     ไฟล์ <code class="inl">PAUSE</code> คือด่านที่เหลืออยู่</p>
+  <div class="eyebrow"><span class="num">5</span><h2>ขั้น 4 — เครื่อง storage กลับมา</h2></div>
+  <p>อ่านให้จบก่อนเปิดเครื่อง storage พอมันบูตขึ้นมา cron จะเริ่มทำงานภายใน 15 นาที
+     แล้วมันจะเห็นว่า “ดิสก์ตัวจริงกลับมาแล้ว” จึงก๊อปทับสำเนาตามหน้าที่ของมัน</p>
+
+  <h3>มีด่านกันอยู่แล้ว แต่ให้ใส่ PAUSE ด้วยอยู่ดี</h3>
+  <p>ด่าน R13 ของ <span class="m">replica</span> จะข้าม CT ตัวไหนก็ตามที่มี 9xxx
+     อยู่ในคลัสเตอร์ ตราบใดที่ยังไม่มีใคร <code class="inl">pct destroy 9300</code>
+     สำเนา 8300 ก็จะไม่ถูกเขียนทับ — ด่านนี้ทำงานได้แม้ไม่มีใครทันใส่ PAUSE
+     ซึ่งเป็นสิ่งที่ PAUSE ทำไม่ได้ เพราะตอนเครื่องตายไม่มีใครทันพิมพ์</p>
+  <div class="tip"><p>ถึงอย่างนั้นก็ใส่ PAUSE ด้วย มันคือด่านที่สอง ราคาถูก และเป็นอันเดียว
+     ที่ <span class="m">failback --final</span> ต้องการ</p></div>
+
   <h3>ลำดับที่ปลอดภัย</h3>
   <ol class="steps">
-    <li>เปิดเครื่อง storage ขึ้นมา แต่<b>อย่าเพิ่งให้ cron ทำงาน</b>
+    <li>เปิดเครื่อง storage ขึ้นมา แล้วใส่ PAUSE ทันที
       <div class="code"><pre><span class="c"># on the STORAGE node, immediately after boot</span>
-systemctl stop cron
 touch /root/ketsync/engines/tp/PAUSE</pre></div></li>
     <li>เช็กว่าดิสก์และ storage กลับมาครบ
       <div class="code"><pre>zpool status
 pvesm status
 ./ketsync doctor</pre></div></li>
-    <li>เปิด cron กลับได้ ตอนนี้ <code class="inl">PAUSE</code> กันไว้แล้ว
-      <div class="code"><pre>systemctl start cron</pre></div></li>
+    <li>เริ่มไล่ช่องว่างให้แคบลง ทำสองคำสั่งนี้สลับกันได้เรื่อยๆ ลูกค้ายังใช้งานอยู่
+      <div class="code"><pre><span class="c"># 9300 -&gt; 8300, on the machine driving the DR</span>
+./ketsync recall --all
+<span class="c"># 8300 -&gt; the production image, on the STORAGE node</span>
+./ketsync failback --all</pre></div>
+      <p>ทั้งคู่เป็นเครื่องมือแบบ presync ยิ่งทำหลายรอบ รอบตัดจริงยิ่งสั้น
+         ดูตัวเลข <code class="inl">changed=</code> ของทั้งสองคำสั่ง พอมันไม่ลดแล้วก็พร้อมตัด</p></li>
   </ol>
-  <p>ถ้าเผลอปล่อยให้ cron ทำงานไปก่อนแล้ว ให้รีบสร้าง <code class="inl">PAUSE</code> ทันที
-     แล้วเช็กจาก log ว่ามีตัวไหนถูกก๊อปทับไปหรือยัง</p>
-  <div class="code"><pre>grep -l 'GUARD R2' /root/ketsync/logs/replica-*.log
+  <div class="tip"><p><b>ทำไม failback ยอมทำงานทั้งที่สำเนาปิดอยู่</b>
+     ด่าน B2 เดิมต้องการให้สำเนา<b>รันอยู่</b> เพราะนั่นคือสิ่งที่ทำให้ R2 ข้ามมันไป
+     แต่เคสนี้ไม่มีใครปลุกสำเนาเลย — ข้อมูลไปอยู่ที่ 9300 ต่างหาก
+     B2 จึงยอมเมื่อเห็นว่า 9300 ยังมีอยู่ เพราะตอนนั้น R13 กันให้อยู่แล้ว
+     และกันได้แน่นกว่า R2 ด้วย</p></div>
+
+  <h3>ถ้าเผลอปล่อยให้ cron ทำงานไปก่อน</h3>
+  <div class="code"><pre>grep -l 'GUARD R13' /root/ketsync/logs/replica-*.log
 grep 'ok=' /root/ketsync/logs/replica-*-$(date +%F).log | tail -3</pre></div>
-  <p>บรรทัดที่ขึ้น <code class="inl">GUARD R2</code> คือตัวที่รอดเพราะยังรันอยู่
-     ตัวที่ขึ้นว่า <code class="inl">ok</code> ในรอบนั้นคือตัวที่ถูกทับไปแล้ว</p>
+  <p>บรรทัดที่ขึ้น <code class="inl">GUARD R13</code> คือตัวที่รอด เพราะมี 9xxx อยู่
+     ตัวที่ขึ้นว่า ok ในรอบนั้นคือตัวที่ไม่มี 9xxx และถูกก๊อปทับไปตามปกติ ซึ่งถูกต้องแล้ว</p>
 </section>
 
 <section id="s6">
-  <div class="eyebrow"><span class="num">6</span><h2>เอาข้อมูลกลับเข้าตัวจริง</h2></div>
-  <div class="stop"><p><b>ข้อมูลใหม่อยู่ที่ 9xxx บนเครื่อง compute ไม่ใช่ที่ 8xxx บนเครื่อง backup</b>
-     คำสั่ง <code class="inl">ketsync failback</code> ดึงจากเครื่อง backup เท่านั้น
-     ถ้าคุณย้ายไปรันที่ compute ตามข้อ 3 <b>มันจะดึงข้อมูลเก่ามาทับของใหม่</b>
-     คำสั่งที่ควรจะดึงจาก compute คือ <code class="inl">ketsync recall</code> ซึ่งยังไม่ได้สร้าง
-     ตอนนี้จึงต้องทำด้วยมือ ตามหัวข้อย่อยแรกข้างล่าง</p></div>
-
-  <h3>ก. ถ้าย้ายไปรันที่เครื่อง compute (ตามข้อ 3) — ทำด้วยมือ</h3>
-  <div class="code"><pre><span class="c"># on the COMPUTE node - stop it first, this is the cutover</span>
-pct shutdown 9300
-mkdir -p /mnt/dr-9300
-mount /dev/pve/vm-9300-disk-0 /mnt/dr-9300
-
-<span class="c"># on the STORAGE node - mount the production image, then pull INTO it</span>
-losetup -f --show /tank/hosting/images/300/vm-300-disk-0.raw
-mkdir -p /mnt/back-300
-mount /dev/loop0 /mnt/back-300
-rsync -aHAX --numeric-ids --delete --info=progress2 \
-  root@10.100.1.32:/mnt/dr-9300/ /mnt/back-300/
-sync; umount /mnt/back-300; losetup -d /dev/loop0</pre></div>
-  <p>ทิศทางสำคัญมาก: <b>compute → storage</b> ถ้าสลับข้าง ข้อมูลหลายชั่วโมงที่ลูกค้าเพิ่งใช้หายทันที
-     และกู้ไม่ได้ ก่อนกด Enter ให้อ่านบรรทัด rsync อีกรอบว่าต้นทางคือเครื่อง compute จริง</p>
-  <p>เสร็จแล้วเปิดตัวจริง แล้วข้ามไปข้อ 7 ได้เลย</p>
-  <div class="code"><pre><span class="c"># on the COMPUTE node that owns CT 300</span>
-pct start 300</pre></div>
-
-  <h3>ข. ถ้าปลุกที่เครื่อง backup ตรงๆ (ทางลัดกรณีเล็ก) — ใช้คำสั่งได้</h3>
-  <p>ทำจากเครื่อง storage ตัวโปรแกรมจะดึงข้อมูลจากสำเนาที่ยังรันอยู่บนเครื่อง backup
-     กลับเข้าไฟล์ดิสก์ของตัวจริง ทำซ้ำได้เรื่อยๆ ระหว่างที่ลูกค้ายังใช้งานอยู่</p>
+  <div class="eyebrow"><span class="num">6</span><h2>ขั้น 5 — ตัดกลับตัวจริง</h2></div>
+  <p>ทำทีละ CT ตอนที่พร้อม ไม่ต้องทำทั้งฟลีตพร้อมกัน ช่วงที่ลูกค้าใช้ไม่ได้คือช่วงระหว่าง
+     <code class="inl">pct shutdown 9300</code> กับ <code class="inl">pct start 300</code>
+     ซึ่งถ้าทำขั้น 3 กับ 4 มาดีแล้วจะเหลือเป็นวินาที</p>
   <ol class="steps">
-    <li>ดูสถานะก่อน ไม่แตะอะไร
-      <div class="code"><pre><span class="c"># on the STORAGE node</span>
-cd /root/ketsync
-./ketsync failback --list</pre></div></li>
-    <li>ดึงรอบแรก — รอบนี้นานสุดเพราะดึงเกือบทั้งก้อน ลูกค้ายังใช้งานได้ตามปกติ
-      <div class="code"><pre>./ketsync failback --all</pre></div></li>
-    <li>ดึงซ้ำอีกสองสามรอบ ดูตัวเลข <code class="inl">changed=</code> ของแต่ละ CT
-        พอมันไม่ลดลงแล้ว แปลว่าพร้อมตัดจริง</li>
-    <li><b>ตัดจริง</b> — ปิดสำเนาที่เครื่อง backup ก่อน แล้วดึงรอบสุดท้าย
-      <div class="code"><pre><span class="c"># on the BACKUP node</span>
-pct shutdown 8105
-
-<span class="c"># on the STORAGE node - PAUSE must already exist</span>
-./ketsync failback --ctid 105 --final</pre></div>
-      <p>ถ้าลืมสร้าง <code class="inl">PAUSE</code> มันจะปฏิเสธไม่ยอมทำ และบอกคำสั่งที่ต้องพิมพ์ให้
-         อย่าไปหาทางข้าม — ด่านนั้นกันเรื่องในข้อ 5 อยู่</p></li>
-    <li>เปิดตัวจริงขึ้นมา
-      <div class="code"><pre><span class="c"># on the COMPUTE node that owns this CT</span>
-pct start 105</pre></div></li>
+    <li>ปิดตัวชั่วคราว
+      <div class="code"><pre><span class="c"># on the COMPUTE node running it</span>
+pct shutdown 9300</pre></div></li>
+    <li>ดึงรอบสุดท้ายจาก 9300 เข้าสำเนา
+      <div class="code"><pre>./ketsync recall --ctid 300 --final</pre></div>
+      <p>ต้องปิด 9300 ก่อนถึงจะสั่ง <code class="inl">--final</code> ได้ และถ้ามันปิดอยู่แล้ว
+         แต่ไม่ได้ใส่ <code class="inl">--final</code> มันจะปฏิเสธ — “บังเอิญมันปิดอยู่”
+         กับ “เรากำลังตัดกลับ” เป็นคนละเจตนา</p></li>
+    <li>ดึงรอบสุดท้ายจากสำเนาเข้าไฟล์ดิสก์ตัวจริง
+      <div class="code"><pre><span class="c"># on the STORAGE node - PAUSE must already exist</span>
+./ketsync failback --ctid 300 --final</pre></div>
+      <p>ด่าน B7 จะ snapshot ไฟล์ดิสก์ตัวจริงก่อนเขียนทับ ถ้า snapshot ไม่สำเร็จมันจะไม่ทำ
+         นี่คือทางถอยทางเดียวของขั้นนี้</p></li>
+    <li>เปิดตัวจริง แล้วเปิด onboot กลับ
+      <div class="code"><pre><span class="c"># on the COMPUTE node that owns CT 300</span>
+pct set 300 --onboot 1
+pct start 300</pre></div></li>
   </ol>
+  <div class="warn"><p><b>อย่าเพิ่ง destroy 9300</b> ปล่อยไว้จนกว่าจะเช็กแล้วว่าตัวจริงกลับมาถูกต้อง
+     ตราบใดที่ 9300 ยังอยู่ R13 ก็ยังกันไม่ให้ cron เขียนทับสำเนา — ทางถอยยังอยู่ครบ</p></div>
 </section>
 
 <section id="s7">
-  <div class="eyebrow"><span class="num">7</span><h2>คืนสภาพให้พร้อมสำหรับครั้งหน้า</h2></div>
-  <p>ข้อนี้คนลืมบ่อยที่สุด และถ้าลืมแปลว่าครั้งหน้าจะไม่มีสำเนาให้ใช้</p>
+  <div class="eyebrow"><span class="num">7</span><h2>ขั้น 6 — เก็บกวาด ไม่งั้นครั้งหน้าจะชนกับครั้งนี้</h2></div>
   <ol class="steps">
-    <li>ย้ายสายของสำเนากลับไป bridge ปิดตาย ทุกตัวที่ปลุกไว้
-      <div class="code"><pre><span class="c"># on the BACKUP node</span>
-pct set 8105 --net0 name=eth0,bridge=vmbr99,hwaddr=BC:24:11:AA:BB:CC,ip=10.100.2.55/24,gw=10.100.2.1</pre></div>
-      <p>ถ้าลืม ตัวโปรแกรมจะเตือนทุกรอบว่า <code class="inl">WARN R11</code> — อย่าปล่อยผ่าน
-         สำเนาที่ปิดอยู่แต่ยังต่อเน็ตจริง คือระเบิดเวลาสำหรับวันที่มีคนเผลอเปิดมัน</p></li>
-    <li>เก็บกวาดตัวชั่วคราวบนเครื่อง compute ให้หมด ไม่งั้นครั้งหน้าเลข 9xxx จะชนกัน
-        และเนื้อที่ local-lvm จะหายไปเฉยๆ
-      <div class="code"><pre><span class="c"># on each COMPUTE node - check it is stopped and already pulled back first</span>
+    <li>เช็กก่อนว่าตัวจริงใช้งานได้จริง ไม่ใช่แค่บูตขึ้น — เข้าเว็บ ลองสั่งงาน ดู log ของ CT เอง</li>
+    <li>เก็บกวาดตัวชั่วคราวบนเครื่อง compute ให้หมด
+      <div class="code"><pre><span class="c"># on each COMPUTE node - check it is stopped and already recalled first</span>
 pct status 9300
-pct destroy 9300</pre></div></li>
+pct destroy 9300</pre></div>
+      <p>คำสั่งนี้คือสิ่งที่<b>ปลด R13</b> หลังจากนี้ cron จะกลับมาเขียนทับสำเนา 8300
+         ตามปกติ ทำหลังจากมั่นใจแล้วเท่านั้น เครื่องมือในชุดนี้ไม่มีตัวไหนสั่งเองเลย
+         ด้วยเหตุผลนี้ข้อเดียว</p></li>
     <li>ลบ <code class="inl">PAUSE</code> เพื่อให้เริ่มก๊อปตามปกติอีกครั้ง
       <div class="code"><pre><span class="c"># on the STORAGE node</span>
 rm /root/ketsync/engines/tp/PAUSE</pre></div></li>
     <li>ดูรอบแรกหลังเปิดใหม่ว่าเขียวจริง
-      <div class="code"><pre>./ketsync replica --ctid 105
+      <div class="code"><pre>./ketsync replica --ctid 300
 ./ketsync status</pre></div></li>
   </ol>
   <div class="ok"><p><b>จบแล้วจดไว้หน่อย</b> ว่าติดตรงไหน ใช้เวลาเท่าไหร่ อะไรที่หน้านี้ไม่ได้บอก
@@ -409,9 +420,10 @@ rm /root/ketsync/engines/tp/PAUSE</pre></div></li>
 </section>
 
 <footer>
-  อ่านต่อ: <code class="inl">docs/infrastructure-setup.html</code> ติดตั้งตั้งแต่ศูนย์ ·
+  อ่านต่อ: <code class="inl">docs/index.html</code> สารบัญคู่มือทั้งชุด ·
+  <code class="inl">docs/infrastructure-setup.html</code> ติดตั้งตั้งแต่ศูนย์ ·
   <code class="inl">docs/start-here.html</code> ใช้งานประจำวัน ·
-  <code class="inl">docs/decisions.md</code> section 6 คือแผนของ recall ที่ยังไม่ได้ทำ
+  <code class="inl">docs/decisions.md</code> เหตุผลเบื้องหลังทุกด่าน
 </footer>
 
 </div>

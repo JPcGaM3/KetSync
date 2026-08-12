@@ -232,7 +232,8 @@ send.
 
 ## When the storage node dies
 
-The full runbook is `docs/disaster-recovery.html`. The shape of it:
+The full runbook is `docs/disaster-recovery.html`, and `docs/index.html` says
+which guide to open for what. The shape of a disaster:
 
 ```
 1  stop production coming back by itself
@@ -335,6 +336,7 @@ that is not obvious from the code.
 ketsync                      the dispatcher. No logic of its own
 lib/                         one file per subcommand
 engines/tp/                  the five engines that move data
+docs/index.html              which of the five guides to open (Thai)
 docs/start-here.html         the operator's front door (Thai)
 docs/infrastructure-setup.html   build it from nothing (Thai)
 docs/disaster-recovery.html  the storage node is dead (Thai)

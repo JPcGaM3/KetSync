@@ -110,6 +110,7 @@
     <a href="#s3">3 ตาราง</a>
     <a href="#s3b">ไม่มี hostname</a>
     <a href="#s4">ติดตั้ง</a>
+    <a href="#s4b">ตั้ง sync</a>
     <a href="#s5">ลำดับคำสั่ง</a>
     <a href="#s6">งานประจำ</a>
     <a href="#s7">คำปฏิเสธ</a>
@@ -160,15 +161,16 @@
     <tr><td class="m">./ketsync replica  &lt;flags&gt;</td><td class="m">engines/tp/tp replica</td></tr>
     <tr><td class="m">./ketsync failback &lt;flags&gt;</td><td class="m">engines/tp/tp failback</td></tr>
     <tr><td class="m">./ketsync distribute &lt;flags&gt;</td><td class="m">engines/tp/tp distribute</td></tr>
+    <tr><td class="m">./ketsync recall &lt;flags&gt;</td><td class="m">engines/tp/tp recall</td></tr>
     <tr><td class="m">./ketsync status</td><td class="m">engines/tp/tp status</td></tr>
     <tr><td class="m">./ketsync doctor</td><td>ตรวจฝั่ง ketsync แล้วต่อด้วย <span class="m">tp doctor</span> ให้เลย</td></tr>
     <tr><td class="m">./ketsync tp ...</td><td>ทางลัดตรงไปที่ tp เผื่อมี flag ที่ยังไม่ได้สอน dispatcher</td></tr>
   </table>
-  <div class="tip"><p><b>ทุกคำสั่งใช้งานได้จริง ยกเว้นตัวเดียว</b> —
-     <code class="inl">recall</code> (ดึงข้อมูลจากตัวชั่วคราวบน compute กลับเข้าตัวจริง)
-     ยังเป็นโครงเปล่า สั่งแล้วมันจะบอกเองว่ายังไม่ได้ทำ แล้วออกด้วยรหัส 2 — ตั้งใจให้เป็นแบบนั้น
-     คำสั่งที่ทำงานได้ครึ่งเดียวอันตรายกว่าคำสั่งที่บอกตรงๆ ว่ายังทำไม่ได้
-     ตอนนี้ต้องทำมือ ขั้นตอนอยู่ใน <code class="inl">docs/disaster-recovery.html</code> ข้อ 6ก</p></div>
+  <div class="tip"><p><b>ทุกคำสั่งใช้งานได้จริงแล้วทั้งหมด</b> ไม่มีตัวไหนเป็นโครงเปล่าเหลืออยู่
+     ตัวสุดท้ายที่เพิ่งเสร็จคือ <code class="inl">recall</code>
+     (ดึงข้อมูลจากตัวชั่วคราวบน compute กลับเข้าสำเนาบนเครื่อง backup)
+     ซึ่งเป็นตัวที่ปิดช่องว่างอันตรายที่สุดของทั้ง DR — ดูขั้นที่ 3 ใน
+     <code class="inl">docs/disaster-recovery.html</code></p></div>
 </section>
 
 <section id="s2">
@@ -320,9 +322,85 @@ $EDITOR engines/tp/ctrep.conf             <span class="c"># BW_TOTAL_MB for THIS
   <p>เปลี่ยน role ไม่ได้ย้ายดิสก์ตามไปด้วย คำว่า master ในระบบนี้แปลว่า
      “เครื่องที่เป็นเจ้าของตารางและเป็นคนส่ง” เท่านั้น</p>
 
-  <div class="stop"><p><b>เครื่อง storage อยู่นอก cluster โดยตั้งใจ</b> แปลว่ามัน ssh ไปหา compute node ตรงๆ ไม่ได้
-     และไม่มีวันได้ ตัว failback เลยถามสถานะ CT ผ่าน cluster API ของเครื่อง backup แทน
-     ssh เส้นเดียวที่ต้องมีจริงๆ คือจาก storage ไป backup</p></div>
+  <div class="stop"><p><b>เครื่อง storage อยู่นอก cluster โดยตั้งใจ</b> แปลว่ามันไม่มี DNS
+     และไม่มี <code class="inl">/etc/hosts</code> ของ cluster ทุกอย่างที่คนพิมพ์ในระบบนี้จึงเป็น IP
+     ส่วนชื่อ node ที่ PVE บังคับให้ต้องมี (เพราะ config อยู่ใต้
+     <code class="inl">/etc/pve/nodes/&lt;node&gt;/</code>) ระบบไปถามจาก cluster เอง
+     แล้วเก็บไว้ใน <code class="inl">nodes.map</code> ซึ่งไม่มีใครแก้ด้วยมือ</p>
+  <p>ssh ที่ต้องมีจริงๆ มีสามเส้น: storage → backup (ขาดไม่ได้เลย),
+     storage → compute ทุกเครื่อง (ด่าน B1 ของ failback ถาม
+     <code class="inl">pct status</code> จากเครื่องนั้นโดยตรง เพราะคำถามนี้ไม่ต้องใช้ quorum
+     และยังตอบได้แม้ node นั้นหลุด cluster), และ compute ↔ backup
+     (distribute กับ recall สั่ง rsync ให้ทำงานบนเครื่องปลายทาง)</p></div>
+</section>
+
+<section id="s4b">
+  <div class="eyebrow"><span class="num">4</span><h2>ตั้ง sync ให้ storage เป็น master และ backup เป็น slave</h2></div>
+  <p>หัวข้อนี้คือส่วนที่คนงงกันบ่อยที่สุด สรุปสั้นๆ ก่อน:
+     <b>มีเครื่องเดียวที่แก้ตารางได้ และเป็นคนส่งให้เครื่องอื่น</b> ระบบไม่เลือกให้เอง
+     ไม่มีการโหวต ไม่มีการสลับอัตโนมัติ — เพราะสองเครื่องแยกไม่ออกระหว่าง
+     “อีกฝั่งตายแล้ว” กับ “ฉันติดต่ออีกฝั่งไม่ได้” และถ้าเดาผิดจะกลายเป็นสองเครื่องเขียนทับ
+     dataset เดียวกันพร้อมกัน</p>
+
+  <h3>ตั้งค่าที่ละเครื่อง — ต่างกันแค่สองบรรทัด</h3>
+  <div class="code"><pre><span class="c"># on the STORAGE node - ketsync.conf</span>
+KS_ROLE=master
+KS_MASTER_IP=10.100.1.17      <span class="c"># this machine</span></pre></div>
+  <div class="code"><pre><span class="c"># on the BACKUP node - ketsync.conf</span>
+KS_ROLE=slave
+KS_MASTER_IP=10.100.1.17      <span class="c"># the storage node</span></pre></div>
+  <div class="stop"><p><b>ห้าม scp ไฟล์ ketsync.conf ข้ามเครื่อง</b> ไฟล์นี้มี
+     <code class="inl">KS_ROLE</code> อยู่ ถ้าก๊อปของ master ไปวางที่ slave
+     ทุกเครื่องจะเชื่อว่าตัวเองเป็น master และนั่นคือสภาพที่ทั้งระบบนี้ออกแบบมาเพื่อเลี่ยง
+     ตัว <span class="m">ketsync sync</span> มีบัญชีดำกันไฟล์นี้ไว้ และหยุดทั้งรอบถ้าเจอ</p></div>
+
+  <h3>ไฟล์ไหนถูกส่ง ไฟล์ไหนไม่ถูกส่ง</h3>
+  <table>
+    <tr><th>ไฟล์</th><th>ส่งมั้ย</th><th>ทำไม</th></tr>
+    <tr><td class="m">nodes.tsv</td><td>ส่ง</td><td>ทุกเครื่องต้องเห็น IP ชุดเดียวกัน</td></tr>
+    <tr><td class="m">fleet.tsv</td><td>ส่ง</td><td>เครื่องที่รับช่วงต่อต้องรู้ว่า CT ไหนไปไหน</td></tr>
+    <tr><td class="m">inventory-replica.tsv</td><td>ส่ง</td><td>รายการงานของ replica และ recall</td></tr>
+    <tr><td class="m">inventory-migrate.tsv</td><td>ส่ง</td><td>เหมือนกัน สำหรับ migrate</td></tr>
+    <tr><td class="m">ketsync.conf</td><td><b>ไม่ส่ง</b></td><td>มี KS_ROLE — ส่งแล้วทุกเครื่องเป็น master</td></tr>
+    <tr><td class="m">ctrep.conf · ctmig.conf</td><td><b>ไม่ส่ง</b></td><td>มี BW_TOTAL_MB ซึ่งขึ้นกับสายของแต่ละเครื่อง</td></tr>
+    <tr><td class="m">nodes.map</td><td><b>ไม่ส่ง</b></td><td>สร้างเองจาก cluster ด้วย <span class="m">ketsync doctor</span></td></tr>
+  </table>
+
+  <h3>ส่งจริงๆ</h3>
+  <div class="code"><pre><span class="c"># on the MASTER, after editing any table</span>
+./ketsync sync</pre></div>
+  <p>มันจะไปถามทุกเครื่องใน <code class="inl">nodes.tsv</code> ว่ามี ketsync ติดตั้งอยู่มั้ย
+     เครื่องไหนไม่มีก็ข้ามไปเงียบๆ (compute node ปกติไม่มี) เครื่องไหนติดตั้งไว้คนละ path
+     มันจะบอกชื่อเครื่องนั้นออกมา</p>
+  <div class="warn"><p><b>sync ไม่ใช่ของอัตโนมัติ</b> แก้ตารางที่ master แล้วต้องสั่งเอง
+     ไม่งั้นเครื่อง backup จะถือรายการของเดือนที่แล้วอยู่ โดยไม่มีอะไรบอก</p></div>
+
+  <h3>เจอคำว่า FORKED ทำยังไง</h3>
+  <p>ทุกไฟล์ที่ถูกส่งมีบรรทัด <code class="inl"># generation: N</code> อยู่ข้างใน
+     เลขนี้ใช้เรียงว่าอันไหนใหม่กว่า <b>แต่มันไม่ได้บอกว่าเนื้อในเหมือนกัน</b>
+     ถ้าสองเครื่องมีเลขเท่ากันแต่เนื้อในต่างกัน แปลว่าแตกกันแล้ว — และนี่คือสภาพปกติ
+     ของฟลีตที่เพิ่งติดตั้ง เพราะทุกเครื่องเริ่มจาก generation ที่ติดมากับไฟล์
+     <code class="inl">.sample</code> เหมือนกันหมด</p>
+  <p>ตอนเจอ มันจะหยุดและไม่ส่งอะไรเลย เพราะไม่มีทางรู้ว่าฝั่งไหนถูก</p>
+  <div class="code"><pre><span class="c"># 1. read what actually differs - changes nothing</span>
+./ketsync sync --diff
+
+<span class="c"># 2. edit the file until THIS machine's copy is the right one</span>
+$EDITOR fleet.tsv
+
+<span class="c"># 3. say "mine is the one" - raises the generation above every machine, then pushes</span>
+./ketsync sync --bump fleet.tsv</pre></div>
+  <div class="tip"><p><b>ระบุชื่อไฟล์เสมอ</b> <code class="inl">--bump</code> เฉยๆ
+     จะเคลียร์ทุกไฟล์ที่แตกกันพร้อมกัน ซึ่งถูกต้องก็ต่อเมื่อคุณอ่าน diff ครบทุกไฟล์แล้วจริงๆ</p></div>
+
+  <h3>วันที่ต้องให้เครื่อง backup เป็นคนสั่งแทน</h3>
+  <p>ตอนเครื่อง storage ตาย เครื่อง backup ต้องสั่ง <span class="m">distribute</span>
+     กับ <span class="m">recall</span> ได้ ซึ่ง<b>ทำได้อยู่แล้วโดยไม่ต้องแก้ KS_ROLE</b>
+     — role คุมแค่ว่าใครเป็นคนส่งตาราง ไม่ได้คุมว่าใครสั่งงานได้</p>
+  <p>ที่ต้องแก้ <code class="inl">KS_ROLE=master</code> ที่เครื่อง backup คือกรณีที่
+     ต้อง<b>แก้ตารางแล้วส่งต่อ</b> ระหว่างที่เครื่อง storage ยังไม่กลับมา เช่นย้าย CT
+     ไปเครื่องอื่นแล้วต้องแก้คอลัมน์ dr แก้ด้วยมือหนึ่งบรรทัด แล้วอย่าลืมแก้กลับตอน
+     เครื่อง storage ฟื้น ไม่งั้นจะมีสองเครื่องที่คิดว่าตัวเองเป็นเจ้าของตาราง</p>
 </section>
 
 <section id="s5">
@@ -457,7 +535,8 @@ cp -a /root/tp/state               ./state</pre></div>
 </section>
 
 <footer>
-  อ่านต่อ: <code class="inl">docs/infrastructure-setup.html</code> ติดตั้งตั้งแต่ศูนย์ ·
+  อ่านต่อ: <code class="inl">docs/index.html</code> สารบัญคู่มือทั้งชุด ·
+  <code class="inl">docs/infrastructure-setup.html</code> ติดตั้งตั้งแต่ศูนย์ ·
   <code class="inl">docs/c2v-el.html</code> แปลง CT เป็น VM สาย EL ·
   <code class="inl">docs/c2v-debian.html</code> สาย Debian/Ubuntu ·
   <code class="inl">docs/decisions.md</code> เหตุผลเบื้องหลังทุกการตัดสินใจ ·
