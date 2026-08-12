@@ -248,8 +248,28 @@ log(){
 # without reading timestamps - which is what somebody is actually doing at 2am,
 # scrolling for the container that failed. Deliberately no timestamp on the
 # rule itself: it is furniture, not an event.
+# Three widths of rule, because a daily log holds dozens of rounds and dozens
+# of containers and they are not the same kind of edge. Somebody scrolling at
+# 2am is looking for where THEIR container starts, and a wall of identical
+# rules makes every boundary a candidate.
+#
+#   #  the run itself opens here
+#   =  the container list opens and closes
+#   -  one container ends and the next begins
+#
+# Deliberately no timestamp on any of them: they are furniture, not events.
 LOGSEP='##############################################################################'
-hr(){ printf '%s\n' "$LOGSEP" | tee -a "$LOG"; }
+LOGSEP2='=============================================================================='
+LOGSEP3='------------------------------------------------------------------------------'
+hr(){  printf '%s\n' "$LOGSEP"  | tee -a "$LOG"; }
+hr2(){ printf '%s\n' "$LOGSEP2" | tee -a "$LOG"; }
+hr3(){ printf '%s\n' "$LOGSEP3" | tee -a "$LOG"; }
+
+# The first container opens the block, the rest are separated from the one
+# before. The state lives here rather than at the call site, so a loop that
+# grows a `continue` on the day somebody adds a guard cannot get it wrong.
+HR_CT_SEEN=0
+hr_ct(){ if (( HR_CT_SEEN )); then hr3; else hr2; HR_CT_SEEN=1; fi; }
 
 # Byte counts a human reads. Identical in all three engines on purpose - when
 # lib/ lands they collapse into one, and a divergence now would make that merge
@@ -809,7 +829,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   # The rule goes here, not further down: a guard that refuses this row has
   # to print INSIDE the block that names the row, or the reader is left with
   # a GUARD line and no idea which migration it belonged to.
-  hr
+  hr_ct
   log "[$new_ctid] CT $old_ctid on $old_node  ->  CT $new_ctid on $new_node, storage '$storage'"
 
   # --- resolve the image path from PVE itself, per row ---
@@ -1143,7 +1163,7 @@ for s in /run/ctmig-$$-*.sock; do
   [[ -S "$s" ]] && ssh -O exit -o ControlPath="$s" nohost >/dev/null 2>&1
 done
 
-hr
+hr2
 log "lane '$LANE' finished: ok=$ok skipped=$skipped frozen=$frozen failed=$failed"
 # Said once at the end as well as once per CT, because the per-CT lines scroll
 # past and this is the line an operator reads before deciding to run it for

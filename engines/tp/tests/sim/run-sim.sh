@@ -342,6 +342,12 @@ if scenario "1: happy path, two CTs on two storages"; then
   # convergence number the whole presync workflow is steered by. That last one
   # was computed and filed into state/<ctid>.json and never shown to anybody.
   has "##############################################################################"
+  # three levels, because they are three different kinds of edge: the run, the
+  # container list, and one container giving way to the next. One rule for all
+  # three makes every boundary a candidate when somebody is scrolling for the
+  # container that did not come back.
+  has "=============================================================================="
+  has "------------------------------------------------------------------------------"
   has "[251] CT 251 on 10.100.1.11  ->  CT 251 on 10.100.1.31, storage 'tank-hdd-nas'"
   has "[251] stats: files=161 changed="
   # The rsync option set, which nothing checked until now: stripping -x,

@@ -375,6 +375,19 @@ mutant "a pinned BKP_NODE is adopted instead of checked" \
   's{\Qelif [[ "\E\$_bknode\Q" != "\E\$BKP_NODE\Q" ]]; then\E}{elif false; then}' \
   38b
 
+
+# ---------- the three levels of rule --------------------------------------
+# Flattening them back to one is invisible until the night somebody is
+# scrolling a daily log for the container that did not come back, and every
+# boundary in it looks the same. It costs nothing to write and it is exactly
+# the kind of line a later reader tidies away.
+mutant "every rule is the same again, so no boundary says which kind it is" \
+  's{\QLOGSEP2=\E.=+.}{LOGSEP2="\$LOGSEP"}' \
+  1
+
+mutant "the container list never opens or closes, only the run does" \
+  's{^(\s*)hr_ct$}{\$1hr}m' \
+  1
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

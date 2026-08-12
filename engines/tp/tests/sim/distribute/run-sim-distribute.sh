@@ -504,6 +504,13 @@ if scenario "29: --all places every row that has a target and reports the rest";
   cfg_exists pve01 9300
   cfg_exists pve02 9113
   has "ok=2 skipped=0 failed=1"
+  # three levels, because they are three different kinds of edge: the run, the
+  # container list, and one container giving way to the next. Only a multi-CT
+  # run shows all three, which is why they are asserted here and not on the
+  # single-container happy path.
+  has "##############################################################################"
+  has "=============================================================================="
+  has "------------------------------------------------------------------------------"
   done_scenario
 fi
 

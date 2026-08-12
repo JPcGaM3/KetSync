@@ -327,6 +327,8 @@ if scenario "1: happy path, three promoted copies come back into their images"; 
   # than stopping the batch; the rule is what makes the two that failed
   # findable in the log afterwards.
   has "##############################################################################"
+  has "=============================================================================="
+  has "------------------------------------------------------------------------------"
   # the DR generation replaced the pre-disaster one, and --delete took the
   # files that only ever existed on the production side with it
   image_has 105 "generation 7"; image_hasnt 105 "stale.log"

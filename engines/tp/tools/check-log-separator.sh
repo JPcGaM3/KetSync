@@ -32,7 +32,7 @@ cd "$ROOT" || exit 1
 EXEMPT="bkp02-setup.sh"
 
 rc=0
-for f in ct-migrate.sh ct-replica.sh ct-failback.sh tp \
+for f in ct-migrate.sh ct-replica.sh ct-failback.sh ct-distribute.sh tp \
          tools/c2v-prepare.sh tools/c2v-inside.sh tools/c2v-inside-deb.sh \
          bkp02-setup.sh; do
   [[ -f "$f" ]] || { echo "  missing: $f"; rc=1; continue; }
@@ -56,6 +56,34 @@ for f in ct-migrate.sh ct-replica.sh ct-failback.sh tp \
     echo "    greppable and the same in every tool"
     rc=1; continue
   fi
+
+  # The engines have three levels, and the two quieter ones are the ones that
+  # can be deleted without anything obviously breaking: the log still separates,
+  # it just stops saying WHICH kind of boundary each rule is. That is exactly
+  # the "decoration" this file exists to stop. The c2v tools are excluded -
+  # they convert one guest by hand and have no container loop to separate.
+  case "$f" in ct-*.sh)
+    for lvl in "LOGSEP2='=+'|hr2" "LOGSEP3='-+'|hr3"; do
+      sep="${lvl%%|*}"; fn="${lvl##*|}"
+      if ! grep -qE "^$sep" "$f"; then
+        echo "$f is missing $sep - the three levels of rule are one rule again"
+        rc=1; continue 2
+      fi
+      if ! grep -qE "^$fn\(\)" "$f"; then
+        echo "$f defines the separator but not $fn() to print it"
+        rc=1; continue 2
+      fi
+    done
+    # hr2 is called directly; hr3 only through hr_ct, which is the point of it
+    if ! grep -qE '(^|[;[:space:]])hr2($|[;[:space:]])' "$f"; then
+      echo "$f defines hr2() but never calls it - the container block never closes"
+      rc=1; continue
+    fi
+    if ! grep -qE '(^|[;[:space:]])hr_ct($|[;[:space:]])' "$f"; then
+      echo "$f defines hr_ct() but never calls it - every container edge looks the same"
+      rc=1; continue
+    fi
+  ;; esac
 done
 
 [[ $rc -eq 0 ]] && echo "log separator: clean"

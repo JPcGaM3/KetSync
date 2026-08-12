@@ -391,6 +391,10 @@ if scenario "1: happy path, two CTs, two source storages, two dest tiers"; then
   # the log is a deliverable: a rule between containers, and a header naming
   # which copy this block is about.
   has "##############################################################################"
+  # the run, the container list, and between containers - three edges, three
+  # rules, so a boundary says which kind it is
+  has "=============================================================================="
+  has "------------------------------------------------------------------------------"
   has "[105] CT 105 on tank-hdd-nas  ->  copy 8105 on bkp02, dest=hdd"
   copy_has /replica-hdd/ct/subvol-8105-disk-0 rootfs.txt
   copy_has /replica-ssd/ct/subvol-8113-disk-0 rootfs.txt

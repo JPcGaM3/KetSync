@@ -299,8 +299,28 @@ log(){
 # without reading timestamps - which is what somebody is actually doing at 2am,
 # scrolling for the container that failed. Deliberately no timestamp on the
 # rule itself: it is furniture, not an event.
+# Three widths of rule, because a daily log holds dozens of rounds and dozens
+# of containers and they are not the same kind of edge. Somebody scrolling at
+# 2am is looking for where THEIR container starts, and a wall of identical
+# rules makes every boundary a candidate.
+#
+#   #  the run itself opens here
+#   =  the container list opens and closes
+#   -  one container ends and the next begins
+#
+# Deliberately no timestamp on any of them: they are furniture, not events.
 LOGSEP='##############################################################################'
-hr(){ printf '%s\n' "$LOGSEP" | tee -a "$LOG"; }
+LOGSEP2='=============================================================================='
+LOGSEP3='------------------------------------------------------------------------------'
+hr(){  printf '%s\n' "$LOGSEP"  | tee -a "$LOG"; }
+hr2(){ printf '%s\n' "$LOGSEP2" | tee -a "$LOG"; }
+hr3(){ printf '%s\n' "$LOGSEP3" | tee -a "$LOG"; }
+
+# The first container opens the block, the rest are separated from the one
+# before. The state lives here rather than at the call site, so a loop that
+# grows a `continue` on the day somebody adds a guard cannot get it wrong.
+HR_CT_SEEN=0
+hr_ct(){ if (( HR_CT_SEEN )); then hr3; else hr2; HR_CT_SEEN=1; fi; }
 
 # A failback is the one time the replica holds NEWER data than the source, and
 # R2 only protects a copy while it is RUNNING. The moment you shut the copy
@@ -925,7 +945,7 @@ for CT in "${CTS[@]}"; do
   # The rule goes after the lane filter, so a lane never prints a block for a
   # CT that belongs to the other one - and before the guards, so a guard that
   # refuses this CT prints inside the block that names it.
-  hr
+  hr_ct
   log "[$CT] CT $CT on $sid  ->  copy $TGT on $BKP_NODE, dest=$DEST"
 
   # --- destination must be resolvable before any data moves ---
@@ -1209,7 +1229,7 @@ done
 end_iteration          # closes out the LAST CT; the EXIT trap then finds nothing
 
 # ---------- summary + healthcheck ----------
-hr
+hr2
 log "=== lane '$LANE' finished: ok=$ok skipped=$skipped failed=$failed ==="
 # Said once at the end as well as once per CT: the per-CT lines scroll past,
 # and this is the line an operator reads before running it for real.
