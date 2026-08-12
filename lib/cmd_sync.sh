@@ -41,9 +41,10 @@
 #    ketsync sync              push
 #    ketsync sync --dry-run    say what would go, send nothing
 #    ketsync sync --diff       show what differs, send nothing
-#    ketsync sync --bump       raise this machine's generation on the files
-#                              that have forked, then push. Typing it is the
-#                              human saying "my copy is the right one"
+#    ketsync sync --bump <f>   raise this machine's generation on ONE forked
+#                              file and push it. Typing it is the human saying
+#                              "my copy is the right one"
+#    ketsync sync --bump       the same, for every forked file at once
 #    ketsync sync --to <ip>    one machine only
 # =============================================================================
 # FLEET-WIDE files only: the same bytes are correct on every machine.
@@ -56,10 +57,19 @@
 #
 # The engines' inventories ARE here: they are the fleet's work lists, they are
 # what a machine taking over needs, and a backup node holding a stale one is a
-# backup node that replicates the wrong containers. ctrep.conf and ctmig.conf
-# are not - they mix fleet-wide tuning with per-machine addresses (BKP_SSH is
-# "the other machine", which is a different machine depending on who is asking),
-# and splitting them is a separate job.
+# backup node that replicates the wrong containers.
+#
+# ctrep.conf and ctmig.conf are not, and the reason written here used to be
+# wrong: it claimed BKP_SSH is "a different machine depending on who is asking".
+# It is not. BKP_SSH is the backup node for every engine on every machine, and
+# on the backup node it points at itself - the same value fleet-wide. What
+# actually differs is BW_TOTAL_MB, because two machines do not have the same
+# link. Everything else in ctrep.conf is identical everywhere and would be
+# correct to sync, which matters because ct-distribute.sh reads that file and
+# distribute is what you run from the backup node during a disaster. Splitting
+# it into a synced part and a per-machine part is a job of its own. Until then
+# the whole file stays here, because syncing a bandwidth ceiling onto a machine
+# whose link cannot carry it is a worse failure than maintaining it twice.
 KS_SYNCED=(nodes.tsv fleet.tsv
            engines/tp/inventory-replica.tsv
            engines/tp/inventory-migrate.tsv)
@@ -88,12 +98,20 @@ ks_remote_base(){ # $1 = ip -> the base if ketsync is there, empty if not
 }
 
 cmd_sync(){
-  local dry=0 diff=0 bump=0 target="" f ip gen rgen n=0 bad=0 forked=0
+  local dry=0 diff=0 bump=0 bump_only="" target="" f ip gen rgen n=0 bad=0 forked=0
   while (( $# )); do
     case "$1" in
       --dry-run) dry=1; shift;;
       --diff)    diff=1; shift;;
-      --bump)    bump=1; shift;;
+      # --bump on its own settles EVERY forked file, which is fine when you
+      # have read every diff and meant all of them. It is not fine when you
+      # were confident about one and had not thought about the other: the two
+      # inventories forking together is the ordinary case, and one command
+      # silently deciding both is how the file nobody looked at gets
+      # overwritten. --bump <path> settles one.
+      --bump)    bump=1
+                 if [[ $# -ge 2 && "$2" != --* ]]; then bump_only="$2"; shift 2
+                 else shift; fi;;
       # NOT target="$(require_node "$2")". die() exits, and an exit inside a
       # command substitution ends the SUBSHELL - the refusal would be printed
       # and then the run would carry on with an empty target, which means every
@@ -106,6 +124,11 @@ cmd_sync(){
     esac
   done
   (( diff && bump )) && die "--diff shows, --bump changes. Read before you write."
+  if [[ -n "$bump_only" ]]; then
+    local _ok=0 _s
+    for _s in "${KS_SYNCED[@]}"; do [[ "$_s" == "$bump_only" ]] && _ok=1; done
+    (( _ok )) || die "--bump '$bump_only' is not one of the synced files: ${KS_SYNCED[*]}"
+  fi
 
   [[ "$KS_ROLE" == master ]] || die "this machine is '$KS_ROLE'; only the master pushes. Promote it first (ketsync role)."
   [[ -f "$KS_NODES" ]] || die "no $(basename "$KS_NODES") - there is nowhere to push to"
@@ -194,8 +217,12 @@ cmd_sync(){
         key="$ip|$f"
         [[ "${RTEXT[$key]}" == "$(cat "$KS_BASE/$f")" ]] && continue
         log "--- $f: here (<) against $ip (>)"
+        # say(), not log(): a timestamp in front of every line of a diff makes
+        # it unreadable, and a diff you cannot read is the same as not having
+        # printed one. The log copy still carries the time, the same way
+        # doctor's report does.
         diff <(cat "$KS_BASE/$f") <(printf '%s\n' "${RTEXT[$key]}") \
-          | while IFS= read -r _l; do log "    $_l"; done
+          | while IFS= read -r _l; do say "    $_l"; done
         bad=1
       done
     done
@@ -213,8 +240,10 @@ cmd_sync(){
     log "  right, and this command cannot know which that is."
     log "  see it:     ketsync sync --diff"
     log "  settle it:  edit this machine's copy until it is the one you want,"
-    log "              then  ketsync sync --bump  - which raises the generation"
-    log "              here and sends it. Typing --bump is you saying so."
+    log "              then  ketsync sync --bump <file>  - which raises the"
+    log "              generation here and sends it. Typing it is you saying so."
+    log "              --bump with no file settles ALL of them at once, which is"
+    log "              only what you want if you have read every diff above."
     exit 1
   fi
 
@@ -223,8 +252,17 @@ cmd_sync(){
     if (( ! forked )); then
       log "  nothing has forked - --bump had nothing to raise"
     fi
+    # Naming a file that is not forked is a mistake worth stopping for: either
+    # you meant a different file, or somebody else settled this one already and
+    # what you are looking at is not what you think it is.
+    if [[ -n "$bump_only" && -z "${FORK[$bump_only]:-}" ]]; then
+      log "ERROR: $bump_only has not forked - nothing to raise, and nothing was sent"
+      log "ERROR:   run  ketsync sync --diff  and name a file that is listed there."
+      exit 2
+    fi
     local newgen top
     for f in "${!FORK[@]}"; do
+      [[ -n "$bump_only" && "$f" != "$bump_only" ]] && continue
       gen="$(ks_generation "$KS_BASE/$f")"
       top="$gen"
       for ip in ${targets[@]+"${targets[@]}"}; do
@@ -234,6 +272,14 @@ cmd_sync(){
       sed -i.bak "s/^#[[:space:]]*generation:[[:space:]]*[0-9][0-9]*/# generation: $newgen/" "$KS_BASE/$f" \
         && rm -f "$KS_BASE/$f.bak"
       log "  $f generation $gen -> $newgen (this machine's copy is now the one)"
+    done
+    # A file left forked has not been settled, and the run has not finished the
+    # job even though it pushed something. Say so with the exit code, or the
+    # next person reads "sync finished" and believes the fleet agrees.
+    for f in "${!FORK[@]}"; do
+      [[ -n "$bump_only" && "$f" != "$bump_only" ]] || continue
+      log "  $f is still FORKED - --bump named only $bump_only"
+      bad=1
     done
   fi
 

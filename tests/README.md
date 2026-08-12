@@ -32,8 +32,8 @@ its first run.
                      green suite means nothing until you have watched it go red
                      for the right reason
 
-    make test-ketsync       17 scenarios
-    make mutation-ketsync   14 mutations
+    make test-ketsync       21 scenarios
+    make mutation-ketsync   19 mutations
 
 `role` and `doctor` are next. Neither writes to another machine, which is why
 they are second rather than first - but `doctor` refreshes `nodes.map`, and a

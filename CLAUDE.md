@@ -51,7 +51,7 @@ stub when `engines/tp/ct-distribute.sh` was written, with 34 scenarios and 32
 mutations behind it - which is the bar for the next one.
 
 **8. Nothing that writes to a real machine ships without a simulator.** Read
-`tests/README.md`. `sync` has one - 17 scenarios and 14 mutations - and writing
+`tests/README.md`. `sync` has one - 21 scenarios and 19 mutations - and writing
 it found three bugs that had been live on the fleet, none of which review had
 caught. `role` and `doctor` still do not, and that is the remaining debt. A
 mutation that proves the simulator can fail is part of the simulator, not a
@@ -61,8 +61,8 @@ follow-up.
 
     make lint     # both layers: bash -n, shellcheck, the language rule, embeds
                   # the language rule is enforced on BOTH docs/ trees now
-    make test     # both layers: 221 tp scenarios + 17 for ketsync sync
-    make mutation # 187 known bugs put back. None may survive
+    make test     # both layers: 221 tp scenarios + 21 for ketsync sync
+    make mutation # 192 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

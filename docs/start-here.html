@@ -269,9 +269,13 @@
 
 <section id="s4">
   <div class="eyebrow"><span class="num">4</span><h2>ติดตั้งที่เครื่องไหนบ้าง</h2></div>
-  <p>ตัว engine ทั้งหมดรันบนเครื่อง storage เครื่องเดียว เครื่องอื่นไม่ต้องลงอะไรเลย
-     นอกจาก ssh key กับ storage ที่ตั้งชื่อให้ตรงกัน</p>
-  <div class="code"><pre><span class="c"># on the storage node only</span>
+  <p><b>สองเครื่อง</b> — เครื่อง storage กับเครื่อง backup ส่วน compute node ไม่ต้องลงอะไรเลย
+     มันแค่ต้องมี ssh key กับตั้งชื่อ storage ให้ตรงกัน</p>
+  <div class="warn"><p><b>ต้องอยู่ path เดียวกันทุกเครื่อง</b> ใช้
+     <code class="inl">/root/ketsync</code> ให้เหมือนกันหมด ไม่ใช่เรื่องความสวยงาม —
+     <code class="inl">ketsync sync</code> ส่งไปที่ path ที่ตัวมันเองติดตั้งอยู่ ถ้าอีกเครื่องเก็บไว้ที่อื่น
+     ตารางจะไม่ไปถึงเลย ตอนนี้มันฟ้องชื่อเครื่องออกมาให้แล้ว แต่ก่อนหน้านี้เงียบสนิท</p></div>
+  <div class="code"><pre><span class="c"># on the STORAGE node - this is the master</span>
 git clone &lt;this repo&gt; /root/ketsync
 cd /root/ketsync
 
@@ -284,6 +288,38 @@ cp inventory-replica.sample.tsv  inventory-replica.tsv
 cp inventory-migrate.sample.tsv  inventory-migrate.tsv   <span class="c"># only while migrating</span></pre></div>
   <p>แก้ <code class="inl">nodes.tsv</code> ให้ครบทุกเครื่องก่อนอย่างอื่น เพราะทุก IP ที่ระบบนี้จะใช้มาจากไฟล์นี้ที่เดียว
      ถ้าเครื่องไหนไม่มีแถวในนี้ ระบบจะหยุดแล้วบอก ไม่เดา IP ให้</p>
+
+  <h3>เครื่อง backup ต้องมีด้วย และต้องทำวันธรรมดา</h3>
+  <p>ไม่ใช่เพื่อรัน replica — มันรันไม่ได้ ดูหัวข้อถัดไป — แต่เพราะวันที่เครื่อง storage ตาย
+     เครื่องที่เก็บโค้ดไว้ก็ตายไปด้วย เครื่อง backup คือที่ที่คุณจะยืนสั่ง
+     <code class="inl">distribute</code> ตอนนั้น</p>
+  <div class="code"><pre><span class="c"># on the BACKUP node - same path, on purpose</span>
+git clone &lt;this repo&gt; /root/ketsync
+cd /root/ketsync
+
+cp ketsync.conf.sample  ketsync.conf     <span class="c"># KS_ROLE=slave</span>
+$EDITOR engines/tp/ctrep.conf             <span class="c"># BW_TOTAL_MB for THIS machine</span>
+./ketsync doctor                          <span class="c"># builds nodes.map here</span></pre></div>
+  <p>ตาราง 4 ไฟล์ (<code class="inl">nodes.tsv</code>, <code class="inl">fleet.tsv</code>,
+     inventory ทั้งสอง) ไม่ต้องก๊อปมา เดี๋ยว <code class="inl">ketsync sync</code> ส่งมาให้เอง
+     ส่วน <code class="inl">.conf</code> ทั้งหมดกับ <code class="inl">nodes.map</code>
+     ไม่มีวันถูกส่ง ต้องทำเองที่เครื่องนั้น เพราะมันเป็นของเฉพาะเครื่อง</p>
+  <p><code class="inl">ctrep.conf</code> มาพร้อม clone อยู่แล้ว ที่ต้องดูคือ
+     <code class="inl">BW_TOTAL_MB</code> ให้ตรงกับสายของเครื่องนั้น ค่าที่เหลือใน
+     ไฟล์นี้เหมือนกันทุกเครื่อง — <code class="inl">distribute</code> อ่านไฟล์นี้ตอน DR</p>
+
+  <h3>เครื่อง backup ทำอะไรได้ ทำอะไรไม่ได้</h3>
+  <table>
+    <tr><th>คำสั่ง</th><th>สั่งจากเครื่อง backup ได้มั้ย</th></tr>
+    <tr><td class="m">sync · role · doctor · status</td><td>ได้</td></tr>
+    <tr><td class="m">distribute</td><td>ได้ — และนี่คือเหตุผลหลักที่ต้องลงไว้</td></tr>
+    <tr><td class="m">replica · failback · migrate</td>
+        <td><b>ไม่ได้ และจะไม่ได้ตลอดไป</b> ทั้งสามตัวทำ ZFS snapshot กับ loop-mount
+        ไฟล์ image ของจริง ซึ่งอยู่บนเครื่อง storage</td></tr>
+  </table>
+  <p>เปลี่ยน role ไม่ได้ย้ายดิสก์ตามไปด้วย คำว่า master ในระบบนี้แปลว่า
+     “เครื่องที่เป็นเจ้าของตารางและเป็นคนส่ง” เท่านั้น</p>
+
   <div class="stop"><p><b>เครื่อง storage อยู่นอก cluster โดยตั้งใจ</b> แปลว่ามัน ssh ไปหา compute node ตรงๆ ไม่ได้
      และไม่มีวันได้ ตัว failback เลยถามสถานะ CT ผ่าน cluster API ของเครื่อง backup แทน
      ssh เส้นเดียวที่ต้องมีจริงๆ คือจาก storage ไป backup</p></div>
@@ -345,10 +381,36 @@ cp inventory-migrate.sample.tsv  inventory-migrate.tsv   <span class="c"># only 
     <tr><td>ดูว่ารอบล่าสุดของแต่ละ CT เป็นยังไง</td><td class="m">./ketsync status</td></tr>
     <tr><td>เครื่อง storage ตาย ต้องกระจาย CT ไปรันที่ compute</td><td class="m">./ketsync distribute --list</td></tr>
     <tr><td>ตรวจว่าทุกอย่างต่อกันติดไหม</td><td class="m">./ketsync doctor</td></tr>
+    <tr><td>ส่งตารางที่แก้แล้วไปให้ทุกเครื่อง</td><td class="m">./ketsync sync</td></tr>
+    <tr><td>เครื่องนี้เป็นอะไรอยู่</td><td class="m">./ketsync role</td></tr>
   </table>
   <p>failback เริ่มด้วย <code class="inl">--list</code> เสมอ มันจะบอกว่าตอนนี้ CT ตัวไหนพร้อมเอากลับบ้าง
      และเครื่องไหนที่คุยไม่ได้ ห้ามข้ามไป <code class="inl">--final</code> เลย เพราะ
      <code class="inl">--final</code> คือรอบที่ทับ image ตัวจริง</p>
+
+  <h3>แก้ตารางแล้วต้องสั่ง sync เอง</h3>
+  <p>ไม่มี cron ไม่มีอะไรทำให้อัตโนมัติ แก้ตารางที่เครื่อง master แล้วต้องพิมพ์
+     <code class="inl">./ketsync sync</code> เอง ถ้าลืม เครื่อง backup จะถือรายการของเดือนที่แล้ว
+     และไม่มีอะไรบอกคุณเลย</p>
+  <p>ที่ส่งคือ 4 ตาราง — <code class="inl">nodes.tsv</code>, <code class="inl">fleet.tsv</code>
+     และ inventory ทั้งสอง ที่ไม่ส่งคือ <code class="inl">.conf</code> ทุกไฟล์
+     กับ <code class="inl">nodes.map</code> เพราะ <code class="inl">ketsync.conf</code>
+     มีบรรทัด <code class="inl">KS_ROLE</code> อยู่ ถ้าส่งไป ทุกเครื่องจะคิดว่าตัวเองเป็น master</p>
+  <p>ถ้าเจอคำว่า <b>FORKED</b> แปลว่าสองเครื่องถือ generation เลขเดียวกันแต่เนื้อไฟล์ไม่เหมือนกัน
+     ซึ่งเป็นสภาพปกติของเครื่องที่เพิ่งติดตั้ง เพราะทุกเครื่องเริ่มที่เลขเดียวกันจาก
+     <code class="inl">.sample</code> ตอนนั้น sync จะหยุดและไม่ส่งอะไรเลย — มันไม่รู้ว่าฝั่งไหนถูก
+     ไล่ตามนี้</p>
+  <table>
+    <tr><th>ทำอะไร</th><th>สั่ง</th></tr>
+    <tr><td>ดูว่าต่างกันตรงไหน ไม่เขียนอะไร</td><td class="m">./ketsync sync --diff</td></tr>
+    <tr><td>แก้ไฟล์ที่เครื่องนี้ให้เป็นอันที่ถูก</td><td class="m">$EDITOR &lt;file&gt;</td></tr>
+    <tr><td>ยืนยันว่าของเครื่องนี้คือของถูก ทีละไฟล์</td><td class="m">./ketsync sync --bump &lt;file&gt;</td></tr>
+    <tr><td>ยืนยันทุกไฟล์ที่แตกกันพร้อมกัน</td><td class="m">./ketsync sync --bump</td></tr>
+  </table>
+  <p>ปกติ inventory สองไฟล์จะแตกพร้อมกัน แนะนำให้ระบุชื่อไฟล์ทีละอัน —
+     <code class="inl">--bump</code> เปล่าๆ ตัดสินให้ทุกไฟล์ในรอบเดียว
+     ซึ่งดีถ้าคุณอ่าน diff ครบทุกอันแล้ว แต่ถ้าอ่านแค่อันเดียว
+     อีกอันก็ถูกทับไปโดยที่ยังไม่ได้คิด</p>
   <div class="stop"><p><b>ไม่มี engine ตัวไหนสั่งเปิดหรือปิด CT ให้</b> ทุกตัวจะพิมพ์คำสั่ง
      <code class="inl">pct start</code> ออกมาให้คนกด เพราะจังหวะที่ service ลูกค้ากลับมา
      เป็นจังหวะที่ต้องมีคนนั่งดูหน้าจออยู่</p></div>

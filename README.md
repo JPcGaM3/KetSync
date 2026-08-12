@@ -113,8 +113,8 @@ engines/tp/inventory-replica.tsv   a work list: which CTs to copy nightly
 
 ```bash
 make lint       # both layers: bash -n, shellcheck, the language rule, doc embeds
-make test       # 221 tp scenarios + 17 for ketsync sync, the dispatcher, c2v, python
-make mutation   # 187 known bugs put back one at a time; none may survive
+make test       # 221 tp scenarios + 21 for ketsync sync, the dispatcher, c2v, python
+make mutation   # 192 known bugs put back one at a time; none may survive
 ```
 
 `make -C engines/tp test-replica` and friends still work if you want one engine.
@@ -125,8 +125,8 @@ make mutation   # 187 known bugs put back one at a time; none may survive
 still a stub that says so and exits 2 — a command that half works is worse than
 one that admits it does not, especially the one you reach for during a DR.
 
-`engines/tp` is tested hard. `ketsync` is now partly tested: `sync` has 17
-scenarios and 14 mutations, and writing them found three bugs that had been
+`engines/tp` is tested hard. `ketsync` is now partly tested: `sync` has 21
+scenarios and 19 mutations, and writing them found three bugs that had been
 live on the fleet. `role` and `doctor` still have none, and `make test` says so
 on every run. Read `tests/README.md` before adding anything here that writes to
 a real machine.

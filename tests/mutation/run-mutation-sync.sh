@@ -185,6 +185,33 @@ mutant "a table with no generation line is pushed anyway" \
   's{\Q    [[ -n "\E\$gen\Q" ]] || \E}{    [[ 1 ]] || }' \
   16
 
+# ---------- --bump names one file, or all of them ---------------------------
+# Two inventories forking at once is the ordinary shape of a real fork, so one
+# command deciding both is how the file nobody read gets overwritten.
+mutant "--bump <file> settles every forked file anyway" \
+  's{\Q      [[ -n "\E\$bump_only\Q" && "\E\$f\Q" != "\E\$bump_only\Q" ]] && continue\E}{      :}' \
+  10c
+
+mutant "a file left forked does not stop the run from reading as finished" \
+  's{\Q      log "  \E\$f\Q is still FORKED - --bump named only \E\$bump_only\Q"\E\n\Q      bad=1\E}{      log "  \$f is still FORKED - --bump named only \$bump_only"}' \
+  10c
+
+mutant "--bump accepts a file that has not forked and raises nothing" \
+  's{\Q    if [[ -n "\E\$bump_only\Q" && -z "\E\$\{FORK\[\$bump_only\]:-\}\Q" ]]; then\E}{    if false; then}' \
+  10d
+
+mutant "--bump accepts a path that is not a synced file at all" \
+  's{\Q    (( _ok )) || die "--bump\E}{    (( 1 )) || die "--bump}' \
+  10e
+
+# ---------- a diff has to be readable ---------------------------------------
+# say() prints the body clean and logs it with a time. log() puts a timestamp in
+# front of every line, which is what made the first real --diff on the fleet
+# unreadable - and a diff nobody can read is the same as not printing one.
+mutant "every line of the diff body gets a timestamp again" \
+  's{\Q          | while IFS= read -r _l; do say "    \E\$_l\Q"; done\E}{          | while IFS= read -r _l; do log "    \$_l"; done}' \
+  9b
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

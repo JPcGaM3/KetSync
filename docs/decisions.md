@@ -67,11 +67,24 @@ command meant to keep everyone consistent. It was live in `cmd_sync.sh` until
 somebody read the file list out loud. There is a denylist now, and it stops the
 run rather than warning.
 
-`ctrep.conf` and `ctmig.conf` are also excluded, for a softer reason: they mix
-fleet-wide tuning (bandwidth, retry counts) with per-machine addresses
-(`BKP_SSH` means "the other machine", which is a different machine depending on
-who is asking). Splitting them into a shared part and a local part is a job of
-its own and has not been done.
+`ctrep.conf` and `ctmig.conf` are also excluded, and the reason given here used
+to be wrong. It said they mix fleet-wide tuning with per-machine addresses,
+because `BKP_SSH` "means the other machine, which is a different machine
+depending on who is asking". It does not. `BKP_SSH` is the backup node, for
+every engine on every machine, and on the backup node itself it points at
+itself. The value is identical fleet-wide.
+
+What actually differs is one line of tuning: `BW_TOTAL_MB`, because the storage
+node and the backup node do not have the same link. Everything else in
+`ctrep.conf` - `BKP_DESTS`, `OFFSET`, `DR_OFFSET`, `DR_DST`, `DR_HEADROOM_PCT`,
+`LOG_KEEP_DAYS` - is the same everywhere and would be correct to sync.
+
+That matters more than it sounds, because `ct-distribute.sh` reads `ctrep.conf`
+and distribute is the thing you run from the backup node during a disaster. As
+it stands, that file has to be maintained there by hand, and a fleet-wide
+change to `DR_DST` has to be remembered twice. Splitting the file into a synced
+part and a per-machine part would reduce "can the backup node take over?" to
+one line of `ketsync.conf`. It has not been done.
 
 `fleet.tsv` is deliberately not called an inventory: `engines/tp` already has two
 files with that word in the name and entirely different columns, and one word
@@ -101,7 +114,7 @@ every other copy and pushes, which is the human saying "mine is the one". That
 sentence has to be typed. It is not something a tool can work out.
 
 `sync` writes to other machines, so it is the first command in this layer to
-have a simulator: 17 scenarios and 14 mutations, in `tests/`. Writing it found
+have a simulator: 21 scenarios and 19 mutations, in `tests/`. Writing it found
 three bugs that were live on the fleet at the time, including the one above.
 None had been caught by reading the file.
 

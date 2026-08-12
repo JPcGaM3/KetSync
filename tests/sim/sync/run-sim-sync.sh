@@ -167,6 +167,8 @@ same_as_master(){  # ip rel
   cmp -s "$MASTER/$2" "$f" || _err "$1's $2 does not match the master's"
   return 0
 }
+# grep -E rather than -F: this is about the SHAPE of a line, not its content.
+line_matches(){ grep -qE -- "$1" <<<"$OUT" || _err "no line matching: $1"; return 0; }
 not_arrived(){ # ip rel
   [[ -f "$(remote_file "$1" "$2")" ]] && _err "$1 received $2 and should not have"
   return 0
@@ -310,6 +312,53 @@ if scenario "10b: --bump raises past every machine, not just past this one"; the
   arrived "$BKP" fleet.tsv 6
   arrived "$C1"  fleet.tsv 6
   same_as_master "$BKP" fleet.tsv
+  done_scenario
+fi
+
+if scenario "10c: --bump <file> settles that one and leaves the other forked"; then
+  # The ordinary shape of a real fork: both inventories disagree at once. One
+  # command deciding both is how the file nobody read gets overwritten, so
+  # naming one settles one - and the run still says it is not finished.
+  remote_table "$BKP" engines/tp/inventory-replica.tsv 1 "110	hdd" "999	ssd"
+  remote_table "$BKP" engines/tp/inventory-migrate.tsv 1 "888	tank-hdd-nas"
+  run_ks sync --bump engines/tp/inventory-replica.tsv
+  rc_is 1; clean
+  arrived "$BKP" engines/tp/inventory-replica.tsv 2
+  same_as_master "$BKP" engines/tp/inventory-replica.tsv
+  # untouched: still theirs, still generation 1
+  arrived "$BKP" engines/tp/inventory-migrate.tsv 1
+  has "inventory-migrate.tsv is still FORKED"
+  done_scenario
+fi
+
+if scenario "10d: --bump on a file that has not forked refuses"; then
+  remote_table "$BKP" engines/tp/inventory-replica.tsv 1 "110	hdd" "999	ssd"
+  run_ks sync --bump fleet.tsv
+  rc_is 2; clean
+  has "fleet.tsv has not forked"
+  untraced "rsync"
+  done_scenario
+fi
+
+if scenario "10e: --bump on a file that is not synced at all refuses"; then
+  run_ks sync --bump ketsync.conf
+  rc_is 2; clean
+  # The specific refusal matters: "not one of the synced files" and "has not
+  # forked" both exit 2, and only the first one is true here. A run that gives
+  # the wrong reason sends the reader to look at the wrong thing.
+  has "is not one of the synced files"
+  untraced "rsync"
+  done_scenario
+fi
+
+if scenario "9b: the diff body carries no timestamp - it has to be readable"; then
+  # A timestamp in front of every line of a diff makes it unreadable, and a
+  # diff nobody can read is the same as not having printed one. The log copy
+  # still carries the time.
+  remote_table "$BKP" fleet.tsv 1 "301	gold	$ME	$C2	local-zfs"
+  run_ks sync --diff
+  rc_is 1; clean
+  line_matches '^    [<>] '
   done_scenario
 fi
 

@@ -3,21 +3,54 @@
 # tp moves the data. This is NOT one of tp's work lists: engines/tp has its own
 # inventory-migrate.tsv and inventory-replica.tsv, with different columns.
 #
-#   ct     the container id on its home node
-#   tier   which copy pool it belongs in: ssd (comes back fast) or hdd
-#   home   the node it normally runs on, by IP
-#   dr     the node that picks it up when home is gone, by IP
+#   ct     the container id on its home node. The PRODUCTION id, and the only
+#          id written down anywhere. The copy on the backup node and the
+#          temporary one on a compute node are worked out from it - see below
+#   tier   which copy pool it belongs in: ssd (comes back fast) or hdd.
+#          Read by nothing today: it is a note to the human. The pool that
+#          actually decides is the dest column of inventory-replica.tsv
+#   home   the node it normally RUNS on, by IP. That is a compute node, not
+#          the storage node - the storage node serves the disk over NFS, it
+#          does not run the container. Find it with:
+#              ls /etc/pve/nodes/*/lxc/<ct>.conf
+#   dr     the node that picks it up when the storage node is gone, by IP.
+#          Usually the same compute node: what died is the disk, not the CPU,
+#          so the container comes back on the machine it was already on, using
+#          that machine's own storage instead of NFS
+#   dst    which storage on the dr node to put it on: local-lvm, local-zfs,
+#          local... Leave it out and DR_DST from ctrep.conf is used, which
+#          defaults to local-lvm. ct-distribute.sh handles lvmthin, lvm, dir,
+#          nfs and zfspool, and refuses anything else by name rather than
+#          guessing what shape it is
+#
+# THE THREE IDS, and why only one of them is in this file:
+#
+#   300    production. The raw image lives on the storage node and the compute
+#          node NFS-mounts it. This is what goes in the ct column
+#   8300   the copy on the backup node, written every replica round. 300 plus
+#          OFFSET, which is 8000 in ctrep.conf
+#   9300   the temporary container ct-distribute.sh makes on a compute node's
+#          own storage during a disaster. 300 plus DR_OFFSET, which is 9000
+#
+# Nobody types 8300 or 9300. They are a policy in one config file rather than
+# data in a table, so the numbering cannot drift per container - and seeing a
+# 9 in front in `pct list` tells you without asking that it is temporary, its
+# data is not replicated anywhere, and somebody has to unwind it deliberately.
 #
 # Addresses, not names - every address here must have a row in nodes.tsv, and
 # 'ketsync doctor' refuses to stay quiet about one that does not.
 #
 # dr is written down rather than chosen at the time. Placing a customer by
 # free RAM at 3am is how a customer ends up on the wrong machine; the same
-# rule as tp's "no defaults, never guess". Override once with --node if the
-# day comes and the written answer is wrong.
+# rule as tp's "no defaults, never guess". Override on the day with
+# 'ketsync distribute --ctid <id> --to <ip>' and '--dst <storage>'.
 #
 # TAB separated; lines starting with # are ignored.
 #
-# ct	tier	home	dr
-110	hdd	10.100.1.32	10.100.1.33
-120	hdd	10.100.1.33	10.100.1.32
+# ct	tier	home	dr	dst
+110	hdd	10.100.1.32	10.100.1.33	local-lvm
+120	hdd	10.100.1.33	10.100.1.32	local-lvm
+# comes back on the machine it already runs on, onto that machine's own disk
+300	hdd	10.100.1.33	10.100.1.33	local-lvm
+# no dst: DR_DST from ctrep.conf decides
+301	ssd	10.100.1.32	10.100.1.32
