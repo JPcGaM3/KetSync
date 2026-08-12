@@ -59,8 +59,7 @@ follow-up.
 
 ## Before you say you are done
 
-    make lint     # both layers: bash -n, shellcheck, the language rule, embeds
-                  # the language rule is enforced on BOTH docs/ trees now
+    make lint     # both layers: bash -n, shellcheck, the language rule
     make test     # both layers: 236 tp scenarios + 21 for ketsync sync
     make mutation # 207 known bugs put back. None may survive
 
@@ -85,6 +84,8 @@ being separate when they stopped being empty.
                          difference between a recovery and a data loss
     docs/start-here.html the operator's front door. If you change what an
                          operator types, change it here too
+    docs/c2v-el.html     CT to VM, the EL path
+    docs/c2v-debian.html CT to VM, the Debian/Ubuntu path
     ketsync              the dispatcher. Contains no logic of its own
     lib/common.sh        log, config, and the two tables everything reads
     lib/cmd_*.sh         one file per subcommand

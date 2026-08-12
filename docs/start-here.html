@@ -347,11 +347,7 @@ $EDITOR engines/tp/ctrep.conf             <span class="c"># BW_TOTAL_MB for THIS
       <div class="code"><pre>*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-hdd-nas
 */15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-ssd-nas</pre></div></li>
   </ol>
-  <div class="warn"><p><b>path ของ cron เปลี่ยนแล้ว</b> ตอน tp ยังเป็น repo แยก path คือ
-     <code class="inl">/root/tp/ct-replica.sh</code> ตอนนี้ tp ย้ายเข้ามาอยู่ใน ketsync แล้ว path จึงเป็น
-     <code class="inl">/root/ketsync/engines/tp/ct-replica.sh</code> คู่มือเล่มเก่าในโฟลเดอร์
-     <code class="inl">engines/tp/docs/</code> ยังเขียน path เก่าอยู่ — flag กับ guard ในนั้นถูกหมด
-     ผิดแค่ path ข้างหน้า</p></div>
+  
 </section>
 
 <section id="s6">
@@ -462,8 +458,8 @@ cp -a /root/tp/state               ./state</pre></div>
 
 <footer>
   อ่านต่อ: <code class="inl">docs/infrastructure-setup.html</code> ติดตั้งตั้งแต่ศูนย์ ·
-  <code class="inl">engines/tp/docs/tp-manual.html</code> คู่มือ tp เต็ม ·
-  <code class="inl">engines/tp/docs/ct-replica-manual.html</code> งาน replica กับ DR ·
+  <code class="inl">docs/c2v-el.html</code> แปลง CT เป็น VM สาย EL ·
+  <code class="inl">docs/c2v-debian.html</code> สาย Debian/Ubuntu ·
   <code class="inl">docs/decisions.md</code> เหตุผลเบื้องหลังทุกการตัดสินใจ ·
   <code class="inl">engines/tp/CLAUDE.md</code> กติกาสำหรับคนที่จะแก้โค้ด
 </footer>

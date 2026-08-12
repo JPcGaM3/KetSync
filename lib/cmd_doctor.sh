@@ -109,6 +109,40 @@ cmd_doctor(){
     (( bad )) && rc=1 || say "  every row has an address, a dr node and a storage"
   fi
 
+  # The question nobody thinks to ask, and the one the backup node dying makes
+  # urgent. `replica` refuses cleanly while the backup node is unreachable and
+  # says so once a night in a log nobody reads; doctor says the node is down.
+  # Neither of them joins "unreachable for three days" to "three days with no
+  # fresh copy", which is the sentence that matters. The epoch is already in
+  # every state file - nobody was asking for it.
+  say "== how old the newest copy of each container is"
+  local sdir="$KS_BASE/engines/tp/state" sf id ep age oldest=0 seen=0
+  if [[ -d "$sdir" ]]; then
+    for sf in "$sdir"/replica-*.json; do
+      [[ -e "$sf" ]] || continue
+      seen=1
+      id="$(basename "$sf" .json)"; id="${id#replica-}"
+      ep="$(sed -n 's/.*"epoch":[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$sf" | head -1)"
+      if [[ -z "$ep" ]]; then
+        say "  CT $id: state file has no epoch - cannot tell how old the copy is"; rc=1; continue
+      fi
+      age=$(( ( $(date +%s) - ep ) / 86400 ))
+      (( age > oldest )) && oldest=$age
+      if (( age >= KS_COPY_STALE_DAYS )); then
+        say "  CT $id: last successful copy was $age day(s) ago"
+        rc=1
+      fi
+    done
+    if (( ! seen )); then
+      say "  no replica state files yet - nothing has been copied from this machine"
+    elif (( oldest < KS_COPY_STALE_DAYS )); then
+      say "  every container was copied within the last $KS_COPY_STALE_DAYS day(s)"
+    else
+      say "  a copy older than $KS_COPY_STALE_DAYS day(s) is not a backup, it is a memory."
+      say "  check the backup node and the replica cron before anything else."
+    fi
+  fi
+
   # There is no mirror any more, and a leftover one is worth naming: it is not
   # read, but somebody will find it during an incident and believe it.
   for f in fleet.tsv nodes.map; do

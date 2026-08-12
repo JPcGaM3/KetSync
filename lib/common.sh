@@ -22,6 +22,7 @@
 KS_LOGDIR="$KS_BASE/logs"
 KS_LOG="$KS_LOGDIR/ketsync-$(date +%F).log"
 KS_LOG_KEEP_DAYS=14           # tp prunes its own the same way; 0 disables
+KS_COPY_STALE_DAYS=2          # doctor complains about a DR copy older than this
 mkdir -p "$KS_LOGDIR" 2>/dev/null
 # Prune before opening today's file, so the run that finally fills the disk is
 # not this one. Only ketsync-*.log at depth 1: the engines' days live here too

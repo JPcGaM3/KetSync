@@ -43,13 +43,5 @@ single engine — `test-replica`, `mutation-failback`, and the rest.
 
 ## Deploying
 
-The engines read their config and inventories from beside themselves, so
-`engines/tp` is a working install as it stands. On a node that is only running
-the engines and not `ketsync`, cron lines point at
-`/root/ketsync/engines/tp/ct-replica.sh` rather than the `/root/tp/...` path
-the older operator guides in `engines/tp/docs/` still describe. Those guides
-were written when tp was its own checkout; the flags, the guards and the
-inventory names in them are current, only the leading path is not.
-
 `ketsync doctor` fails when this directory is empty, because a decision layer
 with nothing underneath it cannot do anything at all.

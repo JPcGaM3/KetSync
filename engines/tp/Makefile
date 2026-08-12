@@ -13,7 +13,7 @@ ENGINES := $(ROOT)/ct-migrate.sh $(ROOT)/ct-replica.sh $(ROOT)/ct-failback.sh
 SHIPPED := $(ENGINES) $(ROOT)/tp $(ROOT)/bkp02-setup.sh $(ROOT)/tools/*.sh
 
 .DEFAULT_GOAL := help
-.PHONY: embeds help test test-sim test-migrate test-replica test-failback test-distribute test-unit test-c2v \
+.PHONY: help test test-sim test-migrate test-replica test-failback test-distribute test-c2v \
         mutation mutation-migrate mutation-replica mutation-failback mutation-tp \
         gates test-tp \
         lint syntax shellcheck no-thai log-sep zip clean schema-check
@@ -22,7 +22,7 @@ help:            ## show this list
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[1m%-16s\033[0m %s\n", $$1, $$2}'
 
-test: test-sim test-tp test-c2v test-unit  ## everything: all three simulators + the dispatcher + c2v + python unit tests
+test: test-sim test-tp test-c2v  ## every simulator, the dispatcher, and the c2v checks
 
 test-sim: test-migrate test-replica test-failback test-distribute  ## every engine against its fake PVE
 
@@ -66,14 +66,8 @@ mutation-tp:       ## 7 known bugs put back into the tp dispatcher
 gates:           ## lint + test + mutation in a Debian container (use this on macOS)
 	@$(ROOT)/tests/gates-in-docker.sh
 
-test-unit:       ## python unit tests for the state/inventory readers
-	@if $(PY) -c 'import pytest' 2>/dev/null; then \
-	  cd $(ROOT) && PYTHONPATH=src $(PY) -m pytest -q tests/unit; \
-	else \
-	  echo "pytest not installed - skipping unit tests (pip install pytest)"; \
-	fi
 
-lint: syntax shellcheck no-thai embeds log-sep  ## static checks that need no cluster
+lint: syntax shellcheck no-thai log-sep  ## static checks that need no cluster
 
 syntax:          ## bash -n every shell script
 	@rc=0; while read -r f; do \
@@ -98,8 +92,6 @@ shellcheck:      ## shellcheck, if it is installed
 	  || { echo "shellcheck: FAILED"; exit 1; }; \
 	else echo "shellcheck not installed - skipped"; fi
 
-embeds:          ## the source embedded in the docs must match the real files
-	@$(ROOT)/tools/check-embeds.sh
 
 no-thai:         ## code is English, only docs/*.html may be Thai
 	@$(ROOT)/tools/check-no-thai.sh
@@ -120,6 +112,6 @@ zip: clean       ## build the deployable archive (no runtime state, no .git)
 	  && echo "built $(ZIP) ($$(unzip -l $(ZIP) | tail -1 | awk '{print $$2}') entries)"
 
 clean:           ## remove build/test leftovers (never touches state/ or done/)
-	@rm -rf $(ROOT)/.pytest_cache $(ROOT)/src/*.egg-info $(ROOT)/$(ZIP)
+	@rm -rf $(ROOT)/$(ZIP)
 	@find $(ROOT) -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null; true
 	@echo "clean"

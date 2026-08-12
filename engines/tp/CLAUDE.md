@@ -86,8 +86,10 @@ the wrong pool.
 
 **6. No `jq`, no guaranteed `python3` in the engines.**
 Proxmox ships neither. The engines depend on neither and their state files stay
-`grep`-readable. `src/ctmig/` may use python freely — it is the read-only
-reader, and it is allowed to be absent.
+`grep`-readable — which is what let `ketsync doctor` start reporting how old
+each DR copy is with a `sed`, months after the files were designed. There used
+to be a python reader under `src/ctmig/` with its own test suite; nothing ever
+depended on it and it is gone.
 
 **7. Paths are relative to the script.**
 `inventory*.tsv`, `state/`, `logs/`, `done/` are all found relative to where the
@@ -115,8 +117,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 65 + 56 + 33 simulator, 16 dispatcher, 125 c2v, 82 python
-    make mutation   # 43 + 41 + 42 + 29 engine + 9 dispatcher bugs reintroduced, all caught
+    make test       # 66 + 68 + 57 + 39 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 48 + 45 + 41 engine + 9 dispatcher bugs, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did
@@ -220,15 +222,21 @@ and a dry run may mount only `ro`.
     B6  ENOSPC grows the image rather than stranding the failback
     B0  not a guard, a prerequisite: B1 has to find out whether a CT on a
         production node is stopped, and this engine runs on the storage node,
-        which is outside the cluster and has neither a root key nor name
-        resolution for any compute node. It used to ssh them directly and
-        every CT was refused - found mid-incident, on real hardware. It now
-        asks the BACKUP node, which is a cluster member, over the cluster API:
-        `pvesh get /nodes/<node>/lxc/<id>/status/current`. So the only ssh
-        path failback needs is the one to the backup node. The failback
-        simulator enforces that: its fake ssh records a violation for a
-        connection to any other host, and a mutation puts the direct ssh back
-        to prove the violation still fires. `--list` reports what it could not
+        which is outside the cluster. It asks that node DIRECTLY, over ssh,
+        with `pct status` - which needs no quorum, no pvedaemon proxying and
+        no cluster membership, and therefore keeps working against a
+        standalone node or a node in another cluster. The address comes from
+        nodes.map, because PVE hands us a NAME and this host has neither the
+        cluster's /etc/hosts nor its DNS.
+
+        This paragraph described the opposite for a while. There was a version
+        that asked the backup node over the cluster API instead, and this file
+        still said "the only ssh path failback needs is the one to the backup
+        node" and that the simulator recorded a violation for ssh to any other
+        host, months after both had been reverted. The API version was the
+        narrower design: it can only answer for members of its own cluster.
+        Nothing is more expensive than a CLAUDE.md that describes a design
+        somebody already decided against. `--list` reports what it could not
         resolve and exits 1 rather than 0
     B7  --final refuses when the safety snapshot cannot be taken. That
         snapshot is the only way back from a round that overwrites the
@@ -271,8 +279,6 @@ row on the same CT is a damaged image. 11 is out of space and triggers G4/B6.
                                replica rows: src_ctid [tgt_ctid] [dest]
                                [storage-assert]
     bkp02-setup.sh             one-time prep of the backup node's pools
-    src/ctmig/                 read-only python reader + CLI. Strictly
-                               read-only: nothing in it can change a run
     tests/sim/                 the migrate simulator, and its fakes
     tests/sim/replica/         the replica simulator: a storage node plus a
                                whole backup node behind a fake ssh
@@ -282,20 +288,12 @@ row on the same CT is a damaged image. 11 is out of space and triggers G4/B6.
                                arguments reach the engine untouched
     tests/mutation/            one suite per engine — see rule 1
     tests/c2v/                 what both CT-to-VM phase-2 scripts write
-    tests/unit/                python unit tests for the reader
     schema/state.schema.json   the data contract, machine-checkable
     docs/decisions.md          why the fleet is shaped this way, what has
                                already been tried and rejected, and which
                                incident produced which guard. Read it before
                                proposing an architectural change
     docs/state-schema.md       the same contract in prose
-    docs/infra-setup.html      Thai: build the whole hybrid from scratch
-    docs/ct-replica-setup.html Thai: install the replica system
-    docs/ct-replica-manual.html Thai: day-to-day + DR + failback
-    docs/manual.html           Thai: day-to-day migrate manual
-    docs/quickstart.html       Thai: migrate operator guide
-    docs/c2v.html              Thai: CT-to-VM runbook, EL path
-    docs/c2v-deb.html          Thai: CT-to-VM runbook, Debian/Ubuntu path
     tools/check-log-separator.sh
                                every tool that defines log() must define and
                                call hr(). The engines and tp bind their rule
