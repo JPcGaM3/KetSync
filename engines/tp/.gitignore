@@ -10,6 +10,9 @@
 /.node-*.lock
 /.replica-*.lock
 /.failback-*.lock
+/.ct-*.lock
+/.distribute.lock
+/.recall.lock
 
 # Set by hand during a failback to stop every replica lane. If this were
 # committed, cloning the repo onto a node would silently stop its replication.

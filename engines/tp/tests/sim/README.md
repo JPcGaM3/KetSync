@@ -6,7 +6,20 @@ Runs the REAL `ct-migrate.sh` — not a copy, not a rewrite — against fake
 
     ./tests/sim/run-sim.sh      (or: make test-sim)
 
-Expected output: `=== 46 passed, 0 failed ===`
+Expected output: `=== 66 passed, 0 failed ===`
+
+This file describes the **migrate** simulator. The other four live beside it and
+are run the same way, each against its own fake fleet:
+
+    ./tests/sim/replica/run-sim-replica.sh        76 scenarios   (or: make test-replica)
+    ./tests/sim/failback/run-sim-failback.sh      69 scenarios   (or: make test-failback)
+    ./tests/sim/distribute/run-sim-distribute.sh  46 scenarios   (or: make test-distribute)
+    ./tests/sim/recall/run-sim-recall.sh          48 scenarios   (or: make test-recall)
+
+The number in front of a scenario name is its selector, and the mutation suites
+select by it: `run-sim-recall.sh 30` runs scenario 30 and the runner reads the
+exit code. Two scenarios sharing one number make that ambiguous, so the replica
+and recall runners refuse the full suite when they find a duplicate.
 
 ## How it works
 
