@@ -72,10 +72,10 @@ new_world(){
   # and needs neither mkfs nor mount. Both are real, and the engine has to
   # handle them without a branch anywhere except dst_shape().
   add_target "$T1" pve01
-  add_storage "$T1" local-lvm  lvmthin 1 $(( 200 * 1024 * 1024 ))
+  add_storage "$T1" local-lvm  lvmthin active $(( 200 * 1024 * 1024 ))
   add_target "$T2" pve02
-  add_storage "$T2" local-zfs  zfspool 1 $(( 200 * 1024 * 1024 ))
-  add_storage "$T2" local-dir  dir     1 $(( 200 * 1024 * 1024 ))
+  add_storage "$T2" local-zfs  zfspool active $(( 200 * 1024 * 1024 ))
+  add_storage "$T2" local-dir  dir     active $(( 200 * 1024 * 1024 ))
 
   # Three containers, their copies, and the copies' data.
   add_copy 300 hdd 20G
@@ -104,10 +104,15 @@ add_target(){ # ip nodename
   mkdir -p "$d/storage" "$d/vols"; : > "$d/mounted"
   printf '%s\n' "$2" > "$d/node"
   mkdir -p "$PVE/nodes/$2/lxc"; }
-add_storage(){ # ip sid type active availKiB
+# The status is the WORD pvesm prints - active, inactive or disabled - not a
+# boolean. It was a boolean once, which is how an engine comparing the column
+# against 1 passed every scenario here and refused every storage on the fleet.
+add_storage(){ # ip sid type status availKiB
   local d="$SIMROOT/targets/$1/storage"
+  case "$4" in active|inactive|disabled) ;;
+    *) echo "add_storage: status must be active|inactive|disabled, got '$4'" >&2; exit 2;; esac
   printf '%s\n' "$3" > "$d/$2.type"
-  printf '%s\n' "$4" > "$d/$2.active"
+  printf '%s\n' "$4" > "$d/$2.status"
   printf '%s\n' "$5" > "$d/$2.avail"; }
 storage_set(){ printf '%s\n' "$4" > "$SIMROOT/targets/$1/storage/$2.$3"; }
 target_down(){ : > "$SIMROOT/targets/$1/.down"; }
@@ -290,11 +295,26 @@ if scenario "7: GUARD D3 - a 9xxx id somebody else owns refuses, and names them"
 fi
 
 if scenario "8: GUARD D4 - an INACTIVE storage refuses before anything is allocated"; then
-  storage_set "$T1" local-lvm active 0
+  storage_set "$T1" local-lvm status inactive
   run_engine --ctid 300
   rc_is 1; clean
-  has "GUARD D4: storage 'local-lvm' is not ACTIVE on pve01"
+  has "GUARD D4: storage 'local-lvm' is not ACTIVE on pve01 (pvesm says 'inactive')"
   has "fills the root disk"
+  untraced "pvesm alloc"
+  done_scenario
+fi
+
+# The third word pvesm can print, and the one this fleet actually has: r32
+# carries replica-hdd and replica-ssd as 'disabled', because those storages
+# belong to the backup node and are restricted to it. Pointing --dst at one is
+# an ordinary 2am mistake, and "not ACTIVE" alone sends you looking for a
+# mount that was never supposed to be there. The word pvesm used is quoted
+# back for that reason.
+if scenario "8b: GUARD D4 - a DISABLED storage is refused, and says which word it got"; then
+  storage_set "$T1" local-lvm status disabled
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "GUARD D4: storage 'local-lvm' is not ACTIVE on pve01 (pvesm says 'disabled')"
   untraced "pvesm alloc"
   done_scenario
 fi

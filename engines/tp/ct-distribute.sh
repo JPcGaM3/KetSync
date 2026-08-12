@@ -557,8 +557,16 @@ do_ct(){   # $1 = production ctid
     log "[$ct] GUARD D4:   means mkfs on something that was not a block device."
     st_fail "$ct" dst_type_unknown; return 1
   fi
-  if [[ "${ST_ACTIVE[$key]}" != 1 ]]; then
-    log "[$ct] GUARD D4: storage '$CT_DST' is not ACTIVE on $CT_TONODE - NOTHING was allocated"
+  # The Status column is a WORD - active, inactive or disabled - which is what
+  # ct-replica.sh's dest_ready has always compared against. This read `!= 1`
+  # for its first three weeks, because 1 is what the API returns and this moved
+  # to the CLI without the comparison moving with it. A word is never equal to
+  # 1, so D4 refused every storage on every node and distribute could not place
+  # anything at all. Quote the word back: 'disabled' and 'inactive' are
+  # different problems with different fixes, and reading "not ACTIVE" while
+  # `pvesm status` plainly says active is how an hour disappears.
+  if [[ "${ST_ACTIVE[$key]}" != active ]]; then
+    log "[$ct] GUARD D4: storage '$CT_DST' is not ACTIVE on $CT_TONODE (pvesm says '${ST_ACTIVE[$key]}') - NOTHING was allocated"
     log "[$ct] GUARD D4:   an inactive storage is an empty directory that fills the root disk."
     st_fail "$ct" dst_inactive; return 1
   fi

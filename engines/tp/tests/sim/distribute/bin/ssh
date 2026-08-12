@@ -130,11 +130,23 @@ case "$c" in
     [[ -f "$BKP/.down" ]] && { echo "No route to host" >&2; exit 255; }
     exit 0;;
 
+  # Byte-for-byte the shape of the real thing, header included, because an
+  # engine parses this with awk and a fake that prints a tidier table than PVE
+  # does is a fake that agrees with whatever the engine already believes. This
+  # one shipped printing 1 in the Status column - which is what the API returns,
+  # not the CLI - and 33 green scenarios said the engine was fine while it
+  # refused every storage on the fleet. The Status column holds a WORD:
+  # active, inactive or disabled. The PVE 9 header is deliberately included
+  # too: "Total (KiB)" splits into two awk fields, so a header row has ten of
+  # them and a data row has seven, and anything that parses by position without
+  # skipping it reads a unit as a number.
   "pvesm status -storage "*)
     sid="${c#pvesm status -storage }"; sid="${sid%% *}"
     [[ -f "$T/storage/$sid.type" ]] || { echo "storage '$sid' does not exist" >&2; exit 2; }
-    printf '%-20s %-10s %8s %15s %15s %15s %8s\n' "$sid" "$(st_field "$host" "$sid" type)" \
-      "$(st_field "$host" "$sid" active)" 999999999 0 "$(st_field "$host" "$sid" avail)" 0
+    printf '%-20s %-10s %10s %15s %15s %15s %8s\n' \
+      Name Type Status 'Total (KiB)' 'Used (KiB)' 'Available (KiB)' '%'
+    printf '%-20s %-10s %10s %15s %15s %15s %8s\n' "$sid" "$(st_field "$host" "$sid" type)" \
+      "$(st_field "$host" "$sid" status)" 999999999 0 "$(st_field "$host" "$sid" avail)" 0.00%
     exit 0;;
 
   "pvesm alloc "*)
@@ -144,7 +156,7 @@ case "$c" in
     # Allocating into a storage PVE says is inactive is the G1/B3 disaster in
     # another costume: the path exists, the write succeeds, and it lands on the
     # node's root disk.
-    [[ "$(st_field "$host" "$sid" active)" == 1 ]] \
+    [[ "$(st_field "$host" "$sid" status)" == active ]] \
       || { violation "pvesm alloc into INACTIVE storage $sid on $host"; exit 1; }
     mkdir -p "$T/vols/$sid"
     [[ -e "$T/vols/$sid/$volname" ]] && { echo "volume '$volname' already exists" >&2; exit 2; }

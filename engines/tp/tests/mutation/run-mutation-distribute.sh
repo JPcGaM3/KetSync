@@ -133,8 +133,18 @@ mutant "D3 looks for the id only where the copy is, not across the cluster" \
 
 # ---------- D4: what the destination actually is -----------------------------
 mutant "D4 allocates into a storage PVE says is inactive" \
-  's{\Q  if [[ "\E\$\{ST_ACTIVE\[\$key\]\}\Q" != 1 ]]; then\E}{  if false; then}' \
+  's{\Q  if [[ "\E\$\{ST_ACTIVE\[\$key\]\}\Q" != active ]]; then\E}{  if false; then}' \
   8
+
+# This one is not hypothetical. It is what shipped: the Status column of
+# `pvesm status` holds a word, the guard compared it against the 1 the API
+# returns, no word is ever equal to 1, and D4 therefore refused every storage
+# on every node - distribute could not place a single container. It passed 33
+# scenarios because the fake pvesm printed 1 too. Both halves are fixed; this
+# mutation is here so the suite can prove it would notice a third time.
+mutant "D4 compares the pvesm Status word against the number the API returns" \
+  's{\Q" != active ]]; then\E}{" != 1 ]]; then}' \
+  1
 
 mutant "D4 guesses at a storage type it has never seen" \
   's{\Q    *)             printf \E..\Q;;\E}{    *)             printf \x27block\x27;;}' \

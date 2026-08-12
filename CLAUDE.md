@@ -47,7 +47,7 @@ held", and the run exits 0 having done nothing.
 
 **7. A stub says it is a stub.** `recall` exits 2 with a pointer into
 `docs/decisions.md`. Do not make one half work. `distribute` stopped being a
-stub when `engines/tp/ct-distribute.sh` was written, with 33 scenarios and 27
+stub when `engines/tp/ct-distribute.sh` was written, with 34 scenarios and 30
 mutations behind it - which is the bar for the next one.
 
 **8. `tests/` is empty and that is a debt.** Read `tests/README.md`. Nothing
@@ -59,7 +59,7 @@ proves the simulator can fail. `tp` learned this the expensive way.
     make lint     # both layers: bash -n, shellcheck, the language rule, embeds
                   # the language rule is enforced on BOTH docs/ trees now
     make test     # engines/tp's full suite. Warns that ketsync has none
-    make mutation # 164 known bugs put back. None may survive
+    make mutation # 165 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
