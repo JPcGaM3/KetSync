@@ -131,14 +131,14 @@
     <tr><th>อยากทำ</th><th>ตอนนี้</th></tr>
     <tr><td>ปลุกสำเนาขึ้นมารันที่เครื่อง backup</td><td><b>ทำได้</b> ด้วยมือ ตามหน้านี้</td></tr>
     <tr><td>เอาข้อมูลกลับเข้าตัวจริงตอน storage ฟื้น</td><td><b>ทำได้</b> ด้วย <span class="m">ketsync failback</span></td></tr>
-    <tr><td>กระจายสำเนาไปรันที่เครื่อง compute (9xxx)</td><td><b>ทำได้ด้วยมือ</b> ตามข้อ 3 — <span class="m">ketsync distribute</span> ที่จะทำให้อัตโนมัติยังไม่ได้สร้าง</td></tr>
+    <tr><td>กระจายสำเนาไปรันที่เครื่อง compute (9xxx)</td><td><b>ทำได้ด้วยคำสั่ง</b> — <span class="m">ketsync distribute</span> ดูข้อ 3</td></tr>
     <tr><td>ดึงข้อมูลจาก 9xxx กลับเข้าตัวจริง</td><td><b>ทำได้ด้วยมือ</b> ตามข้อ 6ก — <span class="m">ketsync recall</span> ยังไม่ได้สร้าง</td></tr>
     <tr><td>ก๊อปข้อมูลต่อระหว่างที่รันอยู่ที่ compute</td><td><b>ยังทำไม่ได้</b> ช่วงนั้นไม่มีสำเนาสำรอง</td></tr>
   </table>
   <p>แปลว่าเครื่อง backup คือ<b>ที่เก็บของ</b> ไม่ใช่ที่รันของ และไม่ใช่ที่รัน engine ด้วย —
      ตัว <code class="inl">ct-replica.sh</code> กับ <code class="inl">ct-failback.sh</code>
      อ่านและเขียนไฟล์ดิสก์ที่อยู่บนเครื่อง storage ทั้งคู่ พอเครื่องนั้นตาย ก็ไม่มีอะไรให้มันทำ
-     ของต้องถูกก๊อปต่อไปที่เครื่อง compute แล้วรันที่นั่น ซึ่งตอนนี้ทำด้วยมือ</p>
+     ของต้องถูกก๊อปต่อไปที่เครื่อง compute แล้วรันที่นั่น ซึ่งตอนนี้มีคำสั่งทำให้แล้ว</p>
   <div class="warn"><p><b>ข้อจำกัดที่ต้องยอมรับ</b> ต่อให้กระจายไปหลายเครื่องแล้ว
      ก็ยังไม่พอรัน CT ทุกตัวพร้อมกัน ต้องเลือกเฉพาะตัวสำคัญ
      เรียงลำดับไว้ล่วงหน้าดีกว่ามานั่งเลือกตอนตี 3</p></div>
@@ -194,9 +194,45 @@ touch /root/ketsync/engines/tp/PAUSE</pre></div></div>
   </table>
   <p>เห็นเลข 9 นำหน้าเมื่อไหร่ให้รู้ทันทีว่านี่คือของชั่วคราวที่ต้องเก็บกวาดทีหลัง ไม่ใช่ตัวจริง</p>
 
-  <div class="warn"><p><b>ขั้นตอนข้างล่างนี้ทำด้วยมือทั้งหมด</b> คำสั่ง
-     <code class="inl">ketsync distribute</code> ที่จะทำให้อัตโนมัติยังไม่ได้สร้าง
-     ทำทีละตัวตามลำดับความสำคัญที่เขียนไว้ในข้อ 1 อย่าทำพร้อมกันหลายตัว</p></div>
+  <div class="tip"><p><b>มีคำสั่งทำให้แล้ว ไม่ต้องทำมือ</b> ขั้นตอนที่เคยต้องพิมพ์ทีละบรรทัด
+     ตอนนี้อยู่ใน <code class="inl">ketsync distribute</code> ครบ พร้อมด่านตรวจ 7 ด่าน
+     ขั้นตอนแบบมือยังเก็บไว้ท้ายหัวข้อนี้ เผื่อวันที่ต้องแกะดูว่ามันทำอะไรอยู่</p></div>
+
+  <h3>ขั้นที่ 1 — ดูก่อนว่ามันจะทำอะไร ยังไม่แตะอะไร</h3>
+  <div class="code"><pre>cd /root/ketsync
+./ketsync distribute --list</pre></div>
+  <p>มันจะพิมพ์ออกมาว่า CT ตัวไหนจะไปเครื่องไหน ลง storage อะไร ใช้เนื้อที่เท่าไหร่
+     ตัวไหนที่ไม่มีที่ไปมันจะบอกว่าไม่มีแถวใน <code class="inl">fleet.tsv</code> —
+     ไม่เดาให้ ต้องบอกด้วย <code class="inl">--to</code> เอง</p>
+
+  <h3>ขั้นที่ 2 — ซ้อมตัวเดียวก่อน</h3>
+  <div class="code"><pre>./ketsync distribute --ctid 300 --dry-run</pre></div>
+  <p>เดินผ่านด่านตรวจครบทุกด่านเหมือนของจริง ต่างกันแค่ไม่จองเนื้อที่ ไม่ก๊อป ไม่เขียน config</p>
+
+  <h3>ขั้นที่ 3 — ของจริง ทีละตัวตามลำดับความสำคัญ</h3>
+  <div class="code"><pre>./ketsync distribute --ctid 300
+./ketsync distribute --ctid 300 --to 10.100.1.33          <span class="c"># override the placement</span>
+./ketsync distribute --ctid 300 --to 10.100.1.33 --dst local-zfs</pre></div>
+  <p>มันจะจองเนื้อที่บนเครื่องปลายทาง ทำ filesystem ก๊อปข้อมูลจากเครื่อง backup
+     แล้วเขียน config ให้ — <b>แต่ไม่เปิดให้</b> มันจะพิมพ์คำสั่งเปิดออกมาให้คนกดเอง
+     เหมือนทุกเครื่องมือในชุดนี้</p>
+  <div class="out">[300] placed: CT 9300 on pve01, local-lvm:vm-9300-disk-0, rsync rc=0 in 412s
+[300]   its network is still on the copy's bridge. Check it, then start it BY HAND:
+[300]     ssh root@10.100.1.32 pct config 9300
+[300]     ssh root@10.100.1.32 pct set 9300 --net0 &lt;the production bridge&gt;
+[300]     ssh root@10.100.1.32 pct start 9300</div>
+
+  <h3>ขั้นที่ 4 — ทั้งฟลีตทีเดียว เมื่อซ้อมตัวแรกผ่านแล้ว</h3>
+  <div class="code"><pre>./ketsync distribute --all</pre></div>
+  <p>ตัวไหนพลาดมันข้ามไปตัวถัดไป ไม่หยุดทั้งชุด แล้วสรุปตอนท้ายว่าตัวไหนไม่ผ่านเพราะอะไร</p>
+
+  <div class="stop"><p><b>ด่านที่จะเจอบ่อยที่สุดคือ D1</b> — ถ้า CT ตัวจริงยังรันอยู่ มันจะไม่ยอมวางสำเนา
+     เพราะสำเนาถือ IP กับ MAC เดียวกัน สองตัวตอบพร้อมกันแย่กว่าเหตุที่กำลังแก้อยู่
+     ให้ปิดตัวจริงก่อน แล้วค่อยสั่งใหม่</p></div>
+
+  <h3>ทำมือ (ถ้าอยากรู้ว่าคำสั่งข้างบนทำอะไร)</h3>
+  <p>สามขั้นล่างนี้คือสิ่งที่ <code class="inl">ketsync distribute</code> ทำให้
+     ไม่ต้องพิมพ์เองแล้ว เก็บไว้เผื่อต้องแกะปัญหา</p>
 
   <h3>ขั้นที่ 1 — จองเนื้อที่บนเครื่อง compute</h3>
   <p>ดูขนาดจาก config ของสำเนาก่อน แล้วจองเท่านั้น</p>
@@ -375,7 +411,7 @@ rm /root/ketsync/engines/tp/PAUSE</pre></div></li>
 <footer>
   อ่านต่อ: <code class="inl">docs/infrastructure-setup.html</code> ติดตั้งตั้งแต่ศูนย์ ·
   <code class="inl">docs/start-here.html</code> ใช้งานประจำวัน ·
-  <code class="inl">docs/decisions.md</code> section 4 และ 5 คือแผนของ distribute กับ recall ที่ยังไม่ได้ทำ
+  <code class="inl">docs/decisions.md</code> section 6 คือแผนของ recall ที่ยังไม่ได้ทำ
 </footer>
 
 </div>

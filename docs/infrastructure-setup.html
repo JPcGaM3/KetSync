@@ -107,14 +107,16 @@
     <span class="name">setup</span>
     <a href="#s1">มีเครื่องอะไรบ้าง</a>
     <a href="#s2">เตรียมก่อนเริ่ม</a>
-    <a href="#s3">1 ssh</a>
-    <a href="#s4">2 storage</a>
-    <a href="#s5">3 bridge</a>
-    <a href="#s6">4 ลงตัวโปรแกรม</a>
-    <a href="#s7">5 กรอก 3 ไฟล์</a>
-    <a href="#s8">6 ตรวจ</a>
-    <a href="#s9">7 ซ้อม</a>
-    <a href="#s10">8 ตั้งเวลา</a>
+    <a href="#sc">cluster</a>
+    <a href="#s3">ssh</a>
+    <a href="#s4">storage</a>
+    <a href="#s5">bridge</a>
+    <a href="#sp">PBS</a>
+    <a href="#s6">ลงตัวโปรแกรม</a>
+    <a href="#s7">กรอก 3 ไฟล์</a>
+    <a href="#s8">ตรวจ</a>
+    <a href="#s9">ซ้อม</a>
+    <a href="#s10">ตั้งเวลา</a>
     <a href="#s11">พังตรงไหนทำไง</a>
   </div>
 </div>
@@ -130,7 +132,8 @@
 <section id="s1">
   <div class="eyebrow"><span class="num">0</span><h2>มีเครื่องอะไรบ้าง แต่ละเครื่องทำอะไร</h2></div>
   <p>ทั้งระบบมีเครื่อง 3 ประเภท คิดง่ายๆ แบบนี้ — เครื่องหนึ่ง<b>เก็บของ</b> เครื่องหนึ่ง<b>ใช้ของ</b>
-     และอีกเครื่อง<b>เก็บสำเนาไว้เผื่อฉุกเฉิน</b></p>
+     และอีกเครื่อง<b>เก็บสำเนาไว้เผื่อฉุกเฉิน</b> ทั้งหมดใช้เวลาตั้งประมาณครึ่งวัน
+     ทำตามลำดับ อย่าข้าม เพราะข้อหลังๆ ใช้ของที่ข้อก่อนหน้าสร้างไว้</p>
   <table>
     <tr><th>เรียกว่า</th><th>ตัวอย่าง IP</th><th>ทำอะไร</th><th>ต้องลงโปรแกรมนี้มั้ย</th></tr>
     <tr><td class="m">storage</td><td class="m">10.100.1.17</td>
@@ -158,15 +161,56 @@
     <tr><td>IP ของทุกเครื่อง กับรหัส root</td><td>ใส่ในตารางเดียวของระบบ</td></tr>
     <tr><td>เครื่อง storage มีเนื้อที่ว่างพอ</td><td>ดิสก์ของ CT ทุกตัวอยู่ที่นี่</td></tr>
     <tr><td>เครื่อง backup มี ZFS pool ว่าง</td><td>เก็บสำเนา</td></tr>
-    <tr><td>สิทธิ์แก้ network บนเครื่อง backup</td><td>สร้าง bridge ปิดตายให้สำเนา (ข้อ 3)</td></tr>
+    <tr><td>สิทธิ์แก้ network บนเครื่อง backup</td><td>สร้าง bridge ปิดตายให้สำเนา (ข้อ 5)</td></tr>
+    <tr><td>CT หรือ VM เล็กๆ อีกตัว ที่ไม่ได้อยู่ใน cluster</td><td>เป็นเสียงโหวตที่ 3 ของ cluster (ข้อ 2)</td></tr>
+    <tr><td>ZFS pool อีกก้อนที่เครื่อง backup</td><td>ที่เก็บของ PBS แยกจากที่เก็บสำเนา (ข้อ 6)</td></tr>
   </table>
   <div class="warn"><p><b>คำเตือนข้อเดียวที่สำคัญที่สุดในหน้านี้</b> สำเนาที่เก็บไว้ที่เครื่อง backup
      ใช้ IP และ MAC เดียวกับตัวจริงเป๊ะ ถ้ามันออกเน็ตได้เมื่อไหร่ = มีเครื่องสองตัวใช้ IP เดียวกันพร้อมกัน
      ระบบลูกค้าจะพังทันที ข้อ 3 คือการกันเรื่องนี้ และตัวโปรแกรมจะไม่ยอมทำงานเลยถ้ายังกันไม่เรียบร้อย</p></div>
 </section>
 
+<section id="sc">
+  <div class="eyebrow"><span class="num">2</span><h2>รวมเครื่อง compute กับ backup เป็น cluster</h2></div>
+  <p>cluster คือการทำให้เครื่องหลายตัวมองเห็น config ของกันและกัน มันทำให้ย้าย CT ข้ามเครื่องได้
+     และทำให้เครื่องหนึ่งตอบแทนอีกเครื่องได้ ซึ่งเครื่องมือชุดนี้ใช้อยู่หลายที่</p>
+  <div class="stop"><p><b>เครื่อง storage ไม่ join cluster</b> ตั้งใจให้อยู่นอก
+     เพราะมันเป็นที่เก็บดิสก์ของทุกเครื่อง ถ้ามันร่วมโหวตด้วยแล้วมันล่ม cluster จะเสียเสียงโหวตไปพร้อมกับดิสก์
+     ข้ามข้อนี้ไปสำหรับเครื่อง storage</p></div>
+
+  <h3>สร้าง cluster ที่เครื่อง compute เครื่องแรก</h3>
+  <div class="code"><pre><span class="c"># on the FIRST compute node</span>
+pvecm create tomato</pre></div>
+
+  <h3>เอาเครื่องที่เหลือเข้ามา</h3>
+  <div class="code"><pre><span class="c"># on EVERY other compute node, and on the backup node</span>
+pvecm add 10.100.1.32</pre></div>
+  <p>ใส่ IP ของเครื่องแรกที่สร้าง cluster ไว้ มันจะถามรหัส root ของเครื่องนั้น</p>
+
+  <h3>ตัวช่วยโหวต — ข้อนี้อย่าข้าม</h3>
+  <p>cluster ตัดสินใจด้วยเสียงข้างมาก ถ้ามีเครื่องเลขคู่แล้วขาดไปครึ่งหนึ่ง จะไม่มีใครได้เสียงข้างมาก
+     ทุกเครื่องจะหยุดเขียน config พร้อมกัน ตัวช่วยโหวตคือเสียงที่ 3 ที่ทำให้ไม่เกิดเรื่องนั้น</p>
+  <div class="code"><pre><span class="c"># on a small CT or VM that is NOT a cluster member</span>
+apt install -y corosync-qnetd
+
+<span class="c"># on EVERY cluster member - not one may be skipped</span>
+apt install -y corosync-qdevice
+
+<span class="c"># back on one cluster member, pointing at the voter</span>
+pvecm qdevice setup 10.100.1.40</pre></div>
+
+  <h3>เช็กว่าผ่าน</h3>
+  <div class="code"><pre>pvecm status</pre></div>
+  <p>ต้องเห็นคำว่า <code class="inl">Quorate: Yes</code> และเห็นชื่อเครื่องครบทุกตัวที่ join ไป
+     ถ้าตั้งตัวช่วยโหวตแล้วต้องเห็น <code class="inl">Qdevice</code> ในรายการด้วย</p>
+  <div class="tip"><p>ถ้า qnetd ไม่ยอมขึ้นหลังติดตั้ง มักเป็นเรื่องสิทธิ์ไฟล์ แก้ด้วยสองบรรทัดนี้
+     บนเครื่องที่ลง qnetd</p>
+     <div class="code"><pre>chown -R coroqnetd:coroqnetd /etc/corosync/qnetd
+systemctl reset-failed corosync-qnetd &amp;&amp; systemctl restart corosync-qnetd</pre></div></div>
+</section>
+
 <section id="s3">
-  <div class="eyebrow"><span class="num">2</span><h2>ให้เครื่อง storage เข้าเครื่องอื่นได้โดยไม่ต้องถามรหัส</h2></div>
+  <div class="eyebrow"><span class="num">3</span><h2>ให้เครื่อง storage เข้าเครื่องอื่นได้โดยไม่ต้องถามรหัส</h2></div>
   <p>ระบบทำงานอัตโนมัติตอนกลางคืน จะมานั่งใส่รหัสไม่ได้ ทำครั้งเดียวจบ</p>
   <div class="code"><pre><span class="c"># on the storage node</span>
 ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519   <span class="c"># skip if you have one</span>
@@ -187,7 +231,7 @@ done</pre></div>
 </section>
 
 <section id="s4">
-  <div class="eyebrow"><span class="num">3</span><h2>ตั้งชื่อ storage ให้ตรงกันสองฝั่ง</h2></div>
+  <div class="eyebrow"><span class="num">4</span><h2>ตั้งชื่อ storage ให้ตรงกันสองฝั่ง</h2></div>
   <p>ตรงนี้คนพลาดบ่อยที่สุด กติกาคือ <b>ชื่อต้องเหมือนกันเป๊ะ แต่ประเภทต้องต่างกัน</b>
      เพราะ config ของ CT จำแค่ชื่อ พอ CT ย้ายไปรันที่ compute มันจะหาจากชื่อเดิม
      แล้วเจอของที่ mount ผ่าน NFS ที่เครื่องนั้นเอง</p>
@@ -208,7 +252,7 @@ ssh root@10.100.1.32 "pvesm status | grep tank-hdd-nas"</pre></div>
 </section>
 
 <section id="s5">
-  <div class="eyebrow"><span class="num">4</span><h2>สร้าง bridge ปิดตาย ที่เครื่อง backup</h2></div>
+  <div class="eyebrow"><span class="num">5</span><h2>สร้าง bridge ปิดตาย ที่เครื่อง backup</h2></div>
   <p>สำเนาที่เก็บไว้ต้องต่ออยู่กับ “เกาะร้าง” — เป็น bridge ที่ไม่มีสายออกไปไหนเลย
      ถ้าวันหนึ่งมีคนเผลอเปิดสำเนาขึ้นมา มันจะออกเน็ตไม่ได้ ไม่ไปชนกับตัวจริง</p>
   <div class="code"><pre><span class="c"># on the BACKUP node</span>
@@ -231,8 +275,67 @@ ls /sys/class/net/vmbr99/brif/</pre></div>
      ซึ่งถูกแล้ว อย่าไปปิด guard</p>
 </section>
 
+<section id="sp">
+  <div class="eyebrow"><span class="num">6</span><h2>ลง PBS ที่เครื่อง backup</h2></div>
+  <p>PBS (Proxmox Backup Server) เป็นคนละเรื่องกับสำเนาที่ ct-replica ทำ และต้องมีทั้งคู่</p>
+  <table>
+    <tr><th></th><th>ct-replica</th><th>PBS</th></tr>
+    <tr><td>ตอบคำถามว่า</td><td>เครื่องพังตอนนี้ กู้กลับมาได้เร็วแค่ไหน</td><td>ไฟล์ที่ลบไปเมื่อวันอังคาร เอากลับมาได้มั้ย</td></tr>
+    <tr><td>เก็บอะไร</td><td>สำเนาล่าสุดชุดเดียว พร้อมเปิดใช้</td><td>ย้อนหลังหลายเดือน เปิดใช้ทันทีไม่ได้</td></tr>
+    <tr><td>บ่อยแค่ไหน</td><td>ทุก 15 นาที</td><td>คืนละครั้ง</td></tr>
+  </table>
+  <p>ของสองอย่างนี้อยู่คนละ pool กันบนเครื่องเดียวกัน ตั้งใจให้ไม่แย่งหัวอ่านดิสก์กัน</p>
+
+  <h3>ติดตั้ง</h3>
+  <div class="code"><pre><span class="c"># on the BACKUP node</span>
+echo "deb http://download.proxmox.com/debian/pbs bookworm pbs-no-subscription"   &gt; /etc/apt/sources.list.d/pbs.list
+apt update &amp;&amp; apt install -y proxmox-backup-server</pre></div>
+
+  <h3>ทำที่เก็บ แล้วทำผู้ใช้ให้ PVE เอาไว้ยิงเข้ามา</h3>
+  <div class="code"><pre>zfs create pbsstore-sas/chunks
+proxmox-backup-manager datastore create main /pbsstore-sas/chunks
+
+proxmox-backup-manager user create svc-pve@pbs --password 'CHANGE-ME'
+proxmox-backup-manager acl update /datastore/main DatastoreBackup   --auth-id svc-pve@pbs</pre></div>
+  <p>ผู้ใช้ตัวนี้ได้สิทธิ์แค่ “ฝากของ” ไม่ได้สิทธิ์ลบ ตั้งใจให้เป็นแบบนั้น —
+     ถ้าเครื่องใน cluster ถูกเจาะ คนที่เข้ามาจะลบ backup ย้อนหลังทิ้งไม่ได้</p>
+
+  <h3>เอาลายนิ้วมือของ certificate ไว้</h3>
+  <div class="code"><pre>proxmox-backup-manager cert info | grep Fingerprint</pre></div>
+  <p>ก๊อปค่าที่ได้ไว้ ใช้ตอนต่อ PVE เข้ามาในขั้นถัดไป</p>
+
+  <h3>ตั้งงานประจำ 3 อย่าง</h3>
+  <div class="code"><pre>proxmox-backup-manager prune-job create daily-prune   --store main --schedule "daily 05:00"   --keep-daily 14 --keep-weekly 8 --keep-monthly 6
+
+proxmox-backup-manager datastore update main --gc-schedule "sun 06:00"
+
+proxmox-backup-manager verify-job create weekly-verify   --store main --schedule "wed 22:00"   --ignore-verified true --outdated-after 30</pre></div>
+  <p>prune คือตัดรุ่นเก่าทิ้งตามกฎ, GC คือคืนเนื้อที่จริง (prune อย่างเดียวไม่คืนเนื้อที่),
+     verify คืออ่านทุก chunk มาเทียบ checksum ว่ายังอ่านได้อยู่จริง
+     เวลาที่ตั้งไว้เลี่ยงไม่ให้ทับกับ backup job ตอนตี 2 ครึ่ง</p>
+
+  <h3>ต่อ PBS เข้า cluster แล้วตั้ง backup ทุกคืน</h3>
+  <div class="code"><pre><span class="c"># on ANY cluster member</span>
+pvesm add pbs pbs-main   --server 10.100.1.9 --datastore main   --username svc-pve@pbs --password 'CHANGE-ME'   --fingerprint 'PASTE-THE-FINGERPRINT-HERE'
+
+pvesh create /cluster/backup   --all 1 --storage pbs-main --schedule "02:30"   --mode snapshot --mailnotification failure   --notes-template '{{guestname}}'</pre></div>
+  <p><code class="inl">--all 1</code> แปลว่า guest ที่สร้างทีหลังจะเข้า job นี้เองอัตโนมัติ
+     ไม่ต้องมานั่งเพิ่มทีละตัว ซึ่งเป็นวิธีที่ CT ตัวใหม่มักจะหลุดไม่ได้ backup</p>
+
+  <h3>เช็กว่าผ่าน</h3>
+  <div class="code"><pre><span class="c"># on any cluster member</span>
+pvesm status | grep pbs-main
+
+<span class="c"># on the BACKUP node, after the first night</span>
+proxmox-backup-manager task list | head</pre></div>
+  <p>ต้องขึ้น <code class="inl">active</code> และคืนถัดมาต้องเห็น task ที่จบด้วย OK</p>
+  <div class="warn"><p><b>สำเนาที่ ct-replica ทำ ไม่ได้เข้า PBS</b> คนละระบบกัน
+     ตัวสำเนาปิดอยู่และไม่ได้อยู่ใน backup job — ถ้าอยากให้เข้าด้วยต้องเพิ่มเอง
+     แต่ปกติไม่ต้อง เพราะตัวจริงเข้าอยู่แล้ว และสำเนาก็คือตัวจริงเมื่อ 15 นาทีก่อน</p></div>
+</section>
+
 <section id="s6">
-  <div class="eyebrow"><span class="num">5</span><h2>ลงตัวโปรแกรม</h2></div>
+  <div class="eyebrow"><span class="num">7</span><h2>ลงตัวโปรแกรม</h2></div>
   <p>ลงที่เครื่อง storage เครื่องเดียว clone ครั้งเดียวได้ครบ ไม่ต้อง clone ซ้ำที่ไหนอีก</p>
   <div class="code"><pre><span class="c"># on the storage node</span>
 git clone &lt;this repo&gt; /root/ketsync
@@ -247,7 +350,7 @@ cp engines/tp/inventory-replica.sample.tsv engines/tp/inventory-replica.tsv</pre
 </section>
 
 <section id="s7">
-  <div class="eyebrow"><span class="num">6</span><h2>กรอก 3 ไฟล์ แค่นี้พอ</h2></div>
+  <div class="eyebrow"><span class="num">8</span><h2>กรอก 3 ไฟล์ แค่นี้พอ</h2></div>
 
   <h3>ไฟล์ที่ 1 — ketsync.conf: เครื่องนี้เป็นตัวหลักรึเปล่า</h3>
   <div class="code"><pre>KS_ROLE=master
@@ -278,7 +381,7 @@ KS_MASTER_IP=10.100.1.17</pre></div>
 </section>
 
 <section id="s8">
-  <div class="eyebrow"><span class="num">7</span><h2>สั่งตรวจ แล้วแก้จนเขียวหมด</h2></div>
+  <div class="eyebrow"><span class="num">9</span><h2>สั่งตรวจ แล้วแก้จนเขียวหมด</h2></div>
   <p>คำสั่งนี้อ่านอย่างเดียว ไม่แตะข้อมูลอะไรเลย สั่งซ้ำได้ไม่จำกัด</p>
   <div class="code"><pre>cd /root/ketsync
 ./ketsync doctor</pre></div>
@@ -293,7 +396,7 @@ KS_MASTER_IP=10.100.1.17</pre></div>
 </section>
 
 <section id="s9">
-  <div class="eyebrow"><span class="num">8</span><h2>ซ้อมก่อนของจริง</h2></div>
+  <div class="eyebrow"><span class="num">10</span><h2>ซ้อมก่อนของจริง</h2></div>
   <p>เลือก CT ที่ไม่สำคัญมาตัวเดียว แล้วสั่งแบบซ้อม มันจะเดินผ่านด่านตรวจครบทุกด่านเหมือนของจริง
      ต่างกันแค่ไม่เขียนอะไรลงดิสก์เลยสักไบต์</p>
   <div class="code"><pre>./ketsync replica --dry-run --ctid 105</pre></div>
@@ -305,7 +408,7 @@ KS_MASTER_IP=10.100.1.17</pre></div>
 </section>
 
 <section id="s10">
-  <div class="eyebrow"><span class="num">9</span><h2>ตั้งให้ทำเองทุก 15 นาที</h2></div>
+  <div class="eyebrow"><span class="num">11</span><h2>ตั้งให้ทำเองทุก 15 นาที</h2></div>
   <p>ใส่ทีละ lane อย่าใส่พร้อมกันสองอัน ดูสักรอบสองรอบว่า log ออกมาปกติก่อนค่อยใส่ตัวถัดไป</p>
   <div class="code"><pre>crontab -e</pre></div>
   <div class="code"><pre>*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-hdd-nas
@@ -319,7 +422,7 @@ tail -f /root/ketsync/engines/tp/logs/replica-$(date +%F).log</pre></div>
 </section>
 
 <section id="s11">
-  <div class="eyebrow"><span class="num">10</span><h2>เจอแบบนี้ แปลว่าอะไร ทำไง</h2></div>
+  <div class="eyebrow"><span class="num">12</span><h2>เจอแบบนี้ แปลว่าอะไร ทำไง</h2></div>
   <p>โปรแกรมนี้เลือกที่จะ “ปฏิเสธเสียงดัง” มากกว่า “ทำต่อเงียบๆ” เจอ error ส่วนใหญ่จึงแปลว่ามันกันไว้ให้แล้ว
      ไม่ใช่ว่าพัง</p>
   <table>
@@ -337,13 +440,15 @@ tail -f /root/ketsync/engines/tp/logs/replica-$(date +%F).log</pre></div>
 </section>
 
 <section id="s12">
-  <div class="eyebrow"><span class="num">11</span><h2>ตรวจครั้งสุดท้าย</h2></div>
+  <div class="eyebrow"><span class="num">13</span><h2>ตรวจครั้งสุดท้าย</h2></div>
   <p>ตอบว่าใช่ได้ครบทุกข้อ ถือว่าติดตั้งเสร็จ</p>
   <table>
     <tr><th>ข้อ</th><th>เช็กยังไง</th></tr>
+    <tr><td>cluster ครบและมีเสียงข้างมาก</td><td class="m">pvecm status</td></tr>
     <tr><td>ssh ไป backup ได้โดยไม่ถามรหัส</td><td class="m">ssh root@10.100.1.9 true</td></tr>
     <tr><td>storage ชื่อตรงกันสองฝั่ง</td><td class="m">pvesm status | grep tank-</td></tr>
     <tr><td>bridge ที่ backup ไม่มีสายต่อ</td><td class="m">ls /sys/class/net/vmbr99/brif/</td></tr>
+    <tr><td>PBS ต่อเข้า cluster แล้ว</td><td class="m">pvesm status | grep pbs-main</td></tr>
     <tr><td>doctor ไม่มีคำตัวใหญ่เหลือ</td><td class="m">./ketsync doctor</td></tr>
     <tr><td>ซ้อม 1 ตัวผ่าน</td><td class="m">./ketsync replica --dry-run --ctid 105</td></tr>
     <tr><td>ของจริง 1 ตัวผ่าน</td><td class="m">./ketsync replica --ctid 105</td></tr>

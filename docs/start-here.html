@@ -125,6 +125,20 @@
   <div class="where">คำสั่งทั้งหมดในหน้านี้พิมพ์บนเครื่อง storage (10.100.1.17) เว้นแต่จะเขียนบอกไว้</div>
 </header>
 
+<section id="s00">
+  <div class="eyebrow"><span class="num">•</span><h2>มีคู่มือ 3 เล่ม อ่านตอนไหนบ้าง</h2></div>
+  <table>
+    <tr><th>เล่ม</th><th>อ่านตอน</th><th>ใช้เวลา</th></tr>
+    <tr><td class="m">infrastructure-setup.html</td>
+        <td>ตั้งเครื่องใหม่ตั้งแต่ศูนย์ หรือมีเครื่องใหม่ join เข้ามา</td><td>ครึ่งวัน อ่านไปทำไป</td></tr>
+    <tr><td class="m">start-here.html</td>
+        <td><b>หน้านี้</b> — อ่านก่อนใช้งานครั้งแรก แล้วเปิดซ้ำเวลาลืมว่าไฟล์ไหนคืออะไร</td><td>15 นาที</td></tr>
+    <tr><td class="m">disaster-recovery.html</td>
+        <td>อ่านล่วงหน้าตอนยังไม่มีอะไรเกิด แล้วเปิดซ้ำตอนเครื่อง storage ตาย</td><td>20 นาที</td></tr>
+  </table>
+  <p>ถ้าเพิ่งเข้ามาใหม่และระบบตั้งอยู่แล้ว อ่านหน้านี้พอ อีกสองเล่มค่อยเปิดตอนถึงเวลาของมัน</p>
+</section>
+
 <section id="s1">
   <div class="eyebrow"><span class="num">1</span><h2>ของทั้งหมดมีแค่ 2 ชั้น</h2></div>
   <p>สับสนกันตรงนี้บ่อยที่สุด เพราะเห็นโฟลเดอร์ซ้อนกันแล้วนึกว่าเป็นคนละโปรเจกต์ จริงๆ มันคือ repo เดียว
@@ -145,15 +159,16 @@
     <tr><td class="m">./ketsync migrate  &lt;flags&gt;</td><td class="m">engines/tp/tp migrate</td></tr>
     <tr><td class="m">./ketsync replica  &lt;flags&gt;</td><td class="m">engines/tp/tp replica</td></tr>
     <tr><td class="m">./ketsync failback &lt;flags&gt;</td><td class="m">engines/tp/tp failback</td></tr>
+    <tr><td class="m">./ketsync distribute &lt;flags&gt;</td><td class="m">engines/tp/tp distribute</td></tr>
     <tr><td class="m">./ketsync status</td><td class="m">engines/tp/tp status</td></tr>
     <tr><td class="m">./ketsync doctor</td><td>ตรวจฝั่ง ketsync แล้วต่อด้วย <span class="m">tp doctor</span> ให้เลย</td></tr>
     <tr><td class="m">./ketsync tp ...</td><td>ทางลัดตรงไปที่ tp เผื่อมี flag ที่ยังไม่ได้สอน dispatcher</td></tr>
   </table>
-  <div class="tip"><p><b>ตอนนี้ใช้ได้จริงคือ tp เท่านั้น</b> ฝั่ง ketsync มี <code class="inl">sync</code>,
-     <code class="inl">role</code>, <code class="inl">doctor</code> ที่ทำงานจริง ส่วน
-     <code class="inl">status</code>, <code class="inl">distribute</code>, <code class="inl">recall</code>
+  <div class="tip"><p><b>ทุกคำสั่งใช้งานได้จริง ยกเว้นตัวเดียว</b> —
+     <code class="inl">recall</code> (ดึงข้อมูลจากตัวชั่วคราวบน compute กลับเข้าตัวจริง)
      ยังเป็นโครงเปล่า สั่งแล้วมันจะบอกเองว่ายังไม่ได้ทำ แล้วออกด้วยรหัส 2 — ตั้งใจให้เป็นแบบนั้น
-     คำสั่งที่ทำงานได้ครึ่งเดียวอันตรายกว่าคำสั่งที่บอกตรงๆ ว่ายังทำไม่ได้</p></div>
+     คำสั่งที่ทำงานได้ครึ่งเดียวอันตรายกว่าคำสั่งที่บอกตรงๆ ว่ายังทำไม่ได้
+     ตอนนี้ต้องทำมือ ขั้นตอนอยู่ใน <code class="inl">docs/disaster-recovery.html</code> ข้อ 6ก</p></div>
 </section>
 
 <section id="s2">
@@ -295,6 +310,8 @@ cp inventory-migrate.sample.tsv  inventory-migrate.tsv   <span class="c"># only 
     <tr><td class="m">--list</td><td>ดูอย่างเดียว ใครอยู่ไหน สถานะอะไร</td><td>failback</td></tr>
     <tr><td class="m">--final</td><td>รอบสุดท้าย ทับ image ตัวจริง</td><td>failback</td></tr>
     <tr><td class="m">--stopped</td><td>ต้นทางถูกปิดอยู่ ไม่ต้องรอ</td><td>migrate</td></tr>
+    <tr><td class="m">--to &lt;ip&gt;</td><td>บังคับว่าจะไปลงเครื่องไหน</td><td>distribute</td></tr>
+    <tr><td class="m">--dst &lt;id&gt;</td><td>บังคับว่าจะลง storage อะไร</td><td>distribute</td></tr>
   </table>
   <p>รหัสออกก็ชุดเดียวกันทั้ง 3 ตัว: <code class="inl">0</code> ปกติ,
      <code class="inl">1</code> มีอย่างน้อยหนึ่ง CT ไม่ผ่านหรือถูกข้าม,
@@ -305,6 +322,7 @@ cp inventory-migrate.sample.tsv  inventory-migrate.tsv   <span class="c"># only 
     <tr><td>ก๊อป CT ไปเครื่อง backup (ทุกคืน)</td><td class="m">./ketsync replica --storage &lt;id&gt;</td></tr>
     <tr><td>เอาข้อมูลจากตัวสำรองกลับเข้าตัวจริง</td><td class="m">./ketsync failback --list</td></tr>
     <tr><td>ดูว่ารอบล่าสุดของแต่ละ CT เป็นยังไง</td><td class="m">./ketsync status</td></tr>
+    <tr><td>เครื่อง storage ตาย ต้องกระจาย CT ไปรันที่ compute</td><td class="m">./ketsync distribute --list</td></tr>
     <tr><td>ตรวจว่าทุกอย่างต่อกันติดไหม</td><td class="m">./ketsync doctor</td></tr>
   </table>
   <p>failback เริ่มด้วย <code class="inl">--list</code> เสมอ มันจะบอกว่าตอนนี้ CT ตัวไหนพร้อมเอากลับบ้าง

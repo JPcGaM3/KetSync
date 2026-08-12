@@ -235,14 +235,21 @@ doctor` says so on the next good day.
 
 ## 10. What is built today
 
-    ketsync sync     real. pushes config + fleet map, generation-ordered
+    ketsync sync     real. pushes the fleet-wide tables, generation-ordered
     ketsync role     real. reports, and refuses to flip the role for you
-    ketsync doctor   real. reachability, the generation lines, ssh to every
-                     compute node, and whether tp is actually present
-    ketsync status       stub, exits 2
-    ketsync distribute   stub, exits 2
-    ketsync recall       stub, exits 2
+    ketsync doctor   real. reachability, the node-name map, the generation
+                     lines, every fleet.tsv address, whether the engines are
+                     present AND executable, then tp doctor on top
+    ketsync migrate      tp's, passed through untouched
+    ketsync replica      tp's
+    ketsync failback     tp's
+    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 33 scenarios,
+                         27 mutations. See section 5
+    ketsync status       tp's
+    ketsync recall       stub, exits 2. See section 6 for why it is the one
+                         command that must not be written carelessly
 
-The stubs say so rather than half working. `tests/` is empty and that is a
-debt: see `tests/README.md`. Nothing here should write to a real machine
-before it has a simulator, for the same reason `tp` has one.
+The one remaining stub says so rather than half working. ketsync's own `tests/`
+is empty and that is a debt: see `tests/README.md`. Nothing in `lib/` should
+write to a real machine before it has a simulator, for the same reason `tp` has
+four.

@@ -76,10 +76,10 @@ broke, rather than something that has been red since the first commit.
                          has a way to check it worked, and every refusal in the
                          engines has a row in its troubleshooting table
     docs/disaster-recovery.html
-                         the storage node is dead. Says plainly that distribute
-                         and recall are not built, and carries the PAUSE-before-
-                         cron step that is the difference between a recovery and
-                         a data loss
+                         the storage node is dead. Drives ketsync distribute,
+                         says plainly that recall is still hand-work, and
+                         carries the PAUSE-before-cron step that is the
+                         difference between a recovery and a data loss
     docs/start-here.html the operator's front door. If you change what an
                          operator types, change it here too
     ketsync              the dispatcher. Contains no logic of its own

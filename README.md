@@ -3,12 +3,16 @@
 Three guides, all in Thai, all written to be followed rather than studied:
 
 - **[`docs/infrastructure-setup.html`](docs/infrastructure-setup.html)** —
-  building it from nothing. Eleven steps, each with a way to check it worked.
+  building it from nothing: the cluster, the ssh paths, the storages, the
+  isolated bridge, PBS, and then this. Fourteen steps, each with a way to check
+  it worked. Read it when you are setting a machine up, and only then.
 - **[`docs/start-here.html`](docs/start-here.html)** — running it day to day.
-  Which file is which, and what to type in what order.
+  Which file is which, and what to type in what order. **Start here** if the
+  system is already up: it is the only one of the three you need to have read.
 - **[`docs/disaster-recovery.html`](docs/disaster-recovery.html)** — the storage
-  node is dead. What works from the backup node today, what does not, and the
-  one step on the way back that loses data if it is skipped.
+  node is dead. Read it once on an ordinary day, then again while it is
+  happening: it carries the one step on the way back that loses data if it is
+  skipped.
 
 Everything below is the summary.
 
@@ -90,7 +94,7 @@ engines/tp/          the four engines that do the moving, committed in full
 docs/infrastructure-setup.html   build it from nothing, in Thai
 docs/disaster-recovery.html      the storage node is dead, in Thai
 docs/start-here.html the operator's front door, in Thai
-docs/decisions.md    why it is shaped this way, and what is not built
+docs/decisions.md    why it is shaped this way, and what is not built yet
 tests/               the debt
 ```
 
