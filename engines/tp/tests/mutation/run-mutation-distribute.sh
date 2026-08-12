@@ -301,6 +301,19 @@ mutant "D1 reads onboot from the wrong container" \
   's{\Qponboot=\E\$\Q(rsh "\E\$pip\Q" "pct config \E\$ct\Q}{ponboot=\$(rsh "\$pip" "pct config \$CT_DR}' \
   5c
 
+# ---------- the fleet table's shape ------------------------------------------
+mutant "an empty dst column falls back to a default storage again" \
+  's{\Q  if [[ -z "\E\$CT_DST\Q" ]]; then\E}{  if false; then}' \
+  36
+
+mutant "the OLD five-column table is read as the new one, silently" \
+  's{^\Qfleet_format_check\E$}{:}m' \
+  37
+
+mutant "the placement column moves back to where the tier column pushed it" \
+  's{\Q{print \E\$3\Q; exit}\E}{{print \$4; exit}}' \
+  1
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

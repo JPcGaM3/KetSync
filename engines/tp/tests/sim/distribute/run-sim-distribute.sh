@@ -86,7 +86,7 @@ new_world(){
   write_conf
   write_nodemap
   inventory "300" "113" "121	replica-ssd"
-  fleet "300	replica-hdd	10.100.1.31	$T1	local-lvm" "113	replica-hdd	10.100.1.31	$T2	local-zfs"
+  fleet "300	10.100.1.31	$T1	local-lvm" "113	10.100.1.31	$T2	local-zfs"
 }
 
 # ---------- the cluster ----------
@@ -148,7 +148,6 @@ BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
 DEFAULT_DEST="replica-hdd"
 OFFSET=8000
 DR_OFFSET=9000
-DR_DST="local-lvm"
 DR_HEADROOM_PCT=25
 BW_TOTAL_MB=230
 LANES=1
@@ -160,7 +159,7 @@ conf_set(){ { grep -v "^$1=" "$WORK/ctrep.conf" || true; } > "$WORK/.c"
             printf '%s=%s\n' "$1" "$2" >> "$WORK/ctrep.conf"; return 0; }
 write_nodemap(){ printf '# ip\tpve node name\n%s\tpve01\n%s\tpve02\n' "$T1" "$T2" > "$WORK/nodes.map"; }
 inventory(){ printf '%s\n' "$@" > "$WORK/inventory-replica.tsv"; }
-fleet(){     { printf '# ct\ttier\thome\tdr\tdr_storage\n'; printf '%s\n' "$@"; } > "$WORK/fleet.tsv"; }
+fleet(){     { printf '# ct\thome\tdr\tdst\n'; printf '%s\n' "$@"; } > "$WORK/fleet.tsv"; }
 no_fleet(){  rm -f "$WORK/fleet.tsv"; }
 rsync_rc(){  printf '%s\n' "$1" > "$SIMROOT/rsync.rc"; }
 truncate_cfg(){ : > "$SIMROOT/cfgwrite.trunc"; }
@@ -655,14 +654,45 @@ if scenario "35: vendored under a ketsync, its tables win over the copies beside
   cp "$WORK/ctrep.conf" "$WORK/inventory-replica.tsv" "$REPO/engines/tp/"
   ln -s "$ENGINE" "$REPO/engines/tp/ct-distribute.sh"
   # beside the engine: the wrong answer. At the top of the repo: the right one.
-  printf '300\thdd\t10.100.1.31\t%s\tlocal-zfs\n' "$T2" > "$REPO/engines/tp/fleet.tsv"
+  printf '300\t10.100.1.31\t%s\tlocal-zfs\n' "$T2" > "$REPO/engines/tp/fleet.tsv"
   printf '# ip\tpve node name\n%s\tpve01\n%s\tpve02\n' "$T1" "$T2" > "$REPO/engines/tp/nodes.map"
-  printf '300\thdd\t10.100.1.31\t%s\tlocal-lvm\n' "$T1" > "$REPO/fleet.tsv"
+  printf '300\t10.100.1.31\t%s\tlocal-lvm\n' "$T1" > "$REPO/fleet.tsv"
   printf '# ip\tpve node name\n%s\tpve01\n%s\tpve02\n' "$T1" "$T2" > "$REPO/nodes.map"
   ENGINE_PATH="$REPO/engines/tp/ct-distribute.sh" run_engine --ctid 300 --list
   rc_is 0; clean
   has "CT 9300 on pve01 ($T1)"
   hasnt "pve02"
+  done_scenario
+fi
+
+
+# ---------- the fleet table's shape ------------------------------------------
+if scenario "36: a CT with no dst column is refused, never given a default"; then
+  # A fleet is not homogeneous: one compute node's local storage is local-lvm
+  # and another's is local-zfs. There used to be a DR_DST fallback behind this
+  # column, which meant a row somebody forgot to finish still allocated a
+  # customer's rootfs - on whichever storage the default happened to name.
+  fleet "300	10.100.1.31	$T1"
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "no destination storage"
+  has "no default"
+  untraced "pvesm alloc"
+  no_cfg pve01 9300
+  done_scenario
+fi
+
+if scenario "37: the OLD five-column fleet table is named, not read as the new one"; then
+  # `110 hdd 10.100.1.32 10.100.1.32` has four fields in the new shape too, so
+  # it parses without complaint and means something completely different -
+  # home becomes `hdd` and the storage becomes an IP address. Everything a
+  # human types here is an IP (rule 5), and `hdd` is not one.
+  fleet "300	replica-hdd	10.100.1.31	$T1	local-lvm"
+  run_engine --ctid 300
+  rc_is 2; clean
+  has "is in the OLD five-column format"
+  has "column 2 must be the home node ADDRESS"
+  untraced "pvesm alloc"
   done_scenario
 fi
 

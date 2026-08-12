@@ -3,25 +3,36 @@
 # tp moves the data. This is NOT one of tp's work lists: engines/tp has its own
 # inventory-migrate.tsv and inventory-replica.tsv, with different columns.
 #
+# FOUR COLUMNS, ALL REQUIRED:
+#
 #   ct     the container id on its home node. The PRODUCTION id, and the only
-#          id written down anywhere. The copy on the backup node and the
-#          temporary one on a compute node are worked out from it - see below
-#   tier   which copy pool it belongs in: ssd (comes back fast) or hdd.
-#          Read by nothing today: it is a note to the human. The pool that
-#          actually decides is the dest column of inventory-replica.tsv
-#   home   the node it normally RUNS on, by IP. That is a compute node, not
-#          the storage node - the storage node serves the disk over NFS, it
-#          does not run the container. Find it with:
+#          id written down anywhere - see below
+#   home   the node it normally RUNS on, by IP. That is a compute node, not the
+#          storage node: the storage node serves the disk over NFS, it does not
+#          run the container. Find it with:
 #              ls /etc/pve/nodes/*/lxc/<ct>.conf
 #   dr     the node that picks it up when the storage node is gone, by IP.
 #          Usually the same compute node: what died is the disk, not the CPU,
 #          so the container comes back on the machine it was already on, using
 #          that machine's own storage instead of NFS
-#   dst    which storage on the dr node to put it on: local-lvm, local-zfs,
-#          local... Leave it out and DR_DST from ctrep.conf is used, which
-#          defaults to local-lvm. ct-distribute.sh handles lvmthin, lvm, dir,
-#          nfs and zfspool, and refuses anything else by name rather than
-#          guessing what shape it is
+#   dst    which storage on the dr node: local-lvm, local-zfs, local... exactly
+#          as `pvesm status` on that node spells it. ct-distribute.sh handles
+#          lvmthin, lvm, dir, nfs and zfspool, and refuses anything else by
+#          name rather than guessing what shape it is
+#
+# There is NO default for dst and there is no longer a `tier` column.
+#
+# A fleet is not homogeneous: one compute node's local storage is local-lvm and
+# another's is local-zfs, so one fallback cannot be right for both, and being
+# wrong means allocating a customer's rootfs on a storage nobody chose. A row
+# without a dst is refused by name. That is the same rule as everywhere else
+# here - no defaults, never guess.
+#
+# `tier` used to sit in column 2 and no engine ever read it. It was a note to a
+# human that nothing acted on, and it made a five-column row that an upgraded
+# engine reads as a four-column one with the wrong meanings. ct-distribute.sh
+# refuses a file whose second column is not an address, for exactly that
+# reason.
 #
 # THE THREE IDS, and why only one of them is in this file:
 #
@@ -41,16 +52,13 @@
 # 'ketsync doctor' refuses to stay quiet about one that does not.
 #
 # dr is written down rather than chosen at the time. Placing a customer by
-# free RAM at 3am is how a customer ends up on the wrong machine; the same
-# rule as tp's "no defaults, never guess". Override on the day with
-# 'ketsync distribute --ctid <id> --to <ip>' and '--dst <storage>'.
+# free RAM at 3am is how a customer ends up on the wrong machine. Override on
+# the day with 'ketsync distribute --ctid <id> --to <ip> --dst <storage>'.
 #
 # TAB separated; lines starting with # are ignored.
 #
-# ct	tier	home	dr	dst
-110	hdd	10.100.1.32	10.100.1.33	local-lvm
-120	hdd	10.100.1.33	10.100.1.32	local-lvm
-# comes back on the machine it already runs on, onto that machine's own disk
-300	hdd	10.100.1.33	10.100.1.33	local-lvm
-# no dst: DR_DST from ctrep.conf decides
-301	ssd	10.100.1.32	10.100.1.32
+# ct	home	dr	dst
+110	10.100.1.32	10.100.1.32	local-lvm
+120	10.100.1.33	10.100.1.33	local-lvm
+# comes back on a different machine, onto a different kind of storage
+130	10.100.1.32	10.100.1.33	local-zfs

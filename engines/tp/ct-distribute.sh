@@ -154,7 +154,6 @@ BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
 DEFAULT_DEST="replica-hdd"
 OFFSET=8000                      # production id -> DR copy id
 DR_OFFSET=9000                   # production id -> temporary compute-node id
-DR_DST="local-lvm"               # default destination storage on the target
 DR_HEADROOM_PCT=25               # refuse if the target would be left tighter
 BW_TOTAL_MB=230
 LANES=1
@@ -361,8 +360,42 @@ if (( ! ${#CTS[@]} )); then
   exit 2
 fi
 
+#     ct <TAB> home <TAB> dr <TAB> dst      four columns, all REQUIRED
+#
+# There used to be a `tier` column in position 2 and a DR_DST fallback behind
+# the storage. Both are gone. Nothing ever read tier - it was a note to a human
+# that no engine had ever looked at - and a fallback storage is the guess this
+# repo refuses everywhere else: a fleet is not homogeneous, one compute node's
+# local storage is local-lvm and another's is local-zfs, so one default cannot
+# be right for both and being wrong means allocating a customer's rootfs on a
+# storage nobody chose.
+fleet_dr(){    awk -v c="$1" '$1!~/^#/ && $1==c{print $3; exit}' "$FLEET" 2>/dev/null; }
+fleet_dst(){   awk -v c="$1" '$1!~/^#/ && $1==c{print $4; exit}' "$FLEET" 2>/dev/null; }
+
+# The old file had five columns with tier in position 2, so an old row and a
+# new row can both have four fields and mean completely different things -
+# `110 hdd 10.100.1.32 10.100.1.32` read as the new shape puts home=hdd and
+# dst=an IP address. Nothing about that is detectable downstream, so it is
+# detected HERE: everything a human types in this system is an IP (rule 5), and
+# `hdd` is not one.
+fleet_format_check(){
+  local bad
+  bad="$(awk '$1!~/^#/ && NF>=2 && $2 !~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {print "  line " NR ": " $0}' \
+         "$FLEET" 2>/dev/null)"
+  [[ -z "$bad" ]] && return 0
+  log "ERROR: $(basename "$FLEET") is in the OLD five-column format - NOTHING was run"
+  log "ERROR:   column 2 must be the home node ADDRESS. These rows have something else:"
+  while IFS= read -r _l; do [[ -n "$_l" ]] && log "ERROR: $_l"; done <<< "$bad"
+  log "ERROR:   the tier column is gone and the storage is now required:"
+  log "ERROR:     # ct<TAB>home<TAB>dr<TAB>dst"
+  log "ERROR:     110	10.100.1.32	10.100.1.32	local-lvm"
+  exit 2
+}
+
 hr
 log "=== $(hostname) distribute mode=$MODE candidates: ${CTS[*]} ==="
+
+fleet_format_check
 
 # ---------- preflight: local tools, before any lock or any allocation -------
 # Same order as every engine here, for the same reason: `flock -n` on a host
@@ -425,21 +458,16 @@ fi
 # is the override for the day the written answer is wrong. A container with
 # neither is REFUSED rather than placed somewhere reasonable: choosing at 3am
 # by what is nearest is how a customer lands on a machine nobody planned for.
-fleet_dr(){    awk -v c="$1" '$1!~/^#/ && $1==c{print $4; exit}' "$FLEET" 2>/dev/null; }
-# Column 5, optional: which storage on that node. A fleet is not homogeneous -
-# one compute node's local storage is local-lvm and another's is local-zfs -
-# so a single DR_DST cannot be right for both, and picking one by looking at
-# what is there would be exactly the guess this repo refuses everywhere else.
-fleet_dst(){   awk -v c="$1" '$1!~/^#/ && $1==c{print $5; exit}' "$FLEET" 2>/dev/null; }
 
 target_of(){   # $1 = production ctid -> the ip to place it on, or empty
   [[ -n "$TO_IP" ]] && { printf '%s' "$TO_IP"; return 0; }
   fleet_dr "$1"
 }
-storage_of(){  # $1 = production ctid -> the storage to place it on
+storage_of(){  # $1 = production ctid -> the storage to place it on, or empty
+  # No fallback. An empty answer is refused by the caller, by name, rather than
+  # turned into a default that allocates on a storage nobody chose.
   [[ -n "$DST_SID" ]] && { printf '%s' "$DST_SID"; return 0; }
-  local s; s="$(fleet_dst "$1")"
-  printf '%s' "${s:-$DR_DST}"
+  fleet_dst "$1"
 }
 
 # ---------- remote helpers, all against ONE machine at a time ---------------
@@ -506,6 +534,13 @@ do_ct(){   # $1 = production ctid
     st_fail "$ct" no_target; return 1
   fi
   CT_DST="$(storage_of "$ct")"
+  if [[ -z "$CT_DST" ]]; then
+    log "[$ct] ERROR: no destination storage - CT $ct has no dst column in $(basename "$FLEET")"
+    log "[$ct] ERROR:   and no --dst was given. There is no default: one compute node's"
+    log "[$ct] ERROR:   local storage is local-lvm and another's is local-zfs, so a fallback"
+    log "[$ct] ERROR:   would put a customer's rootfs on a storage nobody chose."
+    st_fail "$ct" no_storage; return 1
+  fi
 
   # ---- the copy's config, read from the backup node's pmxcfs --------------
   cfg=$(rsh "${BKP_SSH#*@}" "cat /etc/pve/nodes/$BKP_NODE/lxc/$CT_SRC.conf 2>/dev/null")

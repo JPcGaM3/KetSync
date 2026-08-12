@@ -83,17 +83,30 @@ cmd_doctor(){
 
   # Every address written in fleet.tsv has to be one this machine knows about,
   # or a DR lands a customer somewhere nobody planned for.
-  say "== fleet.tsv addresses"
+  say "== fleet.tsv"
   if [[ -f "$KS_INV" ]]; then
-    local ct _tier home dr bad=0
-    while read -r ct _tier home dr _; do
+    local ct home dr dst bad=0
+    while read -r ct home dr dst _; do
       [[ "$ct" =~ ^# || -z "${ct:-}" ]] && continue
+      # Column 2 is an address. The old file had `tier` there, and an old row
+      # has four fields too - so it parses as the new shape and means something
+      # completely different. Everything a human types here is an IP.
+      if [[ ! "$home" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        say "  CT $ct: column 2 is '$home', not an address - this is the OLD five-column file"
+        say "  CT $ct:   the tier column is gone:  ct<TAB>home<TAB>dr<TAB>dst"
+        bad=1; continue
+      fi
       for ip in "$home" "$dr"; do
         [[ -n "$ip" ]] || continue
         [[ -n "$(node_role "$ip")" ]] || { say "  CT $ct: $ip has no row in nodes.tsv"; bad=1; }
       done
+      # No default behind this one, on purpose: one node's local storage is
+      # local-lvm and another's is local-zfs, so a fallback would place a
+      # customer's rootfs on a storage nobody chose. distribute refuses at the
+      # time; this says so on an ordinary Tuesday instead.
+      [[ -n "$dst" ]] || { say "  CT $ct: no dst - distribute will refuse it, there is no default"; bad=1; }
     done < "$KS_INV"
-    (( bad )) && rc=1 || say "  every home and dr address is in nodes.tsv"
+    (( bad )) && rc=1 || say "  every row has an address, a dr node and a storage"
   fi
 
   # There is no mirror any more, and a leftover one is worth naming: it is not

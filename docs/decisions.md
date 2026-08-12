@@ -76,13 +76,13 @@ itself. The value is identical fleet-wide.
 
 What actually differs is one line of tuning: `BW_TOTAL_MB`, because the storage
 node and the backup node do not have the same link. Everything else in
-`ctrep.conf` - `BKP_DESTS`, `OFFSET`, `DR_OFFSET`, `DR_DST`, `DR_HEADROOM_PCT`,
+`ctrep.conf` - `BKP_DESTS`, `OFFSET`, `DR_OFFSET`, `DR_HEADROOM_PCT`,
 `LOG_KEEP_DAYS` - is the same everywhere and would be correct to sync.
 
 That matters more than it sounds, because `ct-distribute.sh` reads `ctrep.conf`
 and distribute is the thing you run from the backup node during a disaster. As
 it stands, that file has to be maintained there by hand, and a fleet-wide
-change to `DR_DST` has to be remembered twice. Splitting the file into a synced
+change to `BKP_DESTS` has to be remembered twice. Splitting the file into a synced
 part and a per-machine part would reduce "can the backup node take over?" to
 one line of `ketsync.conf`. It has not been done.
 
@@ -159,7 +159,7 @@ resolves the target from `fleet.tsv`'s `dr` column (`--to` overrides, and a
 container with neither is refused rather than placed somewhere reasonable),
 checks `9<id>` is free across the whole cluster, allocates on the target's own
 storage, transfers, writes the config carrying the production network, and then
-prints the `pct start` for a human. 37 scenarios, 38 mutations.
+prints the `pct start` for a human. 39 scenarios, 41 mutations.
 
 Two things about it are new to this repo.
 
@@ -282,8 +282,8 @@ doctor` says so on the next good day.
     ketsync migrate      tp's, passed through untouched
     ketsync replica      tp's
     ketsync failback     tp's
-    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 37 scenarios,
-                         38 mutations. See section 5
+    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 39 scenarios,
+                         41 mutations. See section 5
     ketsync status       tp's
     ketsync recall       stub, exits 2. See section 6 for why it is the one
                          command that must not be written carelessly
