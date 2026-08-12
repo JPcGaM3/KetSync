@@ -24,7 +24,7 @@
 #
 #  Everything a human types here is an IP. PVE node NAMES exist because configs
 #  live under /etc/pve/nodes/<name>/, but nobody types one: they are discovered
-#  from the cluster and cached in nodes.map. See docs/decisions.md section 8.
+#  from the cluster and cached in nodes.map. See docs/decisions.md section 9.
 #
 #  exit code: 0 = nothing needs attention, 1 = something does,
 #             2 = refused before touching anything.
@@ -76,8 +76,8 @@ case "${1:-}" in
   sync)       shift; . "$BASE/lib/cmd_sync.sh";     cmd_sync "$@";;
   role)       shift; . "$BASE/lib/cmd_role.sh";     cmd_role "$@";;
   doctor)     shift; . "$BASE/lib/cmd_doctor.sh";   cmd_doctor "$@";;
-  distribute) shift; not_built distribute "section 4";;
-  recall)     shift; not_built recall     "section 5";;
+  distribute) shift; not_built distribute "section 5";;
+  recall)     shift; not_built recall     "section 6";;
 
   version)    echo "ketsync $(cd "$BASE" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;
   ""|-h|--help|help) usage;;

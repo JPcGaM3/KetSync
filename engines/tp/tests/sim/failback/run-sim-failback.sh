@@ -106,6 +106,7 @@ new_world(){
   # sandbox, because ${BASH_SOURCE[0]} is not symlink-resolved
   ln -s "$ENGINE" "$WORK/ct-failback.sh"
   write_conf
+  write_nodemap
   inventory "105" "113	ssd" "121	9121	ssd"
 }
 
@@ -159,6 +160,15 @@ fail_zfs(){ printf '%s\n' "$1" >> "$SIMROOT/zfs.fail"; }   # e.g. "snapshot tank
 
 # ---------- the backup node ----------
 bkp_identity(){ printf '%s\n' "$1" > "$BKP/node"; }
+# What `ketsync doctor` generates: ip<TAB>pve-node-name. The engine reads it to
+# turn the pmxcfs name out of a config path into an address before any ssh.
+# The backup node is a cluster member too, so ketsync's map lists it - and it
+# is deliberately FIRST here. A lookup that returns any row rather than the
+# matching one then asks the backup node whether a production CT is stopped,
+# which is a wrong answer rather than an error, and that is the shape of bug
+# this ordering exists to catch.
+write_nodemap(){ printf '# ip\tpve node name\n100.100.100.35\tbkp02\n10.100.1.32\tpve01\n10.100.1.33\tpve02\n' > "$WORK/nodes.map"; }
+no_nodemap(){ rm -f "$WORK/nodes.map"; }
 bkp_down(){ : > "$BKP/.down"; }
 add_copy(){ # tgt_vmid dest status src_ctid - a promoted copy, serving traffic
   local tgt="$1" st="$3" src="$4" ds="replica-$2/ct/subvol-$1-disk-0"
@@ -507,11 +517,11 @@ if scenario "15: B1 a production CT that is still running is skipped, image unto
   run_engine --ctid 105
   rc_is 1; clean
   has "[105] GUARD B1: production CT is 'running' on pve01, must be stopped"
-  # The refusal has to say how to clear it, and the route changed: this host
-  # cannot ssh a compute node, so the command it hands over goes through the
-  # backup node's cluster API. What is being asserted is unchanged - a refusal
-  # that does not tell the operator what to type is a refusal they work around.
-  has "pvesh create /nodes/pve01/lxc/105/status/stop"
+  # The refusal has to say how to clear it, and it hands over an ADDRESS rather
+  # than a name: the name came out of a config path and this host has no
+  # resolver for it. What is being asserted is unchanged - a refusal that does
+  # not tell the operator what to type is a refusal they work around.
+  has "ssh root@10.100.1.32 pct shutdown 105"
   untraced "rsync"; untraced "mount -o"
   image_has 105 "generation 1"
   has "ok=0 skipped=1 failed=0"
@@ -522,7 +532,7 @@ if scenario "16: B1 a production node that cannot be reached counts as not stopp
   node_down pve01
   run_engine --ctid 105
   rc_is 1; clean
-  has "[105] GUARD B1: cannot reach pve01 via cluster API to check the CT - 'unverified' is not 'stopped'"
+  has "[105] GUARD B1: cannot reach pve01 (10.100.1.32) to check the CT - 'unverified' is not 'stopped'"
   untraced "rsync"
   image_has 105 "generation 1"
   done_scenario
@@ -958,17 +968,36 @@ if scenario "53: --list names the ssh that a failback would refuse on, and exits
   # every CT stopped at GUARD B1 with "cannot reach pve-r32". The storage node
   # is outside the cluster on purpose, so it has neither the cluster's hosts
   # file nor its keys, and nothing had ever said that failback needs root ssh
-  # to every compute node BY NAME. --list is the place to find that out on an
+  # to every production node. --list is the place to find that out on an
   # ordinary Tuesday, so it has to say it, and it must not exit 0 while saying
   # it - a green --list is what somebody files as "checked".
+  #
+  # The command it prints has to be one that can be pasted, which means the
+  # ADDRESS nodes.map resolved, not the pmxcfs name it started from. Handing
+  # over a name this host cannot resolve sends the operator to debug DNS that
+  # is not the problem.
   node_down pve01
   run_engine --list
   rc_is 1
   has "PROD unreachable for"
   has "a failback would refuse at GUARD B1"
-  has "ssh -o BatchMode=yes root@pve01 true"
+  has "ssh -o BatchMode=yes root@10.100.1.32 true"
   has "ssh-copy-id"
   untraced "rsync"
+  done_scenario
+fi
+
+if scenario "53b: with no nodes.map the node NAME is used, and --list says why"; then
+  # The documented fallback: a tp checked out on its own, with no ketsync above
+  # it to generate the map. It still works wherever /etc/hosts or DNS can
+  # resolve the name, which is what this engine always relied on - so the
+  # refusal has to point at the map rather than pretend the name is wrong.
+  no_nodemap
+  node_down pve01
+  run_engine --list
+  rc_is 1
+  has "ssh -o BatchMode=yes root@pve01 true"
+  has "has no row for it - run 'ketsync doctor' to rebuild the map"
   done_scenario
 fi
 

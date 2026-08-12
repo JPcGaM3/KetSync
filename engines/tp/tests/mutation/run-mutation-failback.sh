@@ -115,7 +115,7 @@ echo "=== ct-failback.sh mutation suite ==="
 # --list is where you find out on an ordinary Tuesday - so it must say so, and
 # it must not exit 0 while saying it.
 mutant "--list reports an unreachable production node and still exits 0" \
-  's{\Qlog "  if that says \E.could not resolve hostname.\Q, add the node to /etc/hosts here;"\E}{:; exit 0; :}' \
+  's{\Qlog "  this host needs root ssh to each of those addresses, before you need it:"\E}{:; exit 0; :}' \
   53
 
 mutant "a copy id typed by mistake gets no hint about the source id" \
@@ -142,15 +142,19 @@ mutant "B1 counts a production node it cannot reach as stopped" \
   's{\Q  if [[ -z "\E\$CT_PSTAT\Q" ]]; then\E}{  if [[ -z "\$CT_PSTAT" ]]; then CT_PSTAT=stopped; fi\n  if false; then}' \
   16
 
-# The one that actually happened. B1 used to ssh the compute node directly and
-# every CT was refused, because this engine runs on the storage node, which is
-# outside the cluster and has no key or name resolution for any of them. It now
-# asks the backup node - a cluster member - over the cluster API. Putting the
-# direct ssh back must not be something the suite shrugs at: the fake ssh
-# refuses any host but the backup node, so this dies on the invariant.
-mutant "B1 asks the compute node directly again, the way that failed on real hardware" \
-  's{ssh \$SSH_OPT "\$BKP_SSH" "pvesh get /nodes/\$CT_NODE/lxc/\$ct/status/current --output-format yaml 2>/dev/null"}{ssh \$SSH_OPT "root\@\$CT_NODE" "pct status \$ct 2>/dev/null"}' \
-  15 16 17
+# B1 asks the production node itself, at the ADDRESS nodes.map resolved. Two
+# ways that goes wrong and neither one crashes: the lookup is dropped and the
+# pmxcfs name is used as a hostname on a host with no resolver (every CT
+# refused, which is the incident that started all this), or the lookup silently
+# guesses when the map has no row (the WRONG machine is asked whether a
+# container is stopped, and then the right machine's image is written into).
+mutant "the node-map lookup is dropped, so B1 ssh's to a name this host cannot resolve" \
+  's{\Q  CT_HOST="\E\$\Q(node_ip "\E\$CT_NODE\Q")"; CT_HOST="\E\$\{CT_HOST:-\$CT_NODE\}\Q"\E}{  CT_HOST="\$CT_NODE"}' \
+  15 53
+
+mutant "node_ip returns the first row rather than the matching one" \
+  's{\Q && \E\$2\Q==n{print \E\$1\Q; exit}\E}{ {print \$1; exit}}' \
+  15 17
 
 # ---------- B2: something has to be shielding the copy -----------------------
 # Presync leans on ct-replica's R2, which only skips a copy while it RUNS.

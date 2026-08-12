@@ -1,8 +1,16 @@
 # ketsync
 
-**New here? Open [`docs/start-here.html`](docs/start-here.html) first.** One
-page, in Thai: which file is which, what goes on which machine, and what to
-type in what order. Everything below is the summary.
+Three guides, all in Thai, all written to be followed rather than studied:
+
+- **[`docs/infrastructure-setup.html`](docs/infrastructure-setup.html)** —
+  building it from nothing. Eleven steps, each with a way to check it worked.
+- **[`docs/start-here.html`](docs/start-here.html)** — running it day to day.
+  Which file is which, and what to type in what order.
+- **[`docs/disaster-recovery.html`](docs/disaster-recovery.html)** — the storage
+  node is dead. What works from the backup node today, what does not, and the
+  one step on the way back that loses data if it is skipped.
+
+Everything below is the summary.
 
 The layer above [`tp`](engines/README.md). `ketsync` decides who does what and
 where; `tp` does it, with the guards it already has.
@@ -78,6 +86,8 @@ the inventory does, written down in advance; `--node` overrides it on the day.
 ```
 ketsync              the dispatcher, and lib/ behind it — the decision layer
 engines/tp/          the three engines that do the moving, committed in full
+docs/infrastructure-setup.html   build it from nothing, in Thai
+docs/disaster-recovery.html      the storage node is dead, in Thai
 docs/start-here.html the operator's front door, in Thai
 docs/decisions.md    why it is shaped this way, and what is not built
 tests/               the debt
@@ -97,8 +107,8 @@ engines/tp/inventory-replica.tsv   a work list: which CTs to copy nightly
 
 ```bash
 make lint       # both layers: bash -n, shellcheck, the language rule, doc embeds
-make test       # engines/tp: 186 simulator scenarios, the dispatcher, c2v, python
-make mutation   # 126 known bugs put back one at a time; none may survive
+make test       # engines/tp: 187 simulator scenarios, the dispatcher, c2v, python
+make mutation   # 127 known bugs put back one at a time; none may survive
 ```
 
 `make -C engines/tp test-replica` and friends still work if you want one engine.

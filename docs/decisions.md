@@ -69,12 +69,42 @@ A new machine joins by being added to `nodes.tsv` and receiving a sync. There
 is no membership protocol, because with manual promotion there is nothing for
 one to agree about.
 
-## 4. `distribute` — designed, not built
+## 4. VMID numbering, and the two places a container can be
+
+One container has up to three VMIDs, and the digit in front says where you are
+looking. It is a policy rather than a mechanism, which is the point: reading
+`9300` in a `pct list` tells you immediately that this is a temporary DR copy on
+somebody's local disk and not the real thing.
+
+    300     the production container. Its rootfs is a raw image on the storage
+            node, mounted over NFS by the compute node that runs it
+    8300    the DR copy on the backup node. Written by ct-replica every round,
+            stopped, on a bridge with no uplink. OFFSET=8000 in ctrep.conf
+    9300    a TEMPORARY copy running on a compute node's own local-lvm, made
+            only while the storage node is down. DR_OFFSET=9000
+
+The 9000 tier exists because of what the storage node's death actually breaks:
+the images are gone, so the container cannot run where it normally runs, and the
+backup node has the data but nowhere near the CPU and RAM to run the fleet. The
+data therefore has to move a second time - backup node to a compute node's
+*local* disk, which is the one storage in the building that does not depend on
+the machine that died.
+
+`local-lvm` specifically, and not a second NFS mount: the whole point is to stop
+depending on shared storage for the duration. It is temporary and it is meant to
+feel temporary - a 9xxx container is one somebody has to deliberately unwind.
+
+## 5. `distribute` — designed, not built
 
 Moves a copy from the backup node onto a compute node during a disaster:
-resolve the target from the inventory's `dr` column, check the VMID is free
-*there* (the copy's own guards only look at the backup node), transfer, write
-the config, and then **print the `pct start` for a human to run**.
+resolve the target from `fleet.tsv`'s `dr` column, check that `9<id>` is free
+*there* (the copy's own guards only look at the backup node), allocate on
+`local-lvm`, transfer from the backup node's dataset, write the config with the
+production network, and then **print the `pct start` for a human to run**.
+
+The transfer runs between the backup node and the compute node while the
+orchestrator touches neither, which is the capability section 7 describes and
+the reason it has to land in `tp` first.
 
 It does not start containers. That rule is not a technicality - starting a
 container is the moment a customer's service either comes back or collides with
@@ -85,10 +115,12 @@ the day. Not from free RAM: choosing automatically is how a customer lands on
 the wrong machine at 3am, and it is the same "no defaults, never guess" rule
 the engines already enforce.
 
-## 5. `recall` — designed, not built, and the most dangerous thing here
+## 6. `recall` — designed, not built, and the most dangerous thing here
 
-The return trip, once the storage node is back. The container ran on a compute
-node for hours; the image on the storage node is that many hours stale.
+The return trip, once the storage node is back: `9300` on a compute node's
+local-lvm has the real data, and `300`'s image on the storage node is however
+many hours stale. The container ran on a compute node for hours; the image on
+the storage node is that many hours stale.
 
 **The sync must go compute -> storage.** One inverted flag destroys every hour
 of customer work since the disaster, and it cannot be undone. So `recall` may
@@ -96,14 +128,14 @@ not simply take a direction as an argument - it has to establish which side is
 newer and **refuse to write into a destination that is newer than its source**.
 The person running it has just been awake for six hours.
 
-## 6. `status` — designed, not built
+## 7. `status` — designed, not built
 
 One table: every container, where it is running now, where its copy is, when it
 was last synced, and whether that is where the inventory says it should be. The
 last column is the point - a container that has quietly been living somewhere
 else for a week is exactly what nobody notices.
 
-## 7. Storage types
+## 8. Storage types
 
 The engines currently assume the source is a raw file on a `dir` or `nfs`
 storage, which they loop-mount. That is no longer true once containers can live
@@ -127,7 +159,7 @@ the transfer runs between two machines while the orchestrator touches neither.
 That second point is not a complication - it is exactly the capability the
 disaster case needs, since the orchestrator will not be the storage node.
 
-## 8. Everything a human types is an IP, and the one name nobody types
+## 9. Everything a human types is an IP, and the one name nobody types
 
 PVE stores container configs under `/etc/pve/nodes/<name>/`, so a node name is
 unavoidable as *data*. Typing one is avoidable, and that is the part that
@@ -159,7 +191,7 @@ needs this most is the one during an outage. A cached name a week old is still
 right; PVE node names effectively never change, and if one does, `ketsync
 doctor` says so on the next good day.
 
-## 9. What is built today
+## 10. What is built today
 
     ketsync sync     real. pushes config + fleet map, generation-ordered
     ketsync role     real. reports, and refuses to flip the role for you

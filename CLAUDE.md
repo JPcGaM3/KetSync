@@ -57,7 +57,7 @@ proves the simulator can fail. `tp` learned this the expensive way.
     make lint     # both layers: bash -n, shellcheck, the language rule, embeds
                   # the language rule is enforced on BOTH docs/ trees now
     make test     # engines/tp's full suite. Warns that ketsync has none
-    make mutation # 126 known bugs put back. None may survive
+    make mutation # 127 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -68,6 +68,16 @@ broke, rather than something that has been red since the first commit.
 
 ## Layout
 
+    docs/infrastructure-setup.html
+                         build the whole thing from nothing. Written for a
+                         reader who does not do infra for a living: every step
+                         has a way to check it worked, and every refusal in the
+                         engines has a row in its troubleshooting table
+    docs/disaster-recovery.html
+                         the storage node is dead. Says plainly that distribute
+                         and recall are not built, and carries the PAUSE-before-
+                         cron step that is the difference between a recovery and
+                         a data loss
     docs/start-here.html the operator's front door. If you change what an
                          operator types, change it here too
     ketsync              the dispatcher. Contains no logic of its own

@@ -44,7 +44,7 @@ jobs:
         run: make -C engines/tp test
 
       # A green suite means nothing until you have watched it go red for the
-      # right reason. This reintroduces a hundred and twenty-six known bugs one
+      # right reason. This reintroduces a hundred and twenty-seven known bugs one
       # at a time, across all three engines and the dispatcher, and fails if
       # the simulators let any of them through.
       - name: mutation
