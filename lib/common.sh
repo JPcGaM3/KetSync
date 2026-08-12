@@ -92,6 +92,16 @@ nodemap_refresh(){   # -> writes ip<TAB>name, one node per line. rc 1 if it coul
   return 0
 }
 
+# The same idea for the placement table. ct-distribute.sh reads fleet.tsv to
+# find out which compute node a container goes to, and it has to be able to
+# read it during the incident - when the machine holding this layer may be the
+# machine that died. Mirroring beats calling upward: the engines keep working
+# with no ketsync above them at all, which is what --to is for.
+fleet_mirror(){
+  [[ -f "$KS_INV" && -d "$KS_BASE/engines/tp" ]] || return 0
+  cp -f "$KS_INV" "$KS_BASE/engines/tp/fleet.tsv" 2>/dev/null
+}
+
 node_name(){   # $1 = ip -> its PVE node name from the cache, or empty
   awk -v i="$1" '$1!~/^#/ && $1==i{print $2; exit}' "$KS_NODEMAP" 2>/dev/null; }
 

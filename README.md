@@ -28,7 +28,7 @@ ketsync tp <...>     anything else, straight through       -> tp
 ketsync sync         push the tables to every node in nodes.tsv
 ketsync role         who this machine thinks it is
 ketsync doctor       the cross-checks nobody remembers to run, both layers
-ketsync distribute   DR: put a copy onto a compute node and hand over   (stub)
+ketsync distribute   DR: a copy -> a compute node's own storage      -> tp
 ketsync recall       the return trip, once the storage node is back     (stub)
 ```
 
@@ -79,13 +79,14 @@ config, then prints the `pct start` for a human. Bringing a customer's service
 back is a decision, not a step.
 
 It does not choose where a container goes during a disaster. The `dr` column in
-the inventory does, written down in advance; `--node` overrides it on the day.
+`fleet.tsv` does, written down in advance; `--to` overrides it on the day, and a
+container with neither is refused rather than placed somewhere reasonable.
 
 ## What is in here
 
 ```
 ketsync              the dispatcher, and lib/ behind it — the decision layer
-engines/tp/          the three engines that do the moving, committed in full
+engines/tp/          the four engines that do the moving, committed in full
 docs/infrastructure-setup.html   build it from nothing, in Thai
 docs/disaster-recovery.html      the storage node is dead, in Thai
 docs/start-here.html the operator's front door, in Thai
@@ -107,17 +108,17 @@ engines/tp/inventory-replica.tsv   a work list: which CTs to copy nightly
 
 ```bash
 make lint       # both layers: bash -n, shellcheck, the language rule, doc embeds
-make test       # engines/tp: 187 simulator scenarios, the dispatcher, c2v, python
-make mutation   # 127 known bugs put back one at a time; none may survive
+make test       # engines/tp: 220 simulator scenarios, the dispatcher, c2v, python
+make mutation   # 156 known bugs put back one at a time; none may survive
 ```
 
 `make -C engines/tp test-replica` and friends still work if you want one engine.
 
 ## Status
 
-`sync`, `role` and `doctor` work. `distribute`, `recall` and `status` are
-stubs that say so and exit 2 — a command that half works is worse than one
-that admits it does not, especially the one you reach for during a DR.
+`sync`, `role`, `doctor`, `distribute` and every tp command work. `recall` is
+still a stub that says so and exits 2 — a command that half works is worse than
+one that admits it does not, especially the one you reach for during a DR.
 
 `engines/tp` is tested hard. `ketsync` itself is not tested at all: `tests/`
 is empty, and that is a debt rather than a decision. `make test` says so on

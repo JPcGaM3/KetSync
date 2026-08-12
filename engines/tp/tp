@@ -10,6 +10,9 @@
 #                  (forever, every 15 minutes, the DR copy)
 #    tp failback   promoted copy        ->  back into the production image
 #                  (only during an incident, the reverse of replica)
+#    tp distribute DR copy on the backup ->  a compute node's OWN storage
+#                  (only while the storage node is gone: the copies have to run
+#                   somewhere, and the backup node cannot run them all)
 #
 #  Read-only helpers:
 #    tp status     what every CT's last run did, both engines, one table
@@ -193,6 +196,7 @@ case "${1:-}" in
   migrate)  shift; engine ct-migrate.sh  "$@";;
   replica)  shift; engine ct-replica.sh  "$@";;
   failback) shift; engine ct-failback.sh "$@";;
+  distribute) shift; engine ct-distribute.sh "$@";;
   status)   shift; cmd_status "$@";;
   doctor)   shift; cmd_doctor "$@";;
   version)  echo "tp $(cd "$TP_HOME" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;

@@ -44,7 +44,8 @@ new_world(){
   mkdir -p "$HOME_DIR/state" "$HOME_DIR/done" "$HOME_DIR/logs"
   # the dispatcher resolves each engine relative to TP_HOME and refuses when it
   # is not there, so a sandbox that wants to dispatch has to carry them
-  ln -s "$ROOT/ct-migrate.sh" "$ROOT/ct-replica.sh" "$ROOT/ct-failback.sh" "$HOME_DIR/"
+  ln -s "$ROOT/ct-migrate.sh" "$ROOT/ct-replica.sh" "$ROOT/ct-failback.sh" \
+        "$ROOT/ct-distribute.sh" "$HOME_DIR/"
   cp "$ROOT/ctmig.conf" "$ROOT/ctrep.conf" "$HOME_DIR/" 2>/dev/null || true
   : > "$HOME_DIR/inventory-migrate.tsv"
   : > "$HOME_DIR/inventory-replica.tsv"
@@ -107,6 +108,7 @@ if scenario "1: no subcommand prints the usage rather than doing something"; the
   has "tp migrate"
   has "tp replica"
   has "tp failback"
+  has "tp distribute"
   has "tp doctor"
   done_scenario
 fi
@@ -134,6 +136,9 @@ if scenario "3: everything after the subcommand reaches the engine untouched"; t
   run_tp failback -h
   rc_is 0
   has "ct-failback.sh --all --dry-run"
+  run_tp distribute -h
+  rc_is 0
+  has "ct-distribute.sh --all --dry-run"
   done_scenario
 fi
 

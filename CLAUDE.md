@@ -45,8 +45,10 @@ config into another member's directory.
 commands **before** taking any lock: `flock` missing reads as "the lock is
 held", and the run exits 0 having done nothing.
 
-**7. A stub says it is a stub.** `status`, `distribute` and `recall` exit 2
-with a pointer into `docs/decisions.md`. Do not make one half work.
+**7. A stub says it is a stub.** `recall` exits 2 with a pointer into
+`docs/decisions.md`. Do not make one half work. `distribute` stopped being a
+stub when `engines/tp/ct-distribute.sh` was written, with 33 scenarios and 27
+mutations behind it - which is the bar for the next one.
 
 **8. `tests/` is empty and that is a debt.** Read `tests/README.md`. Nothing
 that writes to a real machine ships without a simulator and a mutation that
@@ -57,7 +59,7 @@ proves the simulator can fail. `tp` learned this the expensive way.
     make lint     # both layers: bash -n, shellcheck, the language rule, embeds
                   # the language rule is enforced on BOTH docs/ trees now
     make test     # engines/tp's full suite. Warns that ketsync has none
-    make mutation # 127 known bugs put back. None may survive
+    make mutation # 156 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -86,8 +88,9 @@ broke, rather than something that has been red since the first commit.
     ketsync.conf.sample  this machine's role and the master's address
     nodes.tsv.sample     ip -> role. No name column, on purpose
     nodes.map            ip -> PVE node name. GENERATED. Never hand-edited
-    fleet.tsv.sample     ct, tier, home node, dr node. The fleet map -
-                         "inventory" always means one of tp's work lists
+    fleet.tsv.sample     ct, tier, home node, dr node, dr storage. The fleet
+                         map - "inventory" always means one of tp's work lists.
+                         Mirrored into engines/tp, which reads it during a DR
     engines/tp/          the execution layer. Committed here, edited here
     docs/decisions.md    why it is shaped this way, and what is not built
     tests/               the debt

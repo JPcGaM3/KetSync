@@ -13,7 +13,7 @@ ENGINES := $(ROOT)/ct-migrate.sh $(ROOT)/ct-replica.sh $(ROOT)/ct-failback.sh
 SHIPPED := $(ENGINES) $(ROOT)/tp $(ROOT)/bkp02-setup.sh $(ROOT)/tools/*.sh
 
 .DEFAULT_GOAL := help
-.PHONY: embeds help test test-sim test-migrate test-replica test-failback test-unit test-c2v \
+.PHONY: embeds help test test-sim test-migrate test-replica test-failback test-distribute test-unit test-c2v \
         mutation mutation-migrate mutation-replica mutation-failback mutation-tp \
         gates test-tp \
         lint syntax shellcheck no-thai log-sep zip clean schema-check
@@ -24,7 +24,7 @@ help:            ## show this list
 
 test: test-sim test-tp test-c2v test-unit  ## everything: all three simulators + the dispatcher + c2v + python unit tests
 
-test-sim: test-migrate test-replica test-failback  ## every engine against its fake PVE
+test-sim: test-migrate test-replica test-failback test-distribute  ## every engine against its fake PVE
 
 test-migrate:    ## ct-migrate.sh: old node -> raw image here
 	@$(ROOT)/tests/sim/run-sim.sh
@@ -35,13 +35,16 @@ test-replica:    ## ct-replica.sh: live image here -> stopped copy on the backup
 test-failback:   ## ct-failback.sh: promoted copy -> back into the production image
 	@$(ROOT)/tests/sim/failback/run-sim-failback.sh
 
+test-distribute: ## ct-distribute.sh: a DR copy -> a compute node's own storage
+	@$(ROOT)/tests/sim/distribute/run-sim-distribute.sh
+
 test-tp:         ## the dispatcher: tp status, tp doctor, and argument pass-through
 	@$(ROOT)/tests/tp/run-tp.sh
 
 test-c2v:        ## check what both phase-2 scripts write, EL and Debian alike
 	@$(ROOT)/tests/c2v/run-c2v.sh
 
-mutation: mutation-migrate mutation-replica mutation-failback mutation-tp  ## break every engine and the dispatcher on purpose, prove the suites notice
+mutation: mutation-migrate mutation-replica mutation-failback mutation-distribute mutation-tp  ## break every engine and the dispatcher on purpose, prove the suites notice
 
 mutation-migrate:  ## 38 known bugs put back into ct-migrate.sh
 	@$(ROOT)/tests/mutation/run-mutation.sh
@@ -51,6 +54,9 @@ mutation-replica:  ## 36 known bugs put back into ct-replica.sh
 
 mutation-failback: ## 36 known bugs put back into ct-failback.sh
 	@$(ROOT)/tests/mutation/run-mutation-failback.sh
+
+mutation-distribute: ## 27 known bugs put back into ct-distribute.sh
+	@$(ROOT)/tests/mutation/run-mutation-distribute.sh
 
 mutation-tp:       ## 7 known bugs put back into the tp dispatcher
 	@$(ROOT)/tests/mutation/run-mutation-tp.sh

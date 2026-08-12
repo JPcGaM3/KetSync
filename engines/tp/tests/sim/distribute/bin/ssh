@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+# fake ssh — the whole cluster, one shell command at a time.
+#
+# ct-distribute.sh orchestrates and touches nothing itself, so every disk
+# operation in the run arrives here. Three kinds of machine answer:
+#
+#   $SIM_BKP_HOST      the backup node: pmxcfs, the copies and their data
+#   a row in targets/  a compute node: storages, volumes, mounts, and the
+#                      rsync that PULLS from the backup node - the engine runs
+#                      it there because rsync cannot do remote-to-remote
+#   anything else      a production node, which answers D1 and nothing else
+#
+# Several answers below refuse to pretend. mkfs on a mounted device, rsync into
+# a path that is not a mountpoint, allocating on an inactive storage, writing a
+# config before a good transfer, or starting a container are all recorded as
+# violations rather than simulated, because each one has a consequence on a
+# real node that no amount of correct-looking log output would undo.
+# shellcheck source=tests/sim/distribute/lib.sh
+. "$SIMLIB"
+
+host=""; ctl=""; declare -a cmd=()
+while (( $# )); do
+  case "$1" in
+    -o) shift 2;;
+    -O) ctl="${2:-}"; shift 2;;
+    -c) shift 2;;
+    -*) shift;;
+    *)  if [[ -z "$host" ]]; then host="${1#*@}"; else cmd+=("$1"); fi; shift;;
+  esac
+done
+[[ -n "$ctl" ]] && exit 0
+c="${cmd[*]:-}"
+trace "ssh $host :: $(printf '%s' "$c" | tr '\n' ' ')"
+
+PVE="$SIMROOT/pve"
+BKP="$SIMROOT/bkp"
+
+# Nothing may start a container, on any machine, ever. D7 is the rule the whole
+# repo shares and this is the one engine where breaking it during a real
+# incident would be indistinguishable from "it worked".
+case "$c" in
+  *"pct start"*|*"pct create"*)
+    violation "started a container: $c"; exit 1;;
+esac
+
+# ---------------------------------------------------------------- backup node
+if [[ "$host" == "${SIM_BKP_HOST:-}" ]]; then
+  [[ -f "$BKP/.down" ]] && { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+  case "$c" in
+    *"readlink /etc/pve/local"*)  cat "$BKP/node" 2>/dev/null; exit 0;;
+    "pct status "*)
+      id="$(awk '{print $3}' <<<"$c")"; f="$BKP/ct/$id.status"
+      [[ -f "$f" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+      printf 'status: %s\n' "$(cat "$f")"; exit 0;;
+    "cat /etc/pve/"*)
+      f="${c#cat }"; f="${f%% *}"
+      [[ -f "$PVE${f#/etc/pve}" ]] || exit 1
+      cat "$PVE${f#/etc/pve}"; exit 0;;
+    "ls /etc/pve/"*)
+      a="${c#ls }"; a="${a%%2>*}"
+      set -f; read -r -a pats <<<"$a"; set +f
+      found=0
+      for pat in "${pats[@]}"; do
+        [[ "$pat" == -* ]] && continue
+        # shellcheck disable=SC2206  # the glob is the point: /etc/pve/nodes/*/lxc
+        hits=( "$PVE"${pat#/etc/pve} )
+        for f in "${hits[@]}"; do
+          [[ -e "$f" ]] || continue
+          printf '/etc/pve%s\n' "${f#"$PVE"}"; found=1
+        done
+      done
+      (( found )) || { echo "ls: cannot access: No such file or directory" >&2; exit 2; }
+      exit 0;;
+    "zfs get "*mountpoint*)
+      ds="${c##* mountpoint }"; ds="${ds%% *}"
+      m="$(awk -F'\t' -v n="$ds" '$1==n{print $2; exit}' "$BKP/zfs.tsv" 2>/dev/null)"
+      [[ -n "$m" ]] || { echo "cannot open '$ds': dataset does not exist" >&2; exit 1; }
+      printf '%s\n' "$m"; exit 0;;
+    true) exit 0;;
+  esac
+  violation "remote command the simulator does not model on the backup node: $c"
+  exit 1
+fi
+
+# ---------------------------------------------------------------- production
+# One question, and the difference between "it said stopped" and "it did not
+# answer" is what D1 turns on.
+T="$(tgt_dir "$host")"
+if [[ ! -d "$T" ]]; then
+  N="$SIMROOT/nodes/$host"
+  if [[ ! -d "$N" && -f "$SIMWORK/nodes.map" ]]; then
+    _n="$(awk -v i="$host" '$1!~/^#/ && $1==i{print $2; exit}' "$SIMWORK/nodes.map")"
+    [[ -n "$_n" ]] && N="$SIMROOT/nodes/$_n"
+  fi
+  [[ -d "$N" && ! -f "$N/.down" ]] \
+    || { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+  case "$c" in
+    "pct status "*)
+      id="$(awk '{print $3}' <<<"$c")"; f="$N/ct/$id.status"
+      [[ -f "$f" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+      printf 'status: %s\n' "$(cat "$f")"; exit 0;;
+    true) exit 0;;
+  esac
+  violation "command the simulator does not model on production node $host: $c"
+  exit 1
+fi
+
+# ------------------------------------------------------------- compute target
+[[ -f "$T/.down" ]] && { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+
+case "$c" in
+  true) exit 0;;
+
+  *"readlink /etc/pve/local"*) cat "$T/node" 2>/dev/null; exit 0;;
+
+  # A compute node is BOTH a production node and a distribute target - the
+  # containers it normally runs are the ones this engine is placing copies of.
+  # Modelling those as two different machines would have hidden that D1 asks
+  # the same box the placement is going to.
+  "pct status "*)
+    id="$(awk '{print $3}' <<<"$c")"; f="$SIMROOT/nodes/$(cat "$T/node")/ct/$id.status"
+    [[ -f "$f" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+    printf 'status: %s\n' "$(cat "$f")"; exit 0;;
+
+  # The engine checks this BEFORE allocating anything, because the transfer is
+  # issued here and pulls from the backup node. A scenario can take that path
+  # away without taking the node away.
+  "ssh "*" true")
+    [[ -f "$T/.nobkpssh" ]] && { echo "Permission denied (publickey)." >&2; exit 255; }
+    [[ -f "$BKP/.down" ]] && { echo "No route to host" >&2; exit 255; }
+    exit 0;;
+
+  "pvesm status -storage "*)
+    sid="${c#pvesm status -storage }"; sid="${sid%% *}"
+    [[ -f "$T/storage/$sid.type" ]] || { echo "storage '$sid' does not exist" >&2; exit 2; }
+    printf '%-20s %-10s %8s %15s %15s %15s %8s\n' "$sid" "$(st_field "$host" "$sid" type)" \
+      "$(st_field "$host" "$sid" active)" 999999999 0 "$(st_field "$host" "$sid" avail)" 0
+    exit 0;;
+
+  "pvesm alloc "*)
+    dry_forbids "pvesm alloc on $host" || exit 1
+    read -r _ _ sid _vmid volname _size <<<"$c"
+    [[ -f "$T/storage/$sid.type" ]] || { echo "storage '$sid' does not exist" >&2; exit 2; }
+    # Allocating into a storage PVE says is inactive is the G1/B3 disaster in
+    # another costume: the path exists, the write succeeds, and it lands on the
+    # node's root disk.
+    [[ "$(st_field "$host" "$sid" active)" == 1 ]] \
+      || { violation "pvesm alloc into INACTIVE storage $sid on $host"; exit 1; }
+    mkdir -p "$T/vols/$sid"
+    [[ -e "$T/vols/$sid/$volname" ]] && { echo "volume '$volname' already exists" >&2; exit 2; }
+    # A directory whatever the real shape is. A block device and a raw file are
+    # both "somewhere bytes land" as far as this simulator is concerned, and
+    # what the scenarios assert on is the content that arrived. The difference
+    # that DOES matter - whether it had to be mkfs'd and mounted first - is
+    # modelled by the mkfs branch below refusing an unmounted destination.
+    mkdir -p "$T/vols/$sid/$volname"
+    # Remember what shape this is. A block device mounted with -o loop, or a
+    # raw file mounted without it, both fail on a real node - and both look
+    # exactly like a correct run in a simulator that does not check.
+    printf '%s\n' "$(st_field "$host" "$sid" type)" > "$T/vols/$sid/.$volname.type"
+    printf '%s\n' "successfully created '$sid:$volname'"
+    printf '%s:%s\n' "$sid" "$volname"
+    exit 0;;
+
+  "pvesm path "*)
+    v="${c#pvesm path }"; v="${v%% *}"
+    sid="${v%%:*}"; volname="${v#*:}"
+    [[ -e "$T/vols/$sid/$volname" ]] || exit 1
+    printf '%s/vols/%s/%s\n' "$T" "$sid" "$volname"; exit 0;;
+
+  "mkfs.ext4 "*)
+    dry_forbids "mkfs on $host" || exit 1
+    # The G3 disaster, restated: a filesystem made on a device something is
+    # already using destroys whatever was on it, and here that would be another
+    # container's rootfs.
+    p="$(sed -n "s/.*mkfs.ext4 -F -q '\([^']*\)'.*/\1/p" <<<"$c")"
+    [[ -n "$p" ]] || p="$(awk '{print $NF}' <<<"$c")"
+    is_mounted "$p" "$host" && { violation "mkfs on a MOUNTED device $p ($host)"; exit 1; }
+    m="$(sed -n "s/.*mount \(-o loop \)\?'\([^']*\)' '\([^']*\)'.*/\3/p" <<<"$c")"
+    [[ -n "$m" ]] || { echo "mkfs: nothing to mount afterwards" >&2; exit 1; }
+    vtype="$(cat "$(dirname "$p")/.$(basename "$p").type" 2>/dev/null)"
+    if [[ "$c" == *"mount -o loop"* ]]; then
+      [[ "$vtype" == lvmthin || "$vtype" == lvm ]] \
+        && { violation "mount -o loop on a BLOCK device ($vtype) $p"; exit 1; }
+    else
+      [[ "$vtype" == dir || "$vtype" == nfs || "$vtype" == cifs ]] \
+        && { violation "mount without -o loop on a raw FILE ($vtype) $p"; exit 1; }
+    fi
+    is_mounted "$m" "$host" && { violation "mounted $m twice on $host"; exit 1; }
+    mkdir -p "$m"
+    add_mount "$m" "$host" "$p"
+    exit 0;;
+
+  "umount "*)
+    p="$(sed -n "s/.*umount '\([^']*\)'.*/\1/p" <<<"$c")"
+    del_mount "$p" "$host"; exit 0;;
+
+  "rsync "*)
+    dry_forbids "rsync on $host" || exit 1
+    src="$(sed -n "s/.*'\([^']*\):\([^']*\)\/' '\([^']*\)\/'.*/\2/p" <<<"$c")"
+    dst="$(sed -n "s/.*'\([^']*\):\([^']*\)\/' '\([^']*\)\/'.*/\3/p" <<<"$c")"
+    [[ -n "$src" && -n "$dst" ]] || { violation "rsync the simulator cannot parse: $c"; exit 1; }
+    # The destination has to be the volume, not a directory that happens to
+    # have that name. On a real node the difference is invisible until the root
+    # filesystem fills.
+    back="$(mount_backing "$dst" "$host")"
+    if [[ -z "$back" ]]; then
+      if [[ -d "$dst" && "$dst" == "$T/vols/"* ]]; then
+        back="$dst"                              # zfspool: the dataset itself
+      else
+        violation "rsync into $dst on $host, which is NOT a mountpoint"; exit 1
+      fi
+    fi
+    rc="$(cat "$SIMROOT/rsync.rc" 2>/dev/null)"; rc="${rc:-0}"
+    if [[ "$rc" == 0 || "$rc" == 24 ]]; then
+      [[ -d "$SIMROOT/bkp/data/$(basename "$src")" ]] \
+        && cp -a "$SIMROOT/bkp/data/$(basename "$src")/." "$back/" 2>/dev/null
+      : > "$SIMROOT/xfer-ok"
+    fi
+    # The engine's remote command ends in `; echo rc=$?`, and a real shell is
+    # what produces that line. This fake answers a command string rather than
+    # running one, so it prints it - and ssh itself exits 0, because the far
+    # side ran and reported.
+    printf 'rc=%s\n' "$rc"
+    exit 0;;
+
+  "cat > "*)
+    dry_forbids "config write on $host" || exit 1
+    f="${c#cat > }"; f="${f//\'/}"; f="${f%% *}"
+    # D6: a config written before a good transfer is a container PVE believes
+    # in and nobody filled. The marker is dropped by the rsync branch above.
+    [[ -f "$SIMROOT/xfer-ok" ]] || { violation "config $f written on $host before a good transfer"; exit 1; }
+    mkdir -p "$(dirname "$PVE${f#/etc/pve}")"
+    if [[ -f "$SIMROOT/cfgwrite.trunc" ]]; then head -c 40 > "$PVE${f#/etc/pve}"
+    else cat > "$PVE${f#/etc/pve}"; fi
+    exit 0;;
+
+  "cat "*)
+    f="${c#cat }"; f="${f//\'/}"; f="${f%% *}"
+    [[ -f "$PVE${f#/etc/pve}" ]] || exit 1
+    cat "$PVE${f#/etc/pve}"; exit 0;;
+esac
+
+violation "remote command the simulator does not model on target $host: $c"
+exit 1

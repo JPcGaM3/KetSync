@@ -6,7 +6,9 @@ not a clone step — clone this repo and the engines are already there.
     engines/tp/ct-migrate.sh    old standalone node  -> raw image on the storage node
     engines/tp/ct-replica.sh    live image here      -> stopped copy on the backup node
     engines/tp/ct-failback.sh   promoted copy        -> back into the production image
-    engines/tp/tp               the dispatcher: status, doctor, and the three above
+    engines/tp/ct-distribute.sh a DR copy -> a compute node's OWN storage, so it
+                                can run while the storage node is gone
+    engines/tp/tp               the dispatcher: status, doctor, and the four above
 
 It arrived here from the standalone `tp` repository at commit `b4ddc0c`, whole
 and unmodified. That repository is the ancestor, not a live upstream: from now
@@ -16,7 +18,7 @@ place to prove it still holds.
 ## Why it is vendored rather than rewritten
 
 `tp` is three bash engines that move running production containers, anchored by
-187 simulator scenarios and 127 mutations. In one week those suites caught five
+220 simulator scenarios and 156 mutations. In one week those suites caught five
 real bugs, and every one of them was the same shape: a lesson learned once in
 `ct-migrate.sh` and lost when a newer engine was written from scratch.
 

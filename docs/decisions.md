@@ -113,17 +113,39 @@ the machine that died.
 depending on shared storage for the duration. It is temporary and it is meant to
 feel temporary - a 9xxx container is one somebody has to deliberately unwind.
 
-## 5. `distribute` — designed, not built
+## 5. `distribute` — built, as `engines/tp/ct-distribute.sh`
 
 Moves a copy from the backup node onto a compute node during a disaster:
-resolve the target from `fleet.tsv`'s `dr` column, check that `9<id>` is free
-*there* (the copy's own guards only look at the backup node), allocate on
-`local-lvm`, transfer from the backup node's dataset, write the config with the
-production network, and then **print the `pct start` for a human to run**.
+resolves the target from `fleet.tsv`'s `dr` column (`--to` overrides, and a
+container with neither is refused rather than placed somewhere reasonable),
+checks `9<id>` is free across the whole cluster, allocates on the target's own
+storage, transfers, writes the config carrying the production network, and then
+prints the `pct start` for a human. 33 scenarios, 27 mutations.
 
-The transfer runs between the backup node and the compute node while the
-orchestrator touches neither, which is the capability section 7 describes and
-the reason it has to land in `tp` first.
+Two things about it are new to this repo.
+
+**It runs on neither end of its own transfer.** Every other engine here is one
+of the two machines involved. This one is a third, and rsync cannot do
+remote-to-remote, so the transfer is issued ON the target, pulling from the
+backup node. That needs root ssh from the target to the backup node - which two
+cluster members already have, because it is how PVE migration works - and it is
+checked before anything is allocated rather than discovered afterwards, when
+the cost is an allocated volume and a half-written config to unpick by hand.
+
+**The destination is not one shape.** "Local storage" means a block device on
+`lvmthin`, a raw file on `dir`, or a dataset on `zfspool`, and the three differ
+in whether they need `mkfs`, whether they need a loop device, and whether they
+need mounting at all. `dst_shape()` names the three and refuses anything else
+BY NAME - guessing at an unknown type means `mkfs` on something that was not a
+block device. That is the storage abstraction this design has needed since the
+beginning, arriving in the one place where getting it wrong is cheapest to
+catch: a new engine with its own simulator, rather than a refactor of three
+that the fleet has been running for months.
+
+`fleet.tsv` grew an optional fifth column, the storage on the dr node, for the
+same reason: a fleet is not homogeneous, one compute node's local storage is
+`local-lvm` and another's is `local-zfs`, and a single global default cannot be
+right for both.
 
 It does not start containers. That rule is not a technicality - starting a
 container is the moment a customer's service either comes back or collides with
@@ -135,6 +157,7 @@ the wrong machine at 3am, and it is the same "no defaults, never guess" rule
 the engines already enforce.
 
 ## 6. `recall` — designed, not built, and the most dangerous thing here
+
 
 The return trip, once the storage node is back: `9300` on a compute node's
 local-lvm has the real data, and `300`'s image on the storage node is however

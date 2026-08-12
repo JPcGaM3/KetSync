@@ -2,7 +2,7 @@
 
 Empty on purpose, and that is a debt, not a decision.
 
-`tp` has 187 simulator scenarios and 127 mutations behind it, and the reason
+`tp` has 220 simulator scenarios and 156 mutations behind it, and the reason
 is written down in its `CLAUDE.md`: five bugs found in one week were the same
 bug living in two engines, and every one of them was caught by a scenario
 rather than by review. `ketsync` moves the same customer data through the same

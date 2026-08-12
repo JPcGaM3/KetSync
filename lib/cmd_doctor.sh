@@ -91,6 +91,11 @@ cmd_doctor(){
     (( bad )) && rc=1 || echo "  every home and dr address is in nodes.tsv"
   fi
 
+  # The engines read their own copies of both tables. A stale mirror during a
+  # DR places a container where the map said last month.
+  fleet_mirror && [[ -f "$KS_BASE/engines/tp/fleet.tsv" ]] \
+    && echo "  fleet.tsv mirrored to engines/tp"
+
   echo "== the engines"
   if [[ ! -f "$KS_BASE/engines/tp/tp" ]]; then
     echo "  engines/tp is missing - ketsync decides, tp does. Nothing can run."; rc=1

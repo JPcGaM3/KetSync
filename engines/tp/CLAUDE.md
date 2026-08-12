@@ -12,6 +12,7 @@ A bug here does not fail a test — it corrupts somebody's container at 2am.
     tp migrate    old standalone node  ->  raw image on the storage node
     tp replica    live image here      ->  stopped copy on the backup node
     tp failback   promoted copy        ->  back into the production image
+    tp distribute DR copy on the backup ->  a compute node's OWN storage
 
 Every engine runs on the **storage node**. The machines around it:
 
@@ -31,10 +32,11 @@ must be mirrored in its mutation file in the same change. Never "fix" a broken
 anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
-    ct-migrate.sh   tests/mutation/run-mutation.sh            41 mutations
-    ct-replica.sh   tests/mutation/run-mutation-replica.sh    39 mutations
-    ct-failback.sh  tests/mutation/run-mutation-failback.sh   40 mutations
-    tp              tests/mutation/run-mutation-tp.sh          7 mutations
+    ct-migrate.sh    tests/mutation/run-mutation.sh             41 mutations
+    ct-replica.sh    tests/mutation/run-mutation-replica.sh     39 mutations
+    ct-failback.sh   tests/mutation/run-mutation-failback.sh    40 mutations
+    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  27 mutations
+    tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
 Three mutations in the migrate suite were, for a while, perl programs that did
@@ -113,8 +115,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 65 + 56 simulator, 16 dispatcher, 125 c2v, 82 python
-    make mutation   # 41 + 39 + 40 engine + 7 dispatcher bugs reintroduced, all caught
+    make test       # 66 + 65 + 56 + 33 simulator, 16 dispatcher, 125 c2v, 82 python
+    make mutation   # 41 + 39 + 40 + 27 engine + 9 dispatcher bugs reintroduced, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did

@@ -131,6 +131,20 @@ mutant "status stops labelling pre-split state files" \
   's{\Q      *)          tool="pre-split";;\E}{      *)          tool="";;}' \
   7
 
+# A subcommand that quietly stops being routed is the worst kind of missing:
+# `tp distribute` would print the usage and exit 0, which under pressure reads
+# as "there is nothing to do" rather than "that command is gone".
+mutant "tp distribute stops reaching its engine" \
+  's{\Q  distribute) shift; engine ct-distribute.sh "\E\$\@\Q";;\E}{}' \
+  3
+
+# The usage block is what somebody reads at 2am to find out the command exists.
+# It is a separate failure from the routing being gone, and scenario 1 is what
+# notices - so it gets its own mutation rather than being bundled in above.
+mutant "the usage stops mentioning a subcommand that exists" \
+  's{\Q#    tp distribute DR copy on the backup ->  a compute node\E.\Qs OWN storage\E}{#}' \
+  1
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

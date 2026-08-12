@@ -12,7 +12,8 @@
 #    ketsync failback   copy -> back into prod  ketsync doctor  is this wired up
 #    ketsync status     the last run of every container
 #
-#    ketsync distribute   DR: put a copy onto a compute node   (not built)
+#    ketsync distribute DR: a copy on the backup node -> a compute node's own
+#                       storage, so it can run while the storage node is gone
 #    ketsync recall       the return trip, once storage is back (not built)
 #
 #    ketsync tp <anything>   pass straight through to the engines, for a flag
@@ -68,7 +69,7 @@ run_tp(){
 
 case "${1:-}" in
   # --- tp's, passed through untouched ---
-  migrate|replica|failback|status)
+  migrate|replica|failback|status|distribute)
               run_tp "$@";;
   tp)         shift; run_tp "$@";;
 
@@ -76,7 +77,6 @@ case "${1:-}" in
   sync)       shift; . "$BASE/lib/cmd_sync.sh";     cmd_sync "$@";;
   role)       shift; . "$BASE/lib/cmd_role.sh";     cmd_role "$@";;
   doctor)     shift; . "$BASE/lib/cmd_doctor.sh";   cmd_doctor "$@";;
-  distribute) shift; not_built distribute "section 5";;
   recall)     shift; not_built recall     "section 6";;
 
   version)    echo "ketsync $(cd "$BASE" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;
