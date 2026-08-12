@@ -60,8 +60,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 253 tp scenarios + 21 for ketsync sync
-    make mutation # 234 known bugs put back. None may survive
+    make test     # both layers: 257 tp scenarios + 21 for ketsync sync
+    make mutation # 238 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

@@ -79,16 +79,26 @@ else
   if [[ "$base" =~ ^subvol-([0-9]+)-disk-0$ ]]; then
     vmid="${BASH_REMATCH[1]}"
     cst="$(cat "$BKP/ct/$vmid.status" 2>/dev/null)"
-    # B2. Both modes are legitimate; what is never legitimate is reading a copy
-    # that nothing is shielding. While it RUNS, ct-replica's R2 skips it. Once
-    # it is down, only PAUSE stands between the DR data and the next cron tick,
-    # which would overwrite it with the stale production image - and then this
-    # rsync would pull that staleness back over the customer's rootfs.
+    # B2. Every mode is legitimate; what is never legitimate is reading a copy
+    # that NOTHING is shielding. Three things can shield one, and the invariant
+    # is that at least one of them holds:
+    #
+    #   the copy RUNS               ct-replica R2 skips it
+    #   PAUSE is in place           ct-replica does not run at all
+    #   its 9<id> is live           ct-replica R13 skips it, for as long as
+    #                               that container exists anywhere in pmxcfs
+    #
+    # Without one of those, the next cron tick overwrites the DR data with the
+    # stale production image and this rsync then pulls that staleness back over
+    # the customer's rootfs. R13 was not in this list while the engine only
+    # knew about the first two, and the case it covers is the one a real
+    # disaster on this fleet produces: nobody promotes the copy at all.
     if (( ! dryrun )); then
+      _dr9=( "$BKP/fs/etc/pve/nodes"/*/lxc/"$(( vmid - 8000 + 9000 ))".conf )
       case "$cst" in
         running) ;;
-        stopped) [[ -f "$SIMWORK/PAUSE" ]] \
-                   || violation "rsync pulls from copy $vmid, which is STOPPED with ct-replica not paused - R2 is not shielding it any more";;
+        stopped) [[ -f "$SIMWORK/PAUSE" || -e "${_dr9[0]}" ]] \
+                   || violation "rsync pulls from copy $vmid, which is STOPPED with no PAUSE and no live 9<id> - nothing is shielding it from the next cron tick";;
         *)       violation "rsync pulls from copy $vmid, which is '${cst:-unknown}'";;
       esac
     fi

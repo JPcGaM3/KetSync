@@ -195,6 +195,14 @@ bkp_lock(){ mkdir -p "$BKP/fs/run"; printf '%s\n' "$2" > "$BKP/fs/run/ketsync-ct
 # and the next run takes it for real. This run must now leave that file alone.
 bkp_lock_steal(){ printf '%s\n' "$1" > "$BKP/lock.steal"; }
 bkp_lock_unreachable(){ : > "$BKP/lock.fail"; }
+# B2's third case. ct-distribute.sh put this container on a compute node as
+# 9<id>; the config it wrote is in pmxcfs, which is cluster-shared, so the
+# backup node can see it. That config existing is what makes ct-replica R13
+# hold the copy back, and therefore what makes reading a STOPPED copy safe.
+dr_placement(){ # node src_ctid
+  mkdir -p "$BKP/fs/etc/pve/nodes/$1/lxc"
+  printf 'arch: amd64\nhostname: ct%s-dr\nrootfs: local-lvm:vm-%s-disk-0,size=20G\n' \
+    "$2" "$(( $2 + 9000 ))" > "$BKP/fs/etc/pve/nodes/$1/lxc/$(( $2 + 9000 )).conf"; }
 lock_held(){ [[ -f "$BKP/fs/run/ketsync-ct-$1.lock" ]] \
                || _err "the copy lock for $1 is gone from the backup node"; }
 lock_free(){ [[ -f "$BKP/fs/run/ketsync-ct-$1.lock" ]] \
@@ -1173,6 +1181,61 @@ if scenario "65: B8 one lock per copy, so a blocked CT does not stop the batch";
   hasnt "GUARD B8: copy 8113 is locked"
   image_has 113 "generation 7"
   lock_free 8113
+  done_scenario
+fi
+
+if scenario "66: B2 a stopped copy presyncs while its 9<id> is live and R13 holds"; then
+  # The shape a real disaster on this fleet takes. Nobody promotes the copy:
+  # ct-distribute puts the data on a compute node as 9105, the copy on the
+  # backup node stays STOPPED for the whole outage, and R13 is what keeps
+  # ct-replica off it. Refusing here means no delta until cutover, so the one
+  # round that does run carries the entire outage.
+  copy_state 8105 stopped
+  dr_placement pve01 105
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "B2: copy 8105 is stopped, and CT 9105 is live - ct-replica R13 is holding"
+  has "/etc/pve/nodes/pve01/lxc/9105.conf"
+  has "presync is safe"
+  image_has 105 "generation 7"
+  done_scenario
+fi
+
+if scenario "67: B2 a stopped copy with no 9<id> anywhere is still refused"; then
+  # Nothing is shielding that copy: R2 needs it running and R13 needs a live
+  # DR container. Reading it now races the next cron tick, which would have
+  # already overwritten it with the pre-disaster image.
+  copy_state 8105 stopped
+  run_engine --ctid 105
+  rc_is 1; clean
+  has "GUARD B2: presync expects copy 8105 RUNNING"
+  has "There is no 9105 anywhere in this cluster"
+  untraced "rsync"
+  image_hasnt 105 "generation 7"
+  done_scenario
+fi
+
+if scenario "68: B2 looks for the 9<id> across the cluster, not just the backup node"; then
+  # pmxcfs is cluster-shared, and the DR container is on a COMPUTE node - the
+  # backup node's own directory is the one place it will never be.
+  copy_state 8105 stopped
+  dr_placement pve02 105
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "/etc/pve/nodes/pve02/lxc/9105.conf"
+  done_scenario
+fi
+
+if scenario "69: B2 a backup node that cannot answer does not become a reason to read"; then
+  # The 9<id> lookup goes over the same ssh as everything else. An empty answer
+  # means "no DR container found", which refuses - the safe direction, because
+  # this branch is deciding whether anything at all is guarding the data.
+  copy_state 8105 stopped
+  dr_placement pve01 105
+  bkp_down
+  run_engine --ctid 105
+  rc_is 2
+  untraced "rsync"
   done_scenario
 fi
 

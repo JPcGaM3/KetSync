@@ -34,7 +34,7 @@ halves, do not touch the engine — say so instead.
 
     ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
     ct-replica.sh    tests/mutation/run-mutation-replica.sh     57 mutations
-    ct-failback.sh   tests/mutation/run-mutation-failback.sh    54 mutations
+    ct-failback.sh   tests/mutation/run-mutation-failback.sh    58 mutations
     ct-distribute.sh tests/mutation/run-mutation-distribute.sh  50 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
@@ -117,8 +117,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 76 + 65 + 46 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 57 + 54 + 50 engine + 9 dispatcher bugs, all caught
+    make test       # 66 + 76 + 69 + 46 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 57 + 58 + 50 engine + 9 dispatcher bugs, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did
@@ -225,9 +225,11 @@ and a dry run may mount only `ro`.
 `ct-failback.sh` — B1..B6:
 
     B1  the production CT must be STOPPED, and unreachable counts as not stopped
-    B2  presync needs the copy RUNNING (R2 shields it); --final needs it
-        STOPPED *and* PAUSE present, because R2 stops shielding the moment it
-        goes down
+    B2  presync needs the copy RUNNING (R2 shields it), OR stopped with its
+        9<id> live somewhere in the cluster (R13 shields it, and that is the
+        shape a real disaster here takes - nobody promotes the copy at all).
+        --final needs it STOPPED *and* PAUSE present, because R2 stops
+        shielding the moment it goes down
     B3  the image must live on a mounted filesystem, never the node root
     B4  the image must already exist - a missing one is a rebuild, not this
     B5  verified mountpoint before rsync; unmount before any resize

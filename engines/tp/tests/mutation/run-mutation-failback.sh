@@ -454,6 +454,28 @@ mutant "a dry run takes the lock for real on another machine" \
   's!\Q    peek_dst_lock "\E\$BKP_SSH\Q" "\E\$CT_TGT\Q"; _dl=\E\$\?!    take_dst_lock "\$BKP_SSH" "\$CT_TGT"; _dl=\$?!' \
   63
 
+# ---------- B2's third case: a stopped copy that R13 is holding ---------------
+# The disaster this fleet actually has does not promote the copy at all. The
+# data goes to a compute node as 9<id> and the copy on the backup node stays
+# STOPPED for the whole outage, shielded by R13 rather than R2. Refusing to
+# presync it means no delta is possible until cutover, so the single round at
+# cutover carries every byte written since the outage began.
+mutant "B2 refuses a stopped copy again, whatever is holding it" \
+  's!\Q      if [[ -n "\E\$_dract\Q" ]]; then\E!      if false; then!' \
+  66
+
+mutant "B2 looks for the DR container under the backup node only" \
+  's!\Qls /etc/pve/nodes/*/lxc/\E\$_dr\Q.conf\E!ls /etc/pve/nodes/\$BKP_NODE/lxc/\$_dr.conf!' \
+  68
+
+mutant "B2 computes the DR id with the copy offset, so it never finds one" \
+  's!\Q      _dr=\E\$\(\( ct \+ DR_OFFSET \)\)!      _dr=\$(( ct + OFFSET ))!' \
+  66
+
+mutant "B2 reads any stopped copy, holder or not" \
+  's!\Q        st_write "\E\$ct\Q" skipped b2_copy_not_running -1\E\n\Q        return 2\E!        :!' \
+  67
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

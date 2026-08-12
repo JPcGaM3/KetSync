@@ -75,10 +75,20 @@
 #       live customer container that gets corrupted. If the node cannot be
 #       reached to verify, that is also a refusal: unverified is not stopped.
 #
-#   B2  the copy's state must match the mode, because the two modes rely on
-#       different things to keep ct-replica off the copy:
+#   B2  the copy's state must match the mode, because each mode relies on
+#       something different to keep ct-replica off the copy:
 #         presync -> copy RUNNING. That is what makes ct-replica's R2 skip it,
 #                    and it is also what makes the copy the newer data.
+#         presync -> OR the copy is stopped and its 9<id> is live somewhere in
+#                    the cluster, which is the shape a real disaster on this
+#                    fleet actually takes: nobody promotes the copy, the data
+#                    goes to a compute node as 9<id>, and ct-replica's R13
+#                    holds the copy back for as long as that container exists.
+#                    A strictly stronger shield than R2 - R2 lasts only while
+#                    somebody keeps the copy running. Refusing this case costs
+#                    the whole point of a presync tool: with no delta possible
+#                    until cutover, the one round at cutover carries every byte
+#                    written since the outage began.
 #         final   -> copy STOPPED *and* ct-replica's PAUSE file present. Once
 #                    the copy stops, R2 stops protecting it, and the next cron
 #                    tick would overwrite the DR data with the stale original.
@@ -150,6 +160,10 @@ BKP_NODE=""                      # pmxcfs name, discovered - see ct-replica.sh
 BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
 DEFAULT_DEST="replica-hdd"
 OFFSET=8000
+DR_OFFSET=9000           # src_ctid + this = ct-distribute's temporary DR copy.
+                         # B2 asks whether that one is live before it will read
+                         # a stopped copy. Same knob, same ctrep.conf, as
+                         # ct-replica R13 - they must never disagree
 BW_TOTAL_MB=230
 LANES=1
 BW_MIN_MB=20
@@ -198,7 +212,7 @@ if [[ -f "$CONF" ]]; then
   # shellcheck source=/dev/null
   . "$CONF" || { echo "failed to read $CONF" >&2; exit 2; }
 fi
-for _v in OFFSET BW_TOTAL_MB LANES BW_MIN_MB GROW_PCT GROW_MAX_RETRY LOG_KEEP_DAYS; do
+for _v in OFFSET DR_OFFSET BW_TOTAL_MB LANES BW_MIN_MB GROW_PCT GROW_MAX_RETRY LOG_KEEP_DAYS; do
   [[ "${!_v}" =~ ^[0-9]+$ ]] || { echo "ctrep.conf: $_v='${!_v}' is not a plain integer" >&2; exit 2; }
 done
 if [[ -n "$SSH_CIPHERS" && ! "$SSH_CIPHERS" =~ ^[A-Za-z0-9@.,+-]+$ ]]; then
@@ -615,11 +629,42 @@ failback_one(){
     fi
   else
     if [[ "$CT_CSTAT" != "running" ]]; then
-      log "[$ct] GUARD B2: presync expects copy $TGT RUNNING (it is '${CT_CSTAT:-unknown}')"
-      log "[$ct] GUARD B2:   while it runs, ct-replica R2 skips it and it stays the newest data."
-      log "[$ct] GUARD B2:   already stopped for cutover? use --final (with PAUSE in place)."
-      st_write "$ct" skipped b2_copy_not_running -1
-      return 2
+      # Third case, and it is the normal one during a real disaster. B2 was
+      # written for the promotion path: the copy is started on the backup node,
+      # R2 sees it RUNNING and skips it, and that is what keeps it the newest
+      # data. The route this fleet actually takes does not promote the copy at
+      # all - ct-distribute puts the data on a compute node as 9<id> and the
+      # copy on the backup node stays STOPPED for the whole outage.
+      #
+      # What shields it then is R13, which skips any copy whose 9<id> is live
+      # anywhere in the cluster. That is a strictly stronger shield than R2:
+      # R2 only holds while somebody remembers to keep the copy running, and
+      # R13 holds until somebody deliberately destroys the DR container.
+      #
+      # Refusing here costs the whole point of a presync tool. Without it there
+      # is no delta to take until cutover, so the one round that does run at
+      # cutover carries every byte written since the outage began - which is a
+      # window that grows with the length of the outage, in the hour when it
+      # matters most.
+      _dr=$(( ct + DR_OFFSET ))
+      _dract=$(ssh $SSH_OPT "$BKP_SSH" \
+          "ls /etc/pve/nodes/*/lxc/$_dr.conf 2>/dev/null" </dev/null 2>/dev/null | head -1)
+      if [[ -n "$_dract" ]]; then
+        log "[$ct] B2: copy $TGT is stopped, and CT $_dr is live - ct-replica R13 is holding"
+        log "[$ct] B2:   $_dract"
+        log "[$ct] B2:   presync is safe: nothing overwrites this copy while that config exists."
+      else
+        log "[$ct] GUARD B2: presync expects copy $TGT RUNNING (it is '${CT_CSTAT:-unknown}')"
+        log "[$ct] GUARD B2:   while it runs, ct-replica R2 skips it and it stays the newest data."
+        log "[$ct] GUARD B2:   a STOPPED copy is only safe while a 9<id> is live and R13 holds"
+        log "[$ct] GUARD B2:   the copy back. There is no $_dr anywhere in this cluster."
+        log "[$ct] GUARD B2:   already stopped for cutover? use --final (with PAUSE in place)."
+        # An unreachable backup node answers nothing here, which reads as "no
+        # 9<id>" and refuses. That is the safe direction and it is deliberate:
+        # this branch decides whether anything is guarding the data being read.
+        st_write "$ct" skipped b2_copy_not_running -1
+        return 2
+      fi
     fi
   fi
   # --- B3 / B4 ---
