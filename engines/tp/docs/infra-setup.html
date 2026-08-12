@@ -610,8 +610,13 @@ BKP_SSH=&quot;root@100.100.100.35&quot;    # backup node, by IP. key auth requir
 BKP_NODE=&quot;&quot;                      # its pmxcfs name. LEAVE EMPTY: the engine asks
                                  # the node itself. Set it only to pin a value,
                                  # and it is then verified, never trusted
-BKP_DESTS=&quot;hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd&quot;
-DEFAULT_DEST=&quot;hdd&quot;               # rows without a dest, and auto-discovered CTs
+# storage-id : dataset. The KEY is the PVE storage id itself - there is no
+# short alias any more. &quot;hdd&quot; and &quot;ssd&quot; meant nothing to anybody who had not
+# read this file, and a row saying `hdd` next to a source assertion saying
+# `tank-hdd-nas` read like two spellings of one thing when they are opposite
+# ends of a transfer.
+BKP_DESTS=&quot;replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct&quot;
+DEFAULT_DEST=&quot;replica-hdd&quot;       # rows without a dest, and auto-discovered CTs
 SRC_STORAGES=&quot;tank-hdd-nas tank-ssd-nas&quot;  # storages this tool may read from
 OFFSET=8000                      # default tgt_ctid = src_ctid + OFFSET
 DR_OFFSET=9000                   # src_ctid + this = the temporary DR copy R13
@@ -692,13 +697,17 @@ if [[ ! &quot;$MOCKNET_BRIDGE&quot; =~ ^[A-Za-z0-9._-]+$ ]]; then
 fi
 
 # parse the dest map once; a broken entry is a conf error, not a per-row skip
-declare -A DEST_DS=() DEST_SID=()
+declare -A DEST_DS=()
 for _kv in $BKP_DESTS; do
-  _k=&quot;${_kv%%=*}&quot;; _rest=&quot;${_kv#*=}&quot;; _ds=&quot;${_rest%%:*}&quot;; _sid=&quot;${_rest#*:}&quot;
-  if [[ -z &quot;$_k&quot; || &quot;$_kv&quot; != *=* || &quot;$_rest&quot; != *:* || -z &quot;$_ds&quot; || -z &quot;$_sid&quot; ]]; then
-    echo &quot;ctrep.conf: BKP_DESTS entry &#x27;$_kv&#x27; is not key=dataset:storage-id&quot; &gt;&amp;2; exit 2
+  _k=&quot;${_kv%%:*}&quot;; _ds=&quot;${_kv#*:}&quot;
+  if [[ -z &quot;$_k&quot; || &quot;$_kv&quot; != *:* || -z &quot;$_ds&quot; ]]; then
+    echo &quot;ctrep.conf: BKP_DESTS entry &#x27;$_kv&#x27; is not storage-id:dataset&quot; &gt;&amp;2
+    echo &quot;ctrep.conf:   the old form was key=dataset:storage-id, with a short key&quot; &gt;&amp;2
+    echo &quot;ctrep.conf:   like &#x27;hdd&#x27;. Write the storage id itself now:&quot; &gt;&amp;2
+    echo &quot;ctrep.conf:   BKP_DESTS=\&quot;replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct\&quot;&quot; &gt;&amp;2
+    exit 2
   fi
-  DEST_DS[$_k]=&quot;$_ds&quot;; DEST_SID[$_k]=&quot;$_sid&quot;
+  DEST_DS[$_k]=&quot;$_ds&quot;
 done
 if [[ -z &quot;${DEST_DS[$DEFAULT_DEST]:-}&quot; ]]; then
   echo &quot;ctrep.conf: DEFAULT_DEST=&#x27;$DEFAULT_DEST&#x27; is not a key in BKP_DESTS ($BKP_DESTS)&quot; &gt;&amp;2; exit 2
@@ -890,6 +899,14 @@ if [[ -f &quot;$INV&quot; ]]; then
       elif [[ -n &quot;${DEST_DS[$f]:-}&quot; ]]; then
         [[ -n &quot;$dest&quot; ]] &amp;&amp; { INV_ERRS+=(&quot;line $ln: two dest fields (&#x27;$dest&#x27; and &#x27;$f&#x27;)&quot;); continue 2; }
         dest=&quot;$f&quot;
+      elif [[ &quot;$f&quot; == hdd || &quot;$f&quot; == ssd ]]; then
+        # The dest column used to take a short alias. It now takes the PVE
+        # storage id itself. Without this branch the old word falls through to
+        # &quot;source storage assertion&quot; and the row fails saying the CT does not
+        # live on a storage called &#x27;hdd&#x27; - true, unhelpful, and nowhere near
+        # the actual mistake.
+        INV_ERRS+=(&quot;line $ln: &#x27;$f&#x27; is the OLD short dest name. Write the storage id: ${!DEST_DS[*]}&quot;)
+        continue 2
       else
         [[ -n &quot;$stor&quot; ]] &amp;&amp; { INV_ERRS+=(&quot;line $ln: field &#x27;$f&#x27; is not a tgt_ctid, not a dest key (${!DEST_DS[*]}), and a storage assertion &#x27;$stor&#x27; is already set&quot;); continue 2; }
         stor=&quot;$f&quot;
@@ -1215,7 +1232,7 @@ declare -A DEST_OK=()
 dest_ready(){   # $1 = dest key
   local d=&quot;$1&quot; sid st
   case &quot;${DEST_OK[$d]:-}&quot; in 1) return 0;; 0) return 1;; esac
-  sid=&quot;${DEST_SID[$d]}&quot;
+  sid=&quot;$d&quot;
   st=$(ssh $SSH_OPT &quot;$BKP_SSH&quot; &quot;pvesm status --storage $sid&quot; &lt;/dev/null 2&gt;/dev/null || true)
   if printf &#x27;%s\n&#x27; &quot;$st&quot; | awk &#x27;NR&gt;1 &amp;&amp; $3==&quot;active&quot;{f=1} END{exit !f}&#x27;; then
     DEST_OK[$d]=1; return 0
@@ -1585,8 +1602,8 @@ for CT in &quot;${CTS[@]}&quot;; do
       fi
     fi
     csid=$(printf &#x27;%s\n&#x27; &quot;$tgtcfg&quot; | sed -n &#x27;s/^rootfs:[[:space:]]*\([^:]*\):.*/\1/p&#x27; | head -1)
-    if [[ &quot;$csid&quot; != &quot;${DEST_SID[$DEST]}&quot; ]]; then
-      log &quot;[$CT] GUARD R8: copy $TGT config points at &#x27;${csid:-&lt;none&gt;}&#x27; but this row&#x27;s dest &#x27;$DEST&#x27; means &#x27;${DEST_SID[$DEST]}&#x27;&quot;
+    if [[ &quot;$csid&quot; != &quot;$DEST&quot; ]]; then
+      log &quot;[$CT] GUARD R8: copy $TGT config points at &#x27;${csid:-&lt;none&gt;}&#x27; but this row&#x27;s dest is &#x27;$DEST&#x27;&quot;
       log &quot;[$CT] GUARD R8:   the dest column changed after the copy was created; syncing now would fill&quot;
       log &quot;[$CT] GUARD R8:   the new dataset while the config still boots the old one&quot;
       log &quot;[$CT] GUARD R8:   fix: move the copy yourself (zfs send/recv + edit the config), or destroy&quot;
@@ -1631,7 +1648,7 @@ for CT in &quot;${CTS[@]}&quot;; do
     # only interesting case is the first round for this CT.
     if [[ -z &quot;$tgtcfg&quot; ]]; then
       log &quot;[$CT] DRY: would create copy config $TGT on $BKP_NODE (dest=$DEST, onboot=0, stopped)&quot;
-      log &quot;[$CT] DRY:   rootfs: ${DEST_SID[$DEST]}:subvol-${TGT}-disk-0&quot;
+      log &quot;[$CT] DRY:   rootfs: ${DEST}:subvol-${TGT}-disk-0&quot;
       (( MOCKNET )) &amp;&amp; log &quot;[$CT] DRY:   net kept from the source, moved onto $MOCKNET_BRIDGE tag ${MOCKNET_TAG:-&lt;from source&gt;}&quot;
     else
       log &quot;[$CT] DRY: copy config $TGT already exists on $BKP_NODE - R5 would leave it untouched&quot;
@@ -1730,7 +1747,7 @@ for CT in &quot;${CTS[@]}&quot;; do
     SIZE=$(printf &#x27;%s\n&#x27; &quot;$srccfg&quot; | sed -n &#x27;s/^rootfs:.*size=\([^,]*\).*/\1/p&#x27;)
     newcfg=$( printf &#x27;%s\n&#x27; &quot;$srccfg&quot; \
                 | grep -Ev &#x27;^(net[0-9]+|mp[0-9]+|rootfs|onboot|parent|snaptime|lock|unused[0-9]+):&#x27;
-              echo &quot;rootfs: ${DEST_SID[$DEST]}:subvol-${TGT}-disk-0,size=${SIZE:-8G}&quot;
+              echo &quot;rootfs: ${DEST}:subvol-${TGT}-disk-0,size=${SIZE:-8G}&quot;
               echo &quot;onboot: 0&quot;
               (( MOCKNET )) &amp;&amp; mocknet_lines &quot;$srccfg&quot; )
     # Written, then read back and compared. A write cut short by a dropped
@@ -1953,7 +1970,7 @@ RUNS_KEEP=200      # per-CT run history lines kept in state/&lt;src_ctid&gt;.run
 #    ct-failback.sh --ctid 110              presync one CT
 #    ct-failback.sh --all --dry-run         show what would move, touch nothing
 #    ct-failback.sh --all --final           LAST delta, copies must be STOPPED
-#    ct-failback.sh --all --dest ssd        only CTs whose copy is on that pool
+#    ct-failback.sh --all --dest replica-ssd  only CTs whose copy is on that pool
 #
 #  A real disaster promotes many CTs at once, so --all is the normal form and
 #  a per-CT guard failure SKIPS that CT instead of stopping the batch: one
@@ -2068,8 +2085,11 @@ fi
 # ---------- defaults (ctrep.conf wins; they are the same knobs) ----------
 BKP_SSH=&quot;root@100.100.100.35&quot;
 BKP_NODE=&quot;&quot;                      # pmxcfs name, discovered - see ct-replica.sh
-BKP_DESTS=&quot;hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd&quot;
-DEFAULT_DEST=&quot;hdd&quot;
+# storage-id : dataset. The KEY is the PVE storage id itself - there is no
+# short alias any more. &quot;hdd&quot; and &quot;ssd&quot; meant nothing to anybody who had not
+# read this file.
+BKP_DESTS=&quot;replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct&quot;
+DEFAULT_DEST=&quot;replica-hdd&quot;
 OFFSET=8000
 BW_TOTAL_MB=230
 LANES=1
@@ -2111,7 +2131,7 @@ while (( $# )); do
 done
 if (( ! LIST )) &amp;&amp; (( ! ALL )) &amp;&amp; [[ ! &quot;$ONLY_CTID&quot; =~ ^[0-9]+$ ]]; then
   echo &quot;usage: ct-failback.sh --list | --all | --ctid &lt;production_ctid&gt;&quot; &gt;&amp;2
-  echo &quot;       [--dest hdd|ssd] [--dry-run] [--final]&quot; &gt;&amp;2
+  echo &quot;       [--dest replica-hdd|replica-ssd] [--dry-run] [--final]&quot; &gt;&amp;2
   exit 2
 fi
 
@@ -2130,8 +2150,7 @@ fi
 # directory over ssh, never through PVE, so its storage id is irrelevant.
 declare -A DEST_DS=()
 for _kv in $BKP_DESTS; do
-  _k=&quot;${_kv%%=*}&quot;; _rest=&quot;${_kv#*=}&quot;
-  DEST_DS[$_k]=&quot;${_rest%%:*}&quot;
+  _k=&quot;${_kv%%:*}&quot;; DEST_DS[$_k]=&quot;${_kv#*:}&quot;
 done
 if [[ -n &quot;$ONLY_DEST&quot; &amp;&amp; -z &quot;${DEST_DS[$ONLY_DEST]:-}&quot; ]]; then
   echo &quot;--dest &#x27;$ONLY_DEST&#x27; is not a key in BKP_DESTS ($BKP_DESTS)&quot; &gt;&amp;2; exit 2
@@ -2613,15 +2632,15 @@ failback_one(){
 
 # ---------- list mode: read-only triage ----------
 if (( LIST )); then
-  printf &#x27;%-7s %-7s %-5s %-14s %-11s %-11s %s\n&#x27; CT COPY DEST PROD-NODE PROD COPY-STATE IMAGE | tee -a &quot;$LOG&quot;
+  printf &#x27;%-7s %-7s %-14s %-14s %-11s %-11s %s\n&#x27; CT COPY DEST PROD-NODE PROD COPY-STATE IMAGE | tee -a &quot;$LOG&quot;
   for ct in &quot;${CTS[@]}&quot;; do
     if ! probe_ct &quot;$ct&quot;; then
-      printf &#x27;%-7s %-7s %-5s %-14s %-11s %-11s %s\n&#x27; \
+      printf &#x27;%-7s %-7s %-14s %-14s %-11s %-11s %s\n&#x27; \
         &quot;$ct&quot; &quot;${TGT_MAP[$ct]}&quot; &quot;${DEST_MAP[$ct]:-?}&quot; &quot;?&quot; &quot;?&quot; &quot;?&quot; &quot;cannot resolve&quot; | tee -a &quot;$LOG&quot;
       continue
     fi
     [[ -n &quot;$ONLY_DEST&quot; &amp;&amp; &quot;$CT_DEST&quot; != &quot;$ONLY_DEST&quot; ]] &amp;&amp; continue
-    printf &#x27;%-7s %-7s %-5s %-14s %-11s %-11s %s\n&#x27; \
+    printf &#x27;%-7s %-7s %-14s %-14s %-11s %-11s %s\n&#x27; \
       &quot;$ct&quot; &quot;$CT_TGT&quot; &quot;$CT_DEST&quot; &quot;$CT_NODE&quot; &quot;${CT_PSTAT:-unreachable}&quot; &quot;${CT_CSTAT:-unknown}&quot; &quot;${CT_IMG:-?}&quot; | tee -a &quot;$LOG&quot;
     [[ -z &quot;$CT_PSTAT&quot; ]] &amp;&amp; UNREACHABLE+=(&quot;$ct:${CT_HOST:-$CT_NODE}&quot;)
   done
@@ -2732,7 +2751,13 @@ exit 0</pre></div>
 #              engine finds its node and its SOURCE storage from /etc/pve.
 #   then each extra field is classified by what it IS:
 #     a NUMBER              -&gt; tgt_ctid  (default: src_ctid + OFFSET)
-#     a key from BKP_DESTS  -&gt; dest      (default: DEFAULT_DEST) - hdd / ssd
+#     a key from BKP_DESTS  -&gt; dest      (default: DEFAULT_DEST). That key IS
+#                              the PVE storage id on the backup node, spelled in
+#                              full: replica-hdd, replica-ssd. There used to be
+#                              short aliases - hdd, ssd - and a row saying `hdd`
+#                              next to a source assertion saying `tank-hdd-nas`
+#                              read like two spellings of one thing when they
+#                              are opposite ends of a transfer
 #     anything else         -&gt; SOURCE storage assertion: the engine derives
 #                              the real storage from the CT&#x27;s own rootfs
 #                              line; if the assertion differs, the row FAILS
@@ -2746,7 +2771,8 @@ exit 0</pre></div>
 #   from PVE, so there is nothing to keep in sync by hand.
 #
 # dest picks which backup pool receives the copy (see BKP_DESTS in ctrep.conf):
-#   hdd -&gt; replica-hdd/ct (capacity)     ssd -&gt; replica-ssd/ct (fast DR start)
+#   replica-hdd -&gt; replica-hdd/ct (capacity)
+#   replica-ssd -&gt; replica-ssd/ct (fast DR start)
 # Changing dest AFTER the copy exists trips GUARD R8 on purpose - move or
 # destroy the old copy first, the engine will not silently split it.
 #
@@ -2758,9 +2784,9 @@ exit 0</pre></div>
 #
 # examples:
 # src_ctid  [tgt_ctid]  [storage-assert]  [dest]      (extras in ANY order)
-105                                       ssd
+105                                       replica-ssd
 112         9112
-113         8113        tank-ssd-nas      ssd
+113         8113        tank-ssd-nas      replica-ssd
 114                                       # -&gt; tgt 8114, dest DEFAULT_DEST</pre></div>
   </details>
 

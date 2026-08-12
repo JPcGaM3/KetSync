@@ -146,8 +146,13 @@ BKP_SSH="root@100.100.100.35"    # backup node, by IP. key auth required
 BKP_NODE=""                      # its pmxcfs name. LEAVE EMPTY: the engine asks
                                  # the node itself. Set it only to pin a value,
                                  # and it is then verified, never trusted
-BKP_DESTS="hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"
-DEFAULT_DEST="hdd"               # rows without a dest, and auto-discovered CTs
+# storage-id : dataset. The KEY is the PVE storage id itself - there is no
+# short alias any more. "hdd" and "ssd" meant nothing to anybody who had not
+# read this file, and a row saying `hdd` next to a source assertion saying
+# `tank-hdd-nas` read like two spellings of one thing when they are opposite
+# ends of a transfer.
+BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
+DEFAULT_DEST="replica-hdd"       # rows without a dest, and auto-discovered CTs
 SRC_STORAGES="tank-hdd-nas tank-ssd-nas"  # storages this tool may read from
 OFFSET=8000                      # default tgt_ctid = src_ctid + OFFSET
 DR_OFFSET=9000                   # src_ctid + this = the temporary DR copy R13
@@ -228,13 +233,17 @@ if [[ ! "$MOCKNET_BRIDGE" =~ ^[A-Za-z0-9._-]+$ ]]; then
 fi
 
 # parse the dest map once; a broken entry is a conf error, not a per-row skip
-declare -A DEST_DS=() DEST_SID=()
+declare -A DEST_DS=()
 for _kv in $BKP_DESTS; do
-  _k="${_kv%%=*}"; _rest="${_kv#*=}"; _ds="${_rest%%:*}"; _sid="${_rest#*:}"
-  if [[ -z "$_k" || "$_kv" != *=* || "$_rest" != *:* || -z "$_ds" || -z "$_sid" ]]; then
-    echo "ctrep.conf: BKP_DESTS entry '$_kv' is not key=dataset:storage-id" >&2; exit 2
+  _k="${_kv%%:*}"; _ds="${_kv#*:}"
+  if [[ -z "$_k" || "$_kv" != *:* || -z "$_ds" ]]; then
+    echo "ctrep.conf: BKP_DESTS entry '$_kv' is not storage-id:dataset" >&2
+    echo "ctrep.conf:   the old form was key=dataset:storage-id, with a short key" >&2
+    echo "ctrep.conf:   like 'hdd'. Write the storage id itself now:" >&2
+    echo "ctrep.conf:   BKP_DESTS=\"replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct\"" >&2
+    exit 2
   fi
-  DEST_DS[$_k]="$_ds"; DEST_SID[$_k]="$_sid"
+  DEST_DS[$_k]="$_ds"
 done
 if [[ -z "${DEST_DS[$DEFAULT_DEST]:-}" ]]; then
   echo "ctrep.conf: DEFAULT_DEST='$DEFAULT_DEST' is not a key in BKP_DESTS ($BKP_DESTS)" >&2; exit 2
@@ -426,6 +435,14 @@ if [[ -f "$INV" ]]; then
       elif [[ -n "${DEST_DS[$f]:-}" ]]; then
         [[ -n "$dest" ]] && { INV_ERRS+=("line $ln: two dest fields ('$dest' and '$f')"); continue 2; }
         dest="$f"
+      elif [[ "$f" == hdd || "$f" == ssd ]]; then
+        # The dest column used to take a short alias. It now takes the PVE
+        # storage id itself. Without this branch the old word falls through to
+        # "source storage assertion" and the row fails saying the CT does not
+        # live on a storage called 'hdd' - true, unhelpful, and nowhere near
+        # the actual mistake.
+        INV_ERRS+=("line $ln: '$f' is the OLD short dest name. Write the storage id: ${!DEST_DS[*]}")
+        continue 2
       else
         [[ -n "$stor" ]] && { INV_ERRS+=("line $ln: field '$f' is not a tgt_ctid, not a dest key (${!DEST_DS[*]}), and a storage assertion '$stor' is already set"); continue 2; }
         stor="$f"
@@ -751,7 +768,7 @@ declare -A DEST_OK=()
 dest_ready(){   # $1 = dest key
   local d="$1" sid st
   case "${DEST_OK[$d]:-}" in 1) return 0;; 0) return 1;; esac
-  sid="${DEST_SID[$d]}"
+  sid="$d"
   st=$(ssh $SSH_OPT "$BKP_SSH" "pvesm status --storage $sid" </dev/null 2>/dev/null || true)
   if printf '%s\n' "$st" | awk 'NR>1 && $3=="active"{f=1} END{exit !f}'; then
     DEST_OK[$d]=1; return 0
@@ -1121,8 +1138,8 @@ for CT in "${CTS[@]}"; do
       fi
     fi
     csid=$(printf '%s\n' "$tgtcfg" | sed -n 's/^rootfs:[[:space:]]*\([^:]*\):.*/\1/p' | head -1)
-    if [[ "$csid" != "${DEST_SID[$DEST]}" ]]; then
-      log "[$CT] GUARD R8: copy $TGT config points at '${csid:-<none>}' but this row's dest '$DEST' means '${DEST_SID[$DEST]}'"
+    if [[ "$csid" != "$DEST" ]]; then
+      log "[$CT] GUARD R8: copy $TGT config points at '${csid:-<none>}' but this row's dest is '$DEST'"
       log "[$CT] GUARD R8:   the dest column changed after the copy was created; syncing now would fill"
       log "[$CT] GUARD R8:   the new dataset while the config still boots the old one"
       log "[$CT] GUARD R8:   fix: move the copy yourself (zfs send/recv + edit the config), or destroy"
@@ -1167,7 +1184,7 @@ for CT in "${CTS[@]}"; do
     # only interesting case is the first round for this CT.
     if [[ -z "$tgtcfg" ]]; then
       log "[$CT] DRY: would create copy config $TGT on $BKP_NODE (dest=$DEST, onboot=0, stopped)"
-      log "[$CT] DRY:   rootfs: ${DEST_SID[$DEST]}:subvol-${TGT}-disk-0"
+      log "[$CT] DRY:   rootfs: ${DEST}:subvol-${TGT}-disk-0"
       (( MOCKNET )) && log "[$CT] DRY:   net kept from the source, moved onto $MOCKNET_BRIDGE tag ${MOCKNET_TAG:-<from source>}"
     else
       log "[$CT] DRY: copy config $TGT already exists on $BKP_NODE - R5 would leave it untouched"
@@ -1266,7 +1283,7 @@ for CT in "${CTS[@]}"; do
     SIZE=$(printf '%s\n' "$srccfg" | sed -n 's/^rootfs:.*size=\([^,]*\).*/\1/p')
     newcfg=$( printf '%s\n' "$srccfg" \
                 | grep -Ev '^(net[0-9]+|mp[0-9]+|rootfs|onboot|parent|snaptime|lock|unused[0-9]+):'
-              echo "rootfs: ${DEST_SID[$DEST]}:subvol-${TGT}-disk-0,size=${SIZE:-8G}"
+              echo "rootfs: ${DEST}:subvol-${TGT}-disk-0,size=${SIZE:-8G}"
               echo "onboot: 0"
               (( MOCKNET )) && mocknet_lines "$srccfg" )
     # Written, then read back and compared. A write cut short by a dropped

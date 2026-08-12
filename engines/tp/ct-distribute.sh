@@ -147,8 +147,11 @@ fi
 # ---------- defaults (ctrep.conf wins; they are the same knobs) ----------
 BKP_SSH="root@100.100.100.35"
 BKP_NODE=""                      # pmxcfs name, discovered - see ct-replica.sh
-BKP_DESTS="hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"
-DEFAULT_DEST="hdd"
+# storage-id : dataset. The KEY is the PVE storage id itself - there is no
+# short alias any more. "hdd" and "ssd" meant nothing to anybody who had not
+# read this file.
+BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
+DEFAULT_DEST="replica-hdd"
 OFFSET=8000                      # production id -> DR copy id
 DR_OFFSET=9000                   # production id -> temporary compute-node id
 DR_DST="local-lvm"               # default destination storage on the target
@@ -314,8 +317,7 @@ MODE=distribute; (( DRY )) && MODE="distribute/dry-run"; (( LIST )) && MODE=list
 # ---------- the destination pool map, the same one ct-replica reads ----------
 declare -A DEST_DS=()
 for _e in $BKP_DESTS; do
-  _k="${_e%%=*}"; _rest="${_e#*=}"
-  DEST_DS[$_k]="${_rest%%:*}"
+  _k="${_e%%:*}"; DEST_DS[$_k]="${_e#*:}"
 done
 
 # ---------- the CT list, from ct-replica's inventory ----------

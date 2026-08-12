@@ -98,16 +98,16 @@ new_world(){
   add_prod_ct pve01 105 tank-hdd-nas 20G
   add_prod_ct pve02 113 tank-ssd-nas 40G
   add_prod_ct pve01 121 tank-ssd-nas 10G
-  add_copy 8105 hdd running 105
-  add_copy 8113 ssd running 113
-  add_copy 9121 ssd running 121
+  add_copy 8105 replica-hdd running 105
+  add_copy 8113 replica-ssd running 113
+  add_copy 9121 replica-ssd running 121
 
   # the engine resolves BASE from its own path; a symlink keeps BASE in the
   # sandbox, because ${BASH_SOURCE[0]} is not symlink-resolved
   ln -s "$ENGINE" "$WORK/ct-failback.sh"
   write_conf
   write_nodemap
-  inventory "105" "113	ssd" "121	9121	ssd"
+  inventory "105" "113	replica-ssd" "121	9121	replica-ssd"
 }
 
 # ---------- this node ----------
@@ -170,8 +170,8 @@ bkp_identity(){ printf '%s\n' "$1" > "$BKP/node"; }
 write_nodemap(){ printf '# ip\tpve node name\n100.100.100.35\tbkp02\n10.100.1.32\tpve01\n10.100.1.33\tpve02\n' > "$WORK/nodes.map"; }
 no_nodemap(){ rm -f "$WORK/nodes.map"; }
 bkp_down(){ : > "$BKP/.down"; }
-add_copy(){ # tgt_vmid dest status src_ctid - a promoted copy, serving traffic
-  local tgt="$1" st="$3" src="$4" ds="replica-$2/ct/subvol-$1-disk-0"
+add_copy(){ # tgt_vmid dest-storage-id status src_ctid - a promoted copy, serving traffic
+  local tgt="$1" st="$3" src="$4" ds="$2/ct/subvol-$1-disk-0"
   printf '%s\n' "$st" > "$BKP/ct/$tgt.status"
   printf '%s\tyes\t/%s\n' "$ds" "$ds" >> "$BKP/zfs.tsv"
   mkdir -p "$BKP/fs/$ds"
@@ -192,8 +192,8 @@ bkp_cfg(){ # node ctid - move a production config to another node in the cluster
 write_conf(){
   cat > "$WORK/ctrep.conf" <<EOF
 BKP_SSH="root@100.100.100.35"
-BKP_DESTS="hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"
-DEFAULT_DEST="hdd"
+BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
+DEFAULT_DEST="replica-hdd"
 OFFSET=8000
 BW_TOTAL_MB=230
 LANES=1
@@ -308,7 +308,7 @@ image_hasnt(){ grep -qF -- "$2" "$(img_path "$(_sid_of "$1")" "$1")" 2>/dev/null
 _sid_of(){ case "$1" in 105) echo tank-hdd-nas;; *) echo tank-ssd-nas;; esac; }
 # the copies are the only surviving data in a disaster; nothing here may write
 # to the backup node, ever
-copy_intact(){ grep -qF -- "generation 7" "$BKP/fs/replica-$2/ct/subvol-$1-disk-0/rootfs.txt" 2>/dev/null \
+copy_intact(){ grep -qF -- "generation 7" "$BKP/fs/$2/ct/subvol-$1-disk-0/rootfs.txt" 2>/dev/null \
                  || _err "copy $1 no longer holds the DR data"; }
 snapshot_taken(){  grep -q "@ctback-$1-" "$SIMROOT/zfs.tsv" \
                      || _err "no safety snapshot for CT $1"; }
@@ -349,7 +349,7 @@ if scenario "1: happy path, three promoted copies come back into their images"; 
   # files that only ever existed on the production side with it
   image_has 105 "generation 7"; image_hasnt 105 "stale.log"
   image_has 113 "generation 7"; image_has 121 "generation 7"
-  copy_intact 8105 hdd; copy_intact 9121 ssd
+  copy_intact 8105 replica-hdd; copy_intact 9121 replica-ssd
   traced "rsyncopt --delete"
   traced "rsyncopt --numeric-ids"
   traced "rsyncopt --inplace"
@@ -365,7 +365,7 @@ if scenario "2: the copy is read over ssh from the dataset the inventory names";
   # tgt 9121 comes from the row, dest ssd from the row, and the dataset from
   # BKP_DESTS - one wrong link there restores the wrong customer's data
   has "[121] RESTORE <= root@100.100.100.35:/replica-ssd/ct/subvol-9121-disk-0/"
-  has "(copy 9121, dest=ssd)"
+  has "(copy 9121, dest=replica-ssd)"
   traced "rsync root@100.100.100.35:/replica-ssd/ct/subvol-9121-disk-0 -> $SIMROOT/mnt/failback-121"
   has "[121] stats: files=161 changed=2.2GiB wire=2.3GiB"
   done_scenario
@@ -374,9 +374,9 @@ fi
 if scenario "3: --list is read-only: it mounts nothing and moves nothing"; then
   run_engine --list
   rc_is 0; clean
-  has "CT      COPY    DEST  PROD-NODE      PROD        COPY-STATE  IMAGE"
-  has "105     8105    hdd   pve01          stopped     running"
-  has "121     9121    ssd   pve01          stopped     running"
+  has "CT      COPY    DEST           PROD-NODE      PROD        COPY-STATE  IMAGE"
+  has "105     8105    replica-hdd    pve01          stopped     running"
+  has "121     9121    replica-ssd    pve01          stopped     running"
   untraced "rsync"; untraced "mount -o"
   image_has 105 "generation 1"          # the pre-disaster image, untouched
   nothing_mounted
@@ -389,7 +389,7 @@ if scenario "4: --list still exits 0 when not one CT could be failed back"; then
   copy_state 8105 stopped; copy_state 8113 stopped; copy_state 9121 stopped
   run_engine --list
   rc_is 0; clean
-  has "105     8105    hdd   pve01          running     stopped"
+  has "105     8105    replica-hdd    pve01          running     stopped"
   untraced "rsync"
   done_scenario
 fi
@@ -398,7 +398,7 @@ if scenario "5: --list names a CT it cannot resolve instead of dropping the row"
   rm -f "$BKP/fs/etc/pve/nodes/pve02/lxc/113.conf"
   run_engine --list
   rc_is 0; clean
-  has "113     8113    ssd   ?"
+  has "113     8113    replica-ssd    ?"
   has "cannot resolve"
   done_scenario
 fi
@@ -418,7 +418,7 @@ if scenario "7: --ctid works for a CT that is no longer in the inventory"; then
   # engine derives tgt and dest rather than refusing - and the derived dest is
   # DEFAULT_DEST, which is why a CT that was on the other tier fails loudly at
   # the mountpoint lookup instead of quietly restoring the wrong data
-  inventory "113	ssd"
+  inventory "113	replica-ssd"
   run_engine --ctid 105
   rc_is 0; clean
   has "[105] RESTORE <= root@100.100.100.35:/replica-hdd/ct/subvol-8105-disk-0/"
@@ -428,7 +428,7 @@ if scenario "7: --ctid works for a CT that is no longer in the inventory"; then
 fi
 
 if scenario "8: --dest runs one tier only"; then
-  run_engine --all --dest ssd
+  run_engine --all --dest replica-ssd
   rc_is 0; clean
   has "ok=2 skipped=0 failed=0"
   image_has 113 "generation 7"; image_has 121 "generation 7"
@@ -439,9 +439,9 @@ fi
 if scenario "9: a --dest that matches no row is loud, not a quiet success"; then
   # under cron, exit 0 with no work done during a disaster reads as "all back"
   inventory "105"
-  run_engine --all --dest ssd
+  run_engine --all --dest replica-ssd
   rc_is 1
-  has "ERROR: no CT in"; has "has dest 'ssd' - nothing was failed back"
+  has "ERROR: no CT in"; has "has dest 'replica-ssd' - nothing was failed back"
   untraced "rsync"
   done_scenario
 fi
@@ -642,7 +642,7 @@ fi
 
 if scenario "24: B3 a storage id this node does not have is an error, not a guess"; then
   add_prod_ct pve01 131 tank-nvme-nas 10G
-  add_copy 8131 hdd running 131
+  add_copy 8131 replica-hdd running 131
   inventory "131"
   run_engine --all
   rc_is 1; clean
@@ -764,7 +764,7 @@ if scenario "33: rc=23 is a partial transfer, so it is a failure with a hint"; t
   has "[105] HINT: rc=23 = some files on the copy could not be read"
   has "[105] ERROR: restore FAILED (rsync rc=23) - do NOT start CT 105"
   has "ok=0 skipped=0 failed=1"
-  copy_intact 8105 hdd                # whatever happened here, the DR data is safe
+  copy_intact 8105 replica-hdd                # whatever happened here, the DR data is safe
   done_scenario
 fi
 

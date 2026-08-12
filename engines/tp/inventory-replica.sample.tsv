@@ -8,7 +8,13 @@
 #              engine finds its node and its SOURCE storage from /etc/pve.
 #   then each extra field is classified by what it IS:
 #     a NUMBER              -> tgt_ctid  (default: src_ctid + OFFSET)
-#     a key from BKP_DESTS  -> dest      (default: DEFAULT_DEST) - hdd / ssd
+#     a key from BKP_DESTS  -> dest      (default: DEFAULT_DEST). That key IS
+#                              the PVE storage id on the backup node, spelled in
+#                              full: replica-hdd, replica-ssd. There used to be
+#                              short aliases - hdd, ssd - and a row saying `hdd`
+#                              next to a source assertion saying `tank-hdd-nas`
+#                              read like two spellings of one thing when they
+#                              are opposite ends of a transfer
 #     anything else         -> SOURCE storage assertion: the engine derives
 #                              the real storage from the CT's own rootfs
 #                              line; if the assertion differs, the row FAILS
@@ -22,7 +28,8 @@
 #   from PVE, so there is nothing to keep in sync by hand.
 #
 # dest picks which backup pool receives the copy (see BKP_DESTS in ctrep.conf):
-#   hdd -> replica-hdd/ct (capacity)     ssd -> replica-ssd/ct (fast DR start)
+#   replica-hdd -> replica-hdd/ct (capacity)
+#   replica-ssd -> replica-ssd/ct (fast DR start)
 # Changing dest AFTER the copy exists trips GUARD R8 on purpose - move or
 # destroy the old copy first, the engine will not silently split it.
 #
@@ -34,7 +41,7 @@
 #
 # examples:
 # src_ctid  [tgt_ctid]  [storage-assert]  [dest]      (extras in ANY order)
-105                                       ssd
+105                                       replica-ssd
 112         9112
-113         8113        tank-ssd-nas      ssd
+113         8113        tank-ssd-nas      replica-ssd
 114                                       # -> tgt 8114, dest DEFAULT_DEST

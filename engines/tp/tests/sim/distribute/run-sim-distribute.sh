@@ -78,15 +78,15 @@ new_world(){
   add_storage "$T2" local-dir  dir     active $(( 200 * 1024 * 1024 ))
 
   # Three containers, their copies, and the copies' data.
-  add_copy 300 hdd 20G
-  add_copy 113 hdd 40G
-  add_copy 121 ssd 10G
+  add_copy 300 replica-hdd 20G
+  add_copy 113 replica-hdd 40G
+  add_copy 121 replica-ssd 10G
 
   ln -s "$ENGINE" "$WORK/ct-distribute.sh"
   write_conf
   write_nodemap
-  inventory "300" "113" "121	ssd"
-  fleet "300	hdd	10.100.1.31	$T1	local-lvm" "113	hdd	10.100.1.31	$T2	local-zfs"
+  inventory "300" "113" "121	replica-ssd"
+  fleet "300	replica-hdd	10.100.1.31	$T1	local-lvm" "113	replica-hdd	10.100.1.31	$T2	local-zfs"
 }
 
 # ---------- the cluster ----------
@@ -122,9 +122,12 @@ bkp_down(){ : > "$BKP/.down"; }
 
 # A DR copy on the backup node: its config in pmxcfs, its status, its dataset
 # and some content to move.
-add_copy(){ # src_ctid dest size
+add_copy(){ # src_ctid dest-storage-id size
   local id=$(( $1 + 8000 )) ds
-  [[ "$2" == hdd ]] && ds="replica-hdd/ct" || ds="replica-ssd/ct"
+  case "$2" in
+    replica-hdd|replica-ssd) ds="$2/ct";;
+    *) echo "add_copy: dest must be a storage id like replica-hdd, got '$2'" >&2; exit 2;;
+  esac
   mkdir -p "$PVE/nodes/bkp02/lxc" "$BKP/data/subvol-$id-disk-0"
   printf 'arch: amd64\ncores: 2\nhostname: ct%s.example\nmemory: 2048\nrootfs: %s:subvol-%s-disk-0,size=%s\nonboot: 1\nnet0: name=eth0,bridge=vmbr99,hwaddr=BC:24:11:00:00:%02d,ip=10.100.2.%s/24\n' \
     "$1" "${ds%%/*}" "$id" "$3" "$(( $1 % 100 ))" "$(( $1 % 250 ))" > "$PVE/nodes/bkp02/lxc/$id.conf"
@@ -141,8 +144,8 @@ foreign_dr(){ mkdir -p "$PVE/nodes/$2/lxc"
 write_conf(){
   cat > "$WORK/ctrep.conf" <<EOF
 BKP_SSH="root@$BKP_HOST"
-BKP_DESTS="hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"
-DEFAULT_DEST="hdd"
+BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
+DEFAULT_DEST="replica-hdd"
 OFFSET=8000
 DR_OFFSET=9000
 DR_DST="local-lvm"

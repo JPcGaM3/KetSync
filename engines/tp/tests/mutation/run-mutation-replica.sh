@@ -188,8 +188,10 @@ mutant "R7 drops the lane from the snapshot and clone names" \
 
 # ---------- R8: an existing copy config must agree with the row --------------
 
+# DEST_SID is gone: the dest key IS the storage id now, so the comparison is
+# against $DEST directly.
 mutant "R8 lets an existing copy config point at another dest" \
-  's{\Q    if [[ "\E\$\Qcsid" != "\E\$\Q{DEST_SID[\E\$\QDEST]}" ]]; then\E}{    if false; then}' \
+  's{\Q    if [[ "\E\$csid\Q" != "\E\$DEST\Q" ]]; then\E}{    if false; then}' \
   19
 
 # ---------- R9: the island bridge is the whole safety model ------------------
@@ -434,6 +436,17 @@ mutant "R13 computes the DR id with the wrong offset, so it never finds one" \
 mutant "a held-back container leaves the night reading as healthy" \
   's{\Qif (( \E\$\{#DR_ACTIVE_IDS\[\@\]\}\Q )); then\E\n\Q  [[ -n "\E\$HEALTH_URL\Q" ]]\E}{if false; then\n  [[ -n "\$HEALTH_URL" ]]}' \
   49
+
+# ---------- the dest column is a storage id, spelled in full ----------------
+# It used to be a short alias - hdd, ssd - which meant nothing to anybody who
+# had not read ctrep.conf, and sat next to a source assertion like
+# tank-hdd-nas looking like two spellings of one thing. Every fleet upgrading
+# has the old word in its inventory today, and without this branch it falls
+# through to "source storage assertion" and fails saying the CT does not live
+# on a storage called 'hdd' - true, and nowhere near the mistake.
+mutant "the old short dest name falls through to a storage assertion again" \
+  's{\Q      elif [[ "\E\$f\Q" == hdd || "\E\$f\Q" == ssd ]]; then\E}{      elif false; then}' \
+  51
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

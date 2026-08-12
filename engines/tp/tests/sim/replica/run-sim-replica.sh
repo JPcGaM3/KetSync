@@ -94,7 +94,7 @@ new_world(){
   # sandbox, because ${BASH_SOURCE[0]} is not symlink-resolved
   ln -s "$ENGINE" "$WORK/ct-replica.sh"
   write_conf
-  inventory "105" "113	ssd"
+  inventory "105" "113	replica-ssd"
 }
 
 # ---------- this node ----------
@@ -152,8 +152,8 @@ cluster_resources(){ # vmid:type... - what pvesh answers under AUTO_DISCOVER
 write_conf(){
   cat > "$WORK/ctrep.conf" <<EOF
 BKP_SSH="root@100.100.100.35"
-BKP_DESTS="hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"
-DEFAULT_DEST="hdd"
+BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
+DEFAULT_DEST="replica-hdd"
 SRC_STORAGES="tank-hdd-nas tank-ssd-nas"
 LIVE_FALLBACK=0
 MOCKNET=1
@@ -408,7 +408,7 @@ if scenario "1: happy path, two CTs, two source storages, two dest tiers"; then
   # rules, so a boundary says which kind it is
   has "=============================================================================="
   has "------------------------------------------------------------------------------"
-  has "[105] CT 105 on tank-hdd-nas  ->  copy 8105 on bkp02, dest=hdd"
+  has "[105] CT 105 on tank-hdd-nas  ->  copy 8105 on bkp02, dest=replica-hdd"
   copy_has /replica-hdd/ct/subvol-8105-disk-0 rootfs.txt
   copy_has /replica-ssd/ct/subvol-8113-disk-0 rootfs.txt
   # the option set: --delete is what makes the copy identical rather than
@@ -657,7 +657,7 @@ onboot: 0
 EOF
   run_engine --ctid 105
   rc_is 1; clean
-  has "GUARD R8: copy 8105 config points at 'replica-ssd' but this row's dest 'hdd' means 'replica-hdd'"
+  has "GUARD R8: copy 8105 config points at 'replica-ssd' but this row's dest is 'replica-hdd'"
   untraced "rsync"                     # refused before a byte moves either way
   st_is 105 last.status failed; st_is 105 last.reason r8_dest_changed
   done_scenario
@@ -852,7 +852,7 @@ fi
 if scenario "32: a duplicate src_ctid refuses the whole file, naming both lines"; then
   # the comment and the blank line are here so the reported line numbers have to
   # be real file lines; an off-by-one makes the message worse than useless
-  inventory "# src_ctid  [tgt] [dest] [storage]" "" "105" "113	ssd" "105	9105"
+  inventory "# src_ctid  [tgt] [dest] [storage]" "" "105" "113	replica-ssd" "105	9105"
   run_engine
   rc_is 2; clean
   has "ERROR: inventory is broken - NOTHING was run"
@@ -941,7 +941,7 @@ EOF
 fi
 
 if scenario "39: one broken row does not stop the rest of the run"; then
-  inventory "105" "113	ssd" "150"
+  inventory "105" "113	replica-ssd" "150"
   run_engine
   rc_is 1; clean
   has "[150] ERROR: no config for CT 150 anywhere in the cluster - skip"
@@ -956,7 +956,7 @@ if scenario "40: a dest that is not active on the backup node is caught before a
   bkp_storage replica-hdd inactive
   run_engine --ctid 105
   rc_is 1; clean
-  has "ERROR: dest 'hdd': storage 'replica-hdd' is not active on bkp02"
+  has "ERROR: dest 'replica-hdd': storage 'replica-hdd' is not active on bkp02"
   has "pvesm add zfspool replica-hdd --pool replica-hdd/ct"
   untraced "rsync"; untraced "zfs snapshot"
   st_is 105 last.reason dest_inactive
@@ -1086,7 +1086,7 @@ if scenario "46: a run publishes a complete state snapshot and one history line"
   st_is 105 src_ctid 105;  st_is 105 tgt_ctid 8105
   st_is 105 src_node pve01; st_is 105 bkp_node bkp02
   st_is 105 src_storage tank-hdd-nas
-  st_is 105 dest hdd
+  st_is 105 dest replica-hdd
   st_is 105 dest_dataset replica-hdd/ct/subvol-8105-disk-0
   st_is 105 config_present true
   st_is 105 mocknet true
@@ -1331,6 +1331,22 @@ EOF
   has "GUARD R13: CT 9105 exists"
   hasnt "GUARD R13: CT 9113 exists"
   traced "rsync"                       # 113 went, 105 did not
+  done_scenario
+fi
+
+
+if scenario "51: the old short dest name is named as such, not read as a storage assertion"; then
+  # The dest column used to take `hdd`. It takes the PVE storage id now. Without
+  # a branch for the old word it falls through to "source storage assertion" and
+  # the row fails saying the CT does not live on a storage called 'hdd' - true,
+  # unhelpful, and nowhere near the mistake. Every fleet upgrading has this in
+  # its inventory today.
+  inventory "105	hdd"
+  run_engine
+  rc_is 2; clean
+  has "'hdd' is the OLD short dest name"
+  has "replica-hdd"
+  untraced "rsync"
   done_scenario
 fi
 

@@ -16,7 +16,7 @@
 #    ct-failback.sh --ctid 110              presync one CT
 #    ct-failback.sh --all --dry-run         show what would move, touch nothing
 #    ct-failback.sh --all --final           LAST delta, copies must be STOPPED
-#    ct-failback.sh --all --dest ssd        only CTs whose copy is on that pool
+#    ct-failback.sh --all --dest replica-ssd  only CTs whose copy is on that pool
 #
 #  A real disaster promotes many CTs at once, so --all is the normal form and
 #  a per-CT guard failure SKIPS that CT instead of stopping the batch: one
@@ -131,8 +131,11 @@ fi
 # ---------- defaults (ctrep.conf wins; they are the same knobs) ----------
 BKP_SSH="root@100.100.100.35"
 BKP_NODE=""                      # pmxcfs name, discovered - see ct-replica.sh
-BKP_DESTS="hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"
-DEFAULT_DEST="hdd"
+# storage-id : dataset. The KEY is the PVE storage id itself - there is no
+# short alias any more. "hdd" and "ssd" meant nothing to anybody who had not
+# read this file.
+BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
+DEFAULT_DEST="replica-hdd"
 OFFSET=8000
 BW_TOTAL_MB=230
 LANES=1
@@ -174,7 +177,7 @@ while (( $# )); do
 done
 if (( ! LIST )) && (( ! ALL )) && [[ ! "$ONLY_CTID" =~ ^[0-9]+$ ]]; then
   echo "usage: ct-failback.sh --list | --all | --ctid <production_ctid>" >&2
-  echo "       [--dest hdd|ssd] [--dry-run] [--final]" >&2
+  echo "       [--dest replica-hdd|replica-ssd] [--dry-run] [--final]" >&2
   exit 2
 fi
 
@@ -193,8 +196,7 @@ fi
 # directory over ssh, never through PVE, so its storage id is irrelevant.
 declare -A DEST_DS=()
 for _kv in $BKP_DESTS; do
-  _k="${_kv%%=*}"; _rest="${_kv#*=}"
-  DEST_DS[$_k]="${_rest%%:*}"
+  _k="${_kv%%:*}"; DEST_DS[$_k]="${_kv#*:}"
 done
 if [[ -n "$ONLY_DEST" && -z "${DEST_DS[$ONLY_DEST]:-}" ]]; then
   echo "--dest '$ONLY_DEST' is not a key in BKP_DESTS ($BKP_DESTS)" >&2; exit 2
@@ -676,15 +678,15 @@ failback_one(){
 
 # ---------- list mode: read-only triage ----------
 if (( LIST )); then
-  printf '%-7s %-7s %-5s %-14s %-11s %-11s %s\n' CT COPY DEST PROD-NODE PROD COPY-STATE IMAGE | tee -a "$LOG"
+  printf '%-7s %-7s %-14s %-14s %-11s %-11s %s\n' CT COPY DEST PROD-NODE PROD COPY-STATE IMAGE | tee -a "$LOG"
   for ct in "${CTS[@]}"; do
     if ! probe_ct "$ct"; then
-      printf '%-7s %-7s %-5s %-14s %-11s %-11s %s\n' \
+      printf '%-7s %-7s %-14s %-14s %-11s %-11s %s\n' \
         "$ct" "${TGT_MAP[$ct]}" "${DEST_MAP[$ct]:-?}" "?" "?" "?" "cannot resolve" | tee -a "$LOG"
       continue
     fi
     [[ -n "$ONLY_DEST" && "$CT_DEST" != "$ONLY_DEST" ]] && continue
-    printf '%-7s %-7s %-5s %-14s %-11s %-11s %s\n' \
+    printf '%-7s %-7s %-14s %-14s %-11s %-11s %s\n' \
       "$ct" "$CT_TGT" "$CT_DEST" "$CT_NODE" "${CT_PSTAT:-unreachable}" "${CT_CSTAT:-unknown}" "${CT_IMG:-?}" | tee -a "$LOG"
     [[ -z "$CT_PSTAT" ]] && UNREACHABLE+=("$ct:${CT_HOST:-$CT_NODE}")
   done

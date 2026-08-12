@@ -61,8 +61,8 @@ follow-up.
 
     make lint     # both layers: bash -n, shellcheck, the language rule, embeds
                   # the language rule is enforced on BOTH docs/ trees now
-    make test     # both layers: 232 tp scenarios + 21 for ketsync sync
-    make mutation # 203 known bugs put back. None may survive
+    make test     # both layers: 234 tp scenarios + 21 for ketsync sync
+    make mutation # 204 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

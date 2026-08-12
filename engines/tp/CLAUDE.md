@@ -33,7 +33,7 @@ anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
     ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
-    ct-replica.sh    tests/mutation/run-mutation-replica.sh     47 mutations
+    ct-replica.sh    tests/mutation/run-mutation-replica.sh     48 mutations
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    45 mutations
     ct-distribute.sh tests/mutation/run-mutation-distribute.sh  38 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
