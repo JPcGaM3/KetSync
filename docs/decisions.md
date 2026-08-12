@@ -53,8 +53,27 @@ Split-brain still happens. It just stops costing anything.
 
 ## 3. One writer for the fleet map, ordered by a generation number
 
-The three synced files are `ketsync.conf`, `nodes.tsv` and `fleet.tsv`. That
-last one is deliberately not called an inventory: `engines/tp` already has two
+What is synced is everything that is **fleet-wide** - the same bytes correct on
+every machine: `nodes.tsv`, `fleet.tsv`, and the engines' two inventories,
+`engines/tp/inventory-replica.tsv` and `engines/tp/inventory-migrate.tsv`. The
+inventories belong here because a machine taking over needs them, and a backup
+node holding a stale one replicates the wrong containers.
+
+What is **not** synced is anything per-machine, and `ketsync.conf` is the one
+that matters: it carries `KS_ROLE`, and pushing the master's copy sets every
+node to `KS_ROLE=master`. Every node then believes it may write - which is
+precisely the split brain section 2 is built to avoid, manufactured by the very
+command meant to keep everyone consistent. It was live in `cmd_sync.sh` until
+somebody read the file list out loud. There is a denylist now, and it stops the
+run rather than warning.
+
+`ctrep.conf` and `ctmig.conf` are also excluded, for a softer reason: they mix
+fleet-wide tuning (bandwidth, retry counts) with per-machine addresses
+(`BKP_SSH` means "the other machine", which is a different machine depending on
+who is asking). Splitting them into a shared part and a local part is a job of
+its own and has not been done.
+
+`fleet.tsv` is deliberately not called an inventory: `engines/tp` already has two
 files with that word in the name and entirely different columns, and one word
 meaning three things is how somebody edits the wrong table during a DR.
 `fleet.tsv` is the map - which container lives where, and where it goes when

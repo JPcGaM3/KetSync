@@ -1,3 +1,4 @@
+# generation: 1
 # inventory-replica.tsv - whitespace/tab separated; '#' starts a comment (inline too)
 # Read by ct-replica.sh AND ct-failback.sh. NOT ct-migrate.sh - see
 # inventory-migrate.sample.tsv, whose columns mean entirely different things.

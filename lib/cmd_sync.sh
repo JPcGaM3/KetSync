@@ -12,7 +12,28 @@
 #  OLDER than what it already has refuses it, so a master that was promoted by
 #  mistake and then demoted cannot walk its stale inventory back over everyone.
 # =============================================================================
-KS_SYNCED=(ketsync.conf nodes.tsv fleet.tsv)
+# FLEET-WIDE files only: the same bytes are correct on every machine.
+#
+# ketsync.conf is deliberately NOT here and must never be added. It carries
+# KS_ROLE, which is the one line that has to differ per machine - pushing the
+# master's copy sets every node to KS_ROLE=master, and then every node believes
+# it may write. That is the split brain this whole design exists to avoid, and
+# it was live in this file until somebody read it out loud.
+#
+# The engines' inventories ARE here: they are the fleet's work lists, they are
+# what a machine taking over needs, and a backup node holding a stale one is a
+# backup node that replicates the wrong containers. ctrep.conf and ctmig.conf
+# are not - they mix fleet-wide tuning with per-machine addresses (BKP_SSH is
+# "the other machine", which is a different machine depending on who is asking),
+# and splitting them is a separate job.
+KS_SYNCED=(nodes.tsv fleet.tsv
+           engines/tp/inventory-replica.tsv
+           engines/tp/inventory-migrate.tsv)
+
+# A denylist rather than a comment, because the comment above is exactly the
+# kind of thing that gets skimmed. Anything per-machine that reaches KS_SYNCED
+# stops the run instead of overwriting a role.
+KS_NEVER_SYNC=(ketsync.conf ctrep.conf ctmig.conf nodes.map)
 
 ks_generation(){  # $1 = file -> its generation, or 0
   sed -n 's/^#[[:space:]]*generation:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -1
@@ -33,6 +54,17 @@ cmd_sync(){
 
   hr
   log "=== sync from $(hostname) (role=$KS_ROLE)$( (( dry )) && echo ' mode=dry-run' ) ==="
+
+  local n2
+  for f in "${KS_SYNCED[@]}"; do
+    for n2 in "${KS_NEVER_SYNC[@]}"; do
+      [[ "$(basename "$f")" == "$n2" ]] || continue
+      log "ERROR: $f is a PER-MACHINE file and must not be pushed - NOTHING was sent"
+      log "ERROR:   $n2 differs on every machine by design. Pushing it makes every"
+      log "ERROR:   node agree about something that is only true of one of them."
+      exit 2
+    done
+  done
 
   for f in "${KS_SYNCED[@]}"; do
     [[ -f "$KS_BASE/$f" ]] || { log "WARN: $f does not exist here - not pushing it"; continue; }

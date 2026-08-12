@@ -1,3 +1,4 @@
+# generation: 1
 # inventory-migrate.tsv — whitespace/tab separated; lines starting with # are ignored
 # columns (ALL required):  old_node  old_ctid  new_ctid  new_node  storage
 #   old_node : host/IP of the source node (ssh reachable from storage-node via key)
