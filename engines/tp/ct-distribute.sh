@@ -129,6 +129,7 @@ DR_HEADROOM_PCT=25               # refuse if the target would be left tighter
 BW_TOTAL_MB=230
 LANES=1
 BW_MIN_MB=20
+LOG_KEEP_DAYS=14                 # same knob, same ctrep.conf, as ct-replica.sh
 SSH_CIPHERS=aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr
 # -------------------------------------------------------------------------
 
@@ -158,12 +159,31 @@ if [[ -f "$CONF" ]]; then
   # shellcheck source=/dev/null
   . "$CONF" || { echo "failed to read $CONF" >&2; exit 2; }
 fi
-for _v in OFFSET DR_OFFSET DR_HEADROOM_PCT BW_TOTAL_MB LANES BW_MIN_MB; do
+for _v in OFFSET DR_OFFSET DR_HEADROOM_PCT BW_TOTAL_MB LANES BW_MIN_MB LOG_KEEP_DAYS; do
   [[ "${!_v}" =~ ^[0-9]+$ ]] || { echo "$CONF: $_v must be a plain integer, got '${!_v}'" >&2; exit 2; }
 done
 
-mkdir -p "$BASE/logs" "$BASE/state" 2>/dev/null
-LOG="$BASE/logs/distribute-$(date +%F).log"
+# ---------- where the log goes ----------
+# ONE tree for both layers. tp is vendored inside ketsync and has no upstream,
+# so the dispatcher is two directories up - but that is CHECKED rather than
+# assumed: a tp that has been copied somewhere else, and every simulator
+# sandbox, keeps its own logs/ instead of writing outside its own tree. A bad
+# night should be one directory to read and one tarball to send, and every file
+# in it is named after the verb an operator typed.
+LOGDIR="$BASE/logs"
+if [[ -f "$BASE/../../ketsync" && -f "$BASE/../../lib/common.sh" ]]; then
+  LOGDIR="$(cd "$BASE/../.." && pwd)/logs"
+fi
+
+mkdir -p "$LOGDIR" "$BASE/state" 2>/dev/null
+LOG="$LOGDIR/distribute-$(date +%F).log"
+# This engine had no pruning at all, which the other three have had from the
+# start. Only distribute-*.log at depth 1, so nothing else in the shared
+# directory is collateral damage.
+if (( LOG_KEEP_DAYS > 0 )); then
+  find "$LOGDIR" -maxdepth 1 -type f -name 'distribute-*.log' \
+       -mtime +"$LOG_KEEP_DAYS" -delete 2>/dev/null || true
+fi
 log(){ printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG"; }
 # Three widths of rule, because a daily log holds dozens of rounds and dozens
 # of containers and they are not the same kind of edge. Somebody scrolling at

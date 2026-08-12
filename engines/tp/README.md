@@ -103,7 +103,7 @@ from a healthy run.
 ```bash
 make lint        # bash -n + shellcheck + the language and separator rules
 make test        # 221 simulator + 16 dispatcher scenarios, 125 c2v, 82 python
-make mutation    # 165 known bugs reintroduced: 156 in the engines, 9 in the dispatcher, all must be caught
+make mutation    # 173 known bugs reintroduced: 164 in the engines, 9 in the dispatcher, all must be caught
 ```
 
 `make mutation` is the target that matters. A green suite means nothing until

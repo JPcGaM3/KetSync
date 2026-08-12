@@ -503,7 +503,8 @@ echo &quot;  arc_summary | head -12&quot;</pre></div>
 #    exclude.tsv      CTIDs to skip when AUTO_DISCOVER=1
 #    PAUSE            create this file to stop all syncing (used during a
 #                     failback, when the copy holds the newer data)
-#    logs/            daily log per lane, auto-pruned after LOG_KEEP_DAYS
+#    ../../logs/      daily log per lane in ketsync&#x27;s one tree, auto-pruned
+#                     after LOG_KEEP_DAYS
 #    state/           machine-readable status, one pair of files per CT:
 #                       &lt;src_ctid&gt;.json        snapshot, replaced atomically
 #                       &lt;src_ctid&gt;.runs.jsonl  append-only history, 1 JSON/run
@@ -737,13 +738,26 @@ SSH_DATA=&quot;$SSH_COMMON -o ControlMaster=no -o ControlPath=none -o Compressio
 LANE=&quot;${LANE_STORAGE:-all}&quot;
 LANE=&quot;${LANE//[^A-Za-z0-9._-]/_}&quot;
 
-mkdir -p &quot;$BASE/logs&quot; &quot;$BASE/state&quot; &quot;$MNT_BASE&quot;
-LOG=&quot;$BASE/logs/replica-$LANE-$(date +%F).log&quot;
+# ---------- where the log goes ----------
+# ONE tree for both layers. tp is vendored inside ketsync and has no upstream,
+# so the dispatcher is two directories up - but that is CHECKED rather than
+# assumed: a tp that has been copied somewhere else, and every simulator
+# sandbox, keeps its own logs/ instead of writing outside its own tree. A bad
+# night should be one directory to read and one tarball to send, and every file
+# in it is named after the verb an operator typed.
+LOGDIR=&quot;$BASE/logs&quot;
+if [[ -f &quot;$BASE/../../ketsync&quot; &amp;&amp; -f &quot;$BASE/../../lib/common.sh&quot; ]]; then
+  LOGDIR=&quot;$(cd &quot;$BASE/../..&quot; &amp;&amp; pwd)/logs&quot;
+fi
+
+mkdir -p &quot;$LOGDIR&quot; &quot;$BASE/state&quot; &quot;$MNT_BASE&quot;
+LOG=&quot;$LOGDIR/replica-$LANE-$(date +%F).log&quot;
 # Prune before opening today&#x27;s file, so the run that finally fills the disk is
-# not this one. Only replica-*.log at depth 1, so nothing an operator parked
-# in here is collateral damage.
+# not this one. Only replica-*.log at depth 1: the other engines and the
+# dispatcher keep their own days in this same directory now, and nothing an
+# operator parked in here is collateral damage either.
 if (( LOG_KEEP_DAYS &gt; 0 )); then
-  find &quot;$BASE/logs&quot; -maxdepth 1 -type f -name &#x27;replica-*.log&#x27; \
+  find &quot;$LOGDIR&quot; -maxdepth 1 -type f -name &#x27;replica-*.log&#x27; \
        -mtime +&quot;$LOG_KEEP_DAYS&quot; -delete 2&gt;/dev/null || true
 fi
 
@@ -2067,10 +2081,24 @@ SSH_OPT=&quot;$SSH_COMMON -o ControlMaster=auto -o ControlPath=/run/ctback-$$-%r
 SSH_DATA=&quot;$SSH_COMMON -o ControlMaster=no -o ControlPath=none -o Compression=no&quot;
 [[ -n &quot;$SSH_CIPHERS&quot; ]] &amp;&amp; SSH_DATA=&quot;$SSH_DATA -c $SSH_CIPHERS&quot;
 
-mkdir -p &quot;$BASE/logs&quot; &quot;$BASE/state&quot; &quot;$MNT_BASE&quot;
-LOG=&quot;$BASE/logs/failback-$(date +%F).log&quot;
+# ---------- where the log goes ----------
+# ONE tree for both layers. tp is vendored inside ketsync and has no upstream,
+# so the dispatcher is two directories up - but that is CHECKED rather than
+# assumed: a tp that has been copied somewhere else, and every simulator
+# sandbox, keeps its own logs/ instead of writing outside its own tree. A bad
+# night should be one directory to read and one tarball to send, and every file
+# in it is named after the verb an operator typed.
+LOGDIR=&quot;$BASE/logs&quot;
+if [[ -f &quot;$BASE/../../ketsync&quot; &amp;&amp; -f &quot;$BASE/../../lib/common.sh&quot; ]]; then
+  LOGDIR=&quot;$(cd &quot;$BASE/../..&quot; &amp;&amp; pwd)/logs&quot;
+fi
+
+mkdir -p &quot;$LOGDIR&quot; &quot;$BASE/state&quot; &quot;$MNT_BASE&quot;
+LOG=&quot;$LOGDIR/failback-$(date +%F).log&quot;
+# Only failback-*.log at depth 1: the other engines and the dispatcher keep
+# their own days in this same directory now.
 if (( LOG_KEEP_DAYS &gt; 0 )); then
-  find &quot;$BASE/logs&quot; -maxdepth 1 -type f -name &#x27;failback-*.log&#x27; \
+  find &quot;$LOGDIR&quot; -maxdepth 1 -type f -name &#x27;failback-*.log&#x27; \
        -mtime +&quot;$LOG_KEEP_DAYS&quot; -delete 2&gt;/dev/null || true
 fi
 log(){ printf &#x27;%s %s\n&#x27; &quot;$(date &#x27;+%F %T&#x27;)&quot; &quot;$*&quot; | tee -a &quot;$LOG&quot;; }

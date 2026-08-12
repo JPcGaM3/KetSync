@@ -32,10 +32,10 @@ must be mirrored in its mutation file in the same change. Never "fix" a broken
 anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
-    ct-migrate.sh    tests/mutation/run-mutation.sh             43 mutations
-    ct-replica.sh    tests/mutation/run-mutation-replica.sh     41 mutations
-    ct-failback.sh   tests/mutation/run-mutation-failback.sh    42 mutations
-    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  30 mutations
+    ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
+    ct-replica.sh    tests/mutation/run-mutation-replica.sh     43 mutations
+    ct-failback.sh   tests/mutation/run-mutation-failback.sh    44 mutations
+    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  32 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.

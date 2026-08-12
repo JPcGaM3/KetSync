@@ -27,7 +27,7 @@
 #  script defines below is only a default.
 #
 #  what it writes, all next to this script:
-#    logs/ctmig-<lane>-<date>.log   human log
+#    ../../logs/migrate-<lane>-<date>.log   human log, in ketsync's one tree
 #    state/<ctid>.json              machine-readable snapshot, replaced atomically
 #    state/<ctid>.runs.jsonl        append-only run history, one JSON per run
 #    .sync-<lane>.lock              one run per lane
@@ -215,14 +215,29 @@ LANE="${LANE_STORAGE:-all}"
 (( STOPPED )) && LANE="$LANE-final"
 LANE="${LANE//[^A-Za-z0-9._-]/_}"
 
-mkdir -p "$BASE/logs" "$BASE/done" "$BASE/state"
-LOG="$BASE/logs/ctmig-$LANE-$(date +%F).log"
+# ---------- where the log goes ----------
+# ONE tree for both layers. tp is vendored inside ketsync and has no upstream,
+# so the dispatcher is two directories up - but that is CHECKED rather than
+# assumed: a tp that has been copied somewhere else, and every simulator
+# sandbox, keeps its own logs/ instead of writing outside its own tree. A bad
+# night should be one directory to read and one tarball to send, and every file
+# in it is named after the verb an operator typed.
+LOGDIR="$BASE/logs"
+if [[ -f "$BASE/../../ketsync" && -f "$BASE/../../lib/common.sh" ]]; then
+  LOGDIR="$(cd "$BASE/../.." && pwd)/logs"
+fi
+
+mkdir -p "$LOGDIR" "$BASE/done" "$BASE/state"
+# migrate-, not ctmig-: the file is named after the verb an operator typed, the
+# way replica-, failback- and distribute- already were. One rule, four engines.
+LOG="$LOGDIR/migrate-$LANE-$(date +%F).log"
 # One log file per lane per day, forever, on the same pool the images are being
 # written into. Prune before opening today's, so the run that finally fills the
-# disk is not this one. Only ctmig-*.log, so nothing an operator parked here is
-# collateral damage.
+# disk is not this one. Only migrate-*.log at depth 1: the other engines and the
+# dispatcher keep their own days in this same directory now, and nothing an
+# operator parked here is collateral damage either.
 if (( LOG_KEEP_DAYS > 0 )); then
-  find "$BASE/logs" -maxdepth 1 -type f -name 'ctmig-*.log' \
+  find "$LOGDIR" -maxdepth 1 -type f -name 'migrate-*.log' \
        -mtime +"$LOG_KEEP_DAYS" -delete 2>/dev/null || true
 fi
 

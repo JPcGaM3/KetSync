@@ -4,13 +4,43 @@
 #  common.sh — log, config, and the tables everything reads.
 #  Sourced, never executed. KS_BASE is set by the dispatcher.
 # =============================================================================
+# ---------- where the log goes ----------
+# ONE tree for both layers: the four engines write their own days into this
+# same directory, each file named after the verb an operator typed. A bad
+# night is then one directory to read and one tarball to send, instead of two
+# places to remember at 3am.
+#
+#   logs/ketsync-<date>.log      sync, role, doctor - the decisions
+#   logs/migrate-<lane>-<date>.log
+#   logs/replica-<lane>-<date>.log
+#   logs/failback-<date>.log
+#   logs/distribute-<date>.log   the engines - what actually moved
+#
+# Commands that are passed through to tp exec into it and log as the engine,
+# not as the dispatcher: there is one record of a replica round, written by the
+# thing that ran it.
 KS_LOGDIR="$KS_BASE/logs"
 KS_LOG="$KS_LOGDIR/ketsync-$(date +%F).log"
+KS_LOG_KEEP_DAYS=14           # tp prunes its own the same way; 0 disables
 mkdir -p "$KS_LOGDIR" 2>/dev/null
+# Prune before opening today's file, so the run that finally fills the disk is
+# not this one. Only ketsync-*.log at depth 1: the engines' days live here too
+# and each one prunes its own.
+if [[ "$KS_LOG_KEEP_DAYS" =~ ^[0-9]+$ ]] && (( KS_LOG_KEEP_DAYS > 0 )); then
+  find "$KS_LOGDIR" -maxdepth 1 -type f -name 'ketsync-*.log' \
+       -mtime +"$KS_LOG_KEEP_DAYS" -delete 2>/dev/null || true
+fi
 
 log(){ printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$KS_LOG"; }
 hr(){  printf '%s\n' "##############################################################################" | tee -a "$KS_LOG"; }
 die(){ log "ERROR: $*"; exit 2; }
+
+# doctor is a report, not a transcript: its lines are aligned columns a human
+# reads, and a timestamp in front of every one of them makes the table
+# unreadable. say() keeps the screen clean AND still leaves a record, which
+# matters because doctor is the command most likely to be run from cron and
+# the one whose output there was no record of at all until this existed.
+say(){ printf '%s\n' "$*"; printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$KS_LOG"; }
 
 # ---------- config -----------------------------------------------------------
 # Defaults live here so the sample config can stay short; a value in the file

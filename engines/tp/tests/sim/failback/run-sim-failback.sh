@@ -275,6 +275,19 @@ hasnt(){  grep -qF -- "$1" <<<"$OUT" && _err "should NOT be in log: $1"; return 
 traced(){ grep -qF -- "$1" <<<"$TRACE" || _err "expected command: $1"; }
 untraced(){ grep -qF -- "$1" <<<"$TRACE" && _err "command must NOT have run: $1"; return 0; }
 rc_is(){ [[ "$RC" == "$1" ]] || _err "exit code $RC, expected $1"; }
+# The log file has to land in the engine's OWN logs/, because a sandbox has no
+# ketsync above it. The engine walks two directories up when - and only when -
+# it finds a dispatcher there, so a sandbox exercises the guarded path: an
+# engine that walks up unconditionally writes into somebody's home directory on
+# a real machine, and one whose fallback is not its own tree scatters a night
+# across two places. Neither is visible in stdout, which is why this looks at
+# the filesystem.
+log_lands_here(){   # $1 = filename prefix
+  local g=( "$WORK/logs/$1"*.log )
+  [[ -e "${g[0]}" ]] || _err "no log file under $WORK/logs matching $1*.log"
+  [[ -d "$WORK/../logs" ]] && _err "the engine wrote a logs/ OUTSIDE its own tree"
+  return 0
+}
 clean(){ [[ -z "$VIO" ]] || { _err "INVARIANT BROKEN:"; sed 's/^/         /' <<<"$VIO"; }; }
 # order matters for the safety net: a snapshot taken after the first write is
 # not a safety net, it is a snapshot of the damage
@@ -339,7 +352,8 @@ if scenario "1: happy path, three promoted copies come back into their images"; 
   traced "rsyncopt --inplace"
   traced "rsyncopt --bwlimit=230m"
   nothing_mounted
-  done_scenario
+    log_lands_here failback
+done_scenario
 fi
 
 if scenario "2: the copy is read over ssh from the dataset the inventory names"; then

@@ -415,7 +415,7 @@ KS_MASTER_IP=10.100.1.17</pre></div>
 */15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-ssd-nas</pre></div>
   <h3>เช็กว่าทำงานอยู่จริง</h3>
   <div class="code"><pre>./ketsync status
-tail -f /root/ketsync/engines/tp/logs/replica-$(date +%F).log</pre></div>
+tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div>
   <div class="warn"><p>ใน cron ต้องใส่ path เต็มเสมอ และเป็น path ของ engine ตรงๆ
      (<code class="inl">engines/tp/ct-replica.sh</code>) ไม่ใช่
      <code class="inl">./ketsync</code> — เพราะ cron ไม่รู้ว่าตอนนี้อยู่โฟลเดอร์ไหน</p></div>

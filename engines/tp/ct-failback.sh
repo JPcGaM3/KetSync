@@ -202,10 +202,24 @@ SSH_OPT="$SSH_COMMON -o ControlMaster=auto -o ControlPath=/run/ctback-$$-%r@%h.s
 SSH_DATA="$SSH_COMMON -o ControlMaster=no -o ControlPath=none -o Compression=no"
 [[ -n "$SSH_CIPHERS" ]] && SSH_DATA="$SSH_DATA -c $SSH_CIPHERS"
 
-mkdir -p "$BASE/logs" "$BASE/state" "$MNT_BASE"
-LOG="$BASE/logs/failback-$(date +%F).log"
+# ---------- where the log goes ----------
+# ONE tree for both layers. tp is vendored inside ketsync and has no upstream,
+# so the dispatcher is two directories up - but that is CHECKED rather than
+# assumed: a tp that has been copied somewhere else, and every simulator
+# sandbox, keeps its own logs/ instead of writing outside its own tree. A bad
+# night should be one directory to read and one tarball to send, and every file
+# in it is named after the verb an operator typed.
+LOGDIR="$BASE/logs"
+if [[ -f "$BASE/../../ketsync" && -f "$BASE/../../lib/common.sh" ]]; then
+  LOGDIR="$(cd "$BASE/../.." && pwd)/logs"
+fi
+
+mkdir -p "$LOGDIR" "$BASE/state" "$MNT_BASE"
+LOG="$LOGDIR/failback-$(date +%F).log"
+# Only failback-*.log at depth 1: the other engines and the dispatcher keep
+# their own days in this same directory now.
 if (( LOG_KEEP_DAYS > 0 )); then
-  find "$BASE/logs" -maxdepth 1 -type f -name 'failback-*.log' \
+  find "$LOGDIR" -maxdepth 1 -type f -name 'failback-*.log' \
        -mtime +"$LOG_KEEP_DAYS" -delete 2>/dev/null || true
 fi
 log(){ printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG"; }

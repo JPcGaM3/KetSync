@@ -388,6 +388,21 @@ mutant "every rule is the same again, so no boundary says which kind it is" \
 mutant "the container list never opens or closes, only the run does" \
   's{^(\s*)hr_ct$}{\$1hr}m' \
   1
+# ---------- the one log tree ------------------------------------------------
+# Both layers write into ketsync's logs/ when this engine is vendored inside
+# it, which it always is on a real install. The walk-up is GUARDED, because an
+# engine that has been copied somewhere else would otherwise write two
+# directories above itself - into somebody's home, or /, or whatever happens to
+# sit there. Every simulator sandbox takes the guarded path, which is what
+# makes both of these observable.
+mutant "the log is written two directories up whether ketsync is there or not" \
+  's{\Qif [[ -f "\E\$BASE\Q/../../ketsync" && -f "\E\$BASE\Q/../../lib/common.sh" ]]; then\E}{if true; then}' \
+  1
+
+mutant "the fallback log directory is not the engine's own" \
+  's{\QLOGDIR="\E\$BASE\Q/logs"\E}{LOGDIR="\$BASE/../logs"}' \
+  1
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

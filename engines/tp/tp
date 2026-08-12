@@ -38,9 +38,15 @@ export TP_HOME
 
 usage(){ sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\} \{0,1\}//'; }
 
-# The same rule the engines print between operations. doctor is five unrelated
-# checks in a row, each of which can raise the exit code on its own, so the
-# reader has to be able to see which finding came from which check.
+# The same rule the engines print between operations, and it frames the status
+# TABLE - two rules, top and bottom, around columns that would otherwise run
+# into whatever the shell printed before them.
+#
+# doctor does NOT use it. A full-width rule between every one of six short
+# sections is heavier than the sections themselves, and the "== " heading each
+# one already opens with is the marker. A report is not a run log: the rules
+# exist in an engine's log because a night holds dozens of rounds, and doctor
+# holds one.
 LOGSEP='##############################################################################'
 hr(){ printf '%s\n' "$LOGSEP"; }
 
@@ -87,7 +93,6 @@ cmd_status(){
 # ---------------------------------------------------------------------------
 cmd_doctor(){
   local rc=0 mig_inv="$TP_HOME/inventory-migrate.tsv" rep_inv="$TP_HOME/inventory-replica.tsv"
-  hr
   echo "== live in the hybrid but not replicated"
   # The dangerous gap: `tp migrate` finished, somebody marked the CT done and it
   # is now serving customers from the new infrastructure - and nobody added it
@@ -109,7 +114,6 @@ cmd_doctor(){
     echo "  skipped (no done/ or no replica inventory yet)"
   fi
 
-  hr
   echo "== bandwidth ceilings that do not know about each other"
   # Until the engines share one config, two tools each believe they own the
   # whole link. Running both at once quietly doubles the real ceiling.
@@ -123,7 +127,6 @@ cmd_doctor(){
     echo "  skipped (could not read both configs)"
   fi
 
-  hr
   echo "== images grown past what their config says"
   # ct-migrate grows an image on ENOSPC (G4) but never rewrites a config that
   # already exists (G6), because a human may have added net0 to it by then. So
@@ -146,7 +149,6 @@ cmd_doctor(){
   done
   (( found )) && echo "  fix the rootfs line by hand on the target node when convenient" || echo "  ok"
 
-  hr
   echo "== containers held back by hand"
   # A pause that is forgotten is a container with no DR copy, and the only
   # thing that knows is a file nobody looks at. Age it, because "paused" for an
@@ -176,7 +178,6 @@ cmd_doctor(){
     echo "  ok"
   fi
 
-  hr
   echo "== inventories readable"
   local f
   for f in "$mig_inv" "$rep_inv"; do

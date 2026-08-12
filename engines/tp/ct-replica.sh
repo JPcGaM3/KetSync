@@ -39,7 +39,8 @@
 #    exclude.tsv      CTIDs to skip when AUTO_DISCOVER=1
 #    PAUSE            create this file to stop all syncing (used during a
 #                     failback, when the copy holds the newer data)
-#    logs/            daily log per lane, auto-pruned after LOG_KEEP_DAYS
+#    ../../logs/      daily log per lane in ketsync's one tree, auto-pruned
+#                     after LOG_KEEP_DAYS
 #    state/           machine-readable status, one pair of files per CT:
 #                       <src_ctid>.json        snapshot, replaced atomically
 #                       <src_ctid>.runs.jsonl  append-only history, 1 JSON/run
@@ -273,13 +274,26 @@ SSH_DATA="$SSH_COMMON -o ControlMaster=no -o ControlPath=none -o Compression=no"
 LANE="${LANE_STORAGE:-all}"
 LANE="${LANE//[^A-Za-z0-9._-]/_}"
 
-mkdir -p "$BASE/logs" "$BASE/state" "$MNT_BASE"
-LOG="$BASE/logs/replica-$LANE-$(date +%F).log"
+# ---------- where the log goes ----------
+# ONE tree for both layers. tp is vendored inside ketsync and has no upstream,
+# so the dispatcher is two directories up - but that is CHECKED rather than
+# assumed: a tp that has been copied somewhere else, and every simulator
+# sandbox, keeps its own logs/ instead of writing outside its own tree. A bad
+# night should be one directory to read and one tarball to send, and every file
+# in it is named after the verb an operator typed.
+LOGDIR="$BASE/logs"
+if [[ -f "$BASE/../../ketsync" && -f "$BASE/../../lib/common.sh" ]]; then
+  LOGDIR="$(cd "$BASE/../.." && pwd)/logs"
+fi
+
+mkdir -p "$LOGDIR" "$BASE/state" "$MNT_BASE"
+LOG="$LOGDIR/replica-$LANE-$(date +%F).log"
 # Prune before opening today's file, so the run that finally fills the disk is
-# not this one. Only replica-*.log at depth 1, so nothing an operator parked
-# in here is collateral damage.
+# not this one. Only replica-*.log at depth 1: the other engines and the
+# dispatcher keep their own days in this same directory now, and nothing an
+# operator parked in here is collateral damage either.
 if (( LOG_KEEP_DAYS > 0 )); then
-  find "$BASE/logs" -maxdepth 1 -type f -name 'replica-*.log' \
+  find "$LOGDIR" -maxdepth 1 -type f -name 'replica-*.log' \
        -mtime +"$LOG_KEEP_DAYS" -delete 2>/dev/null || true
 fi
 

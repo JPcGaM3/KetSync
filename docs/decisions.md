@@ -120,7 +120,7 @@ resolves the target from `fleet.tsv`'s `dr` column (`--to` overrides, and a
 container with neither is refused rather than placed somewhere reasonable),
 checks `9<id>` is free across the whole cluster, allocates on the target's own
 storage, transfers, writes the config carrying the production network, and then
-prints the `pct start` for a human. 34 scenarios, 30 mutations.
+prints the `pct start` for a human. 34 scenarios, 32 mutations.
 
 Two things about it are new to this repo.
 
@@ -244,7 +244,7 @@ doctor` says so on the next good day.
     ketsync replica      tp's
     ketsync failback     tp's
     ketsync distribute   tp's - engines/tp/ct-distribute.sh, 34 scenarios,
-                         30 mutations. See section 5
+                         32 mutations. See section 5
     ketsync status       tp's
     ketsync recall       stub, exits 2. See section 6 for why it is the one
                          command that must not be written carelessly

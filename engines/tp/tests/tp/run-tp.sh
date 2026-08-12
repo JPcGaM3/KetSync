@@ -206,9 +206,12 @@ if scenario "10: doctor is quiet and exits 0 when there is nothing to say"; then
   run_tp doctor
   rc_is 0
   has "live in the hybrid but not replicated"
-  # five unrelated checks in a row, each able to raise the exit code on its
-  # own, so the reader has to see which finding came from which check
-  has "##############################################################################"
+  # doctor is a REPORT, and the "== " heading each section opens with is the
+  # marker. A full-width rule between every one of six short sections is
+  # heavier than the sections themselves and made this harder to read, not
+  # easier - the rules belong in an engine's log, where one night holds dozens
+  # of rounds. `hr` still exists and still frames the status TABLE.
+  hasnt "##############################################################################"
   has "bandwidth ceilings that do not know about each other"
   has "stale PAUSE"
   has "inventories readable"

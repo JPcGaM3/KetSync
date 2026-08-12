@@ -117,9 +117,14 @@ mutant "a missing engine is exec'd anyway instead of refused" \
 
 # ---------- the output is a deliverable ------------------------------------
 
-mutant "the rule between doctor's checks is dropped" \
+# It framed doctor's checks too, until a full-width rule between six short
+# sections turned out to be harder to read than the sections. It still frames
+# the status TABLE, where columns would otherwise run into whatever the shell
+# printed before them - so scenario 6 is what kills this now, and 10 asserts
+# the rule is NOT back.
+mutant "the rule around the status table is dropped" \
   's{LOGSEP=.#+.}{LOGSEP=""}' \
-  6 10
+  6
 
 # ---------- status ----------------------------------------------------------
 

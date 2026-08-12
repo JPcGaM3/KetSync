@@ -192,6 +192,27 @@
      <code class="inl">inventory.tsv</code> เฉยๆ ตอนนี้เป็น <code class="inl">inventory-migrate.tsv</code>
      ถ้าเครื่องไหนยังมีไฟล์ชื่อเก่าอยู่ engine จะไม่เดาให้ แต่จะบอกตรงๆ ว่าให้ rename อะไรเป็นอะไร
      ดูหัวข้อ 8</p></div>
+
+  <h3>log อยู่ที่เดียว</h3>
+  <p>ทุกอย่างเขียนลง <code class="inl">/root/ketsync/logs/</code> ที่เดียว ทั้งสองชั้น
+     ชื่อไฟล์ขึ้นต้นด้วยคำสั่งที่พิมพ์ไป ตามด้วยวันที่ ตอนมีปัญหาจะได้ tar ทั้งโฟลเดอร์ส่งมาทีเดียว
+     ไม่ต้องไล่หาสองที่</p>
+  <table>
+    <tr><th>ไฟล์</th><th>ตอบคำถามว่า</th></tr>
+    <tr><td class="m">ketsync-&lt;วันที่&gt;.log</td><td>ใครสั่ง sync ไปเครื่องไหน ใครถูกเปลี่ยน role
+        และ doctor เจออะไรบ้าง</td></tr>
+    <tr><td class="m">migrate-&lt;lane&gt;-&lt;วันที่&gt;.log</td><td>ย้ายของจากเครื่องเก่ามาแล้วเกิดอะไรขึ้น</td></tr>
+    <tr><td class="m">replica-&lt;lane&gt;-&lt;วันที่&gt;.log</td><td>คืนนั้นก๊อปครบมั้ย ตัวไหนถูกข้าม เพราะอะไร</td></tr>
+    <tr><td class="m">failback-&lt;วันที่&gt;.log</td><td>เอาข้อมูลกลับเข้าตัวจริงแล้วผ่านด่านไหนบ้าง</td></tr>
+    <tr><td class="m">distribute-&lt;วันที่&gt;.log</td><td>ตอน DR กระจายสำเนาไปเครื่องไหน ลง storage อะไร</td></tr>
+  </table>
+  <p>เก่ากว่า 14 วันถูกลบเองอัตโนมัติ (ของ migrate เก็บ 30 วัน) แต่ละตัวลบเฉพาะไฟล์ของตัวเอง
+     ไฟล์อะไรที่เอามาวางไว้เองในนั้นไม่โดนลบ</p>
+  <div class="warn"><p><b>ที่เก็บ log ย้ายแล้ว</b> ของเดิมอยู่ที่
+     <code class="inl">engines/tp/logs/</code> ตอนนี้ทั้งสองชั้นเขียนลง
+     <code class="inl">logs/</code> ข้างบนสุดที่เดียว ของเก่ายังอยู่ที่เดิมและไม่มีอะไรไปลบให้
+     ถ้าจะรวมก็ <code class="inl">mv</code> เอาเอง ส่วน cron ไม่ต้องแก้ — คำสั่งเหมือนเดิม
+     เปลี่ยนแค่ปลายทางที่ log ไปลง</p></div>
 </section>
 
 <section id="s3">

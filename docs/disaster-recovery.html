@@ -324,8 +324,8 @@ pvesm status
   </ol>
   <p>ถ้าเผลอปล่อยให้ cron ทำงานไปก่อนแล้ว ให้รีบสร้าง <code class="inl">PAUSE</code> ทันที
      แล้วเช็กจาก log ว่ามีตัวไหนถูกก๊อปทับไปหรือยัง</p>
-  <div class="code"><pre>grep -l 'GUARD R2' /root/ketsync/engines/tp/logs/replica-*.log
-grep 'ok=' /root/ketsync/engines/tp/logs/replica-$(date +%F).log | tail -3</pre></div>
+  <div class="code"><pre>grep -l 'GUARD R2' /root/ketsync/logs/replica-*.log
+grep 'ok=' /root/ketsync/logs/replica-*-$(date +%F).log | tail -3</pre></div>
   <p>บรรทัดที่ขึ้น <code class="inl">GUARD R2</code> คือตัวที่รอดเพราะยังรันอยู่
      ตัวที่ขึ้นว่า <code class="inl">ok</code> ในรอบนั้นคือตัวที่ถูกทับไปแล้ว</p>
 </section>
