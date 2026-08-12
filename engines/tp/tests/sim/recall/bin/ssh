@@ -1,0 +1,311 @@
+#!/usr/bin/env bash
+# fake ssh — the whole cluster, one shell command at a time.
+#
+# ct-recall.sh orchestrates and touches nothing itself, so every disk operation
+# in the run arrives here. Two kinds of machine answer:
+#
+#   $SIM_BKP_HOST      the backup node: pmxcfs, the copies' datasets, and the
+#                      DESTINATION of every transfer
+#   a row in srcs/     a compute node: the storage, the 9<id> volume, its
+#                      mounts, and the rsync that PUSHES to the backup node -
+#                      the engine issues it there because rsync cannot do
+#                      remote-to-remote
+#
+# Several answers refuse to pretend. rsync out of a path that is not a
+# mountpoint, a mount that replays a live container's journal, a container
+# started or destroyed, or any write at all during a dry run are recorded as
+# violations rather than simulated, because each one has a consequence on a
+# real node that no amount of correct-looking log output would undo.
+# shellcheck source=tests/sim/recall/lib.sh
+. "$SIMLIB"
+
+host=""; ctl=""; declare -a cmd=()
+while (( $# )); do
+  case "$1" in
+    -o) shift 2;;
+    -O) ctl="${2:-}"; shift 2;;
+    -c) shift 2;;
+    -*) shift;;
+    *)  if [[ -z "$host" ]]; then host="${1#*@}"; else cmd+=("$1"); fi; shift;;
+  esac
+done
+[[ -n "$ctl" ]] && exit 0
+c="${cmd[*]:-}"
+trace "ssh $host :: $(printf '%s' "$c" | tr '\n' ' ')"
+
+PVE="$SIMROOT/pve"
+BKP="$SIMROOT/bkp"
+
+# C7. Nothing may start, stop or destroy a container, on any machine, ever.
+# `pct destroy 9<id>` in particular is what releases ct-replica's R13, and
+# releasing that shield on data nobody has checked is the one thing this engine
+# cannot undo. It PRINTS the command; it must never run it.
+case "$c" in
+  *"pct start"*|*"pct shutdown"*|*"pct stop"*|*"pct destroy"*|*"pct create"*)
+    violation "touched a container's lifecycle: $c"; exit 1;;
+esac
+
+# ---------------------------------------------------------------- backup node
+if [[ "$host" == "${SIM_BKP_HOST:-}" ]]; then
+  [[ -f "$BKP/.down" ]] && { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+  case "$c" in
+    *"readlink /etc/pve/local"*)  cat "$BKP/node" 2>/dev/null; exit 0;;
+
+    # C2: is the copy on this node up or down
+    "pct status "*)
+      id="$(awk '{print $3}' <<<"$c")"; f="$BKP/ct/$id.status"
+      [[ -f "$f" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+      printf 'status: %s\n' "$(cat "$f")"; exit 0;;
+
+    # C1: find the 9<id> anywhere in the cluster. pmxcfs is shared, which is
+    # the whole reason one question through this machine can answer for a
+    # compute node - and why nobody has to type where the container is.
+    "ls /etc/pve/"*)
+      a="${c#ls }"; a="${a%%2>*}"
+      set -f; read -r -a pats <<<"$a"; set +f
+      found=0
+      for pat in "${pats[@]}"; do
+        [[ "$pat" == -* ]] && continue
+        # shellcheck disable=SC2206  # the glob is the point: /etc/pve/nodes/*/lxc
+        hits=( "$PVE"${pat#/etc/pve} )
+        for f in "${hits[@]}"; do
+          [[ -e "$f" ]] || continue
+          printf '/etc/pve%s\n' "${f#"$PVE"}"; found=1
+        done
+      done
+      (( found )) || { echo "ls: cannot access: No such file or directory" >&2; exit 2; }
+      exit 0;;
+
+    "cat /etc/pve/"*|"cat '/etc/pve/"*)
+      f="${c#cat }"; f="${f//\'/}"; f="${f%% *}"
+      [[ -f "$PVE${f#/etc/pve}" ]] || exit 1
+      cat "$PVE${f#/etc/pve}"; exit 0;;
+
+    # C5: is the copy's dataset really mounted. The engine asks for two
+    # properties in one call and pastes the answer onto one line, exactly as
+    # ct-replica does, so the fake answers in that shape.
+    "zfs get "*mounted,mountpoint*)
+      t="${c#*mounted,mountpoint }"; ds="${t%% *}"
+      m="$(awk -F'\t' -v n="$ds" '$1==n{print $2; exit}' "$BKP/zfs.tsv" 2>/dev/null)"
+      [[ -z "$m" ]] && exit 1                    # no such dataset: no output at all
+      printf '%s\n%s\n' "$m" "$(awk -F'\t' -v n="$ds" '$1==n{print $3; exit}' "$BKP/zfs.tsv")"
+      exit 0;;
+
+    true) exit 0;;
+  esac
+
+  # ---- C8: the copy lock, on the machine that holds the copy --------------
+  # Modelled as a real file under the backup node's /run, not a polite yes.
+  # Same model and the same file names as ct-replica R14, ct-failback B8 and
+  # ct-distribute D8 - it is one lock, and four simulators disagreeing about it
+  # would be worse than none.
+  case "$c" in
+    *ketsync-ct-*.lock*)
+      lf="$(printf '%s' "$c" | sed -n 's#.*\(/run/ketsync-ct-[0-9]*\.lock\).*#\1#p')"
+      [[ -n "$lf" ]] || violation "C8: lock command with no /run/ketsync-ct-<id>.lock path: $c"
+      [[ -f "$BKP/lock.fail" ]] && { echo "ssh_exchange_identification: closed" >&2; exit 255; }
+      mkdir -p "$BKP/run"
+      case "$c" in
+        "if (set -C;"*)
+          owner="${c#*\'%s\\n\' \'}"; owner="${owner%%\'*}"
+          if [[ -e "$BKP/run${lf##*/run}" ]]; then
+            echo KETSYNC_LOCK_HELD; cat "$BKP/run${lf##*/run}" 2>/dev/null; exit 0
+          fi
+          dry_forbids "copy lock $lf created on the backup node" || exit 1
+          printf '%s\n' "$owner" > "$BKP/run${lf##*/run}"
+          trace "bkp lock take $lf"
+          if [[ -s "$BKP/lock.steal" ]]; then
+            cat "$BKP/lock.steal" > "$BKP/run${lf##*/run}"; trace "bkp lock stolen $lf"
+          fi
+          echo KETSYNC_LOCK_TAKEN; exit 0;;
+        "grep -qxF"*)
+          owner="${c#grep -qxF \'}"; owner="${owner%%\'*}"
+          if [[ -f "$BKP/run${lf##*/run}" ]] && grep -qxF "$owner" "$BKP/run${lf##*/run}"; then
+            rm -f "$BKP/run${lf##*/run}"; trace "bkp lock release $lf"; exit 0
+          fi
+          # The grep said no. Whether the rm still runs is decided by how the
+          # two are joined, exactly as a real shell decides it.
+          case "$c" in *"&& rm -f"*) exit 1;; esac
+          [[ -f "$BKP/run${lf##*/run}" ]] && \
+            violation "C8: the release removed $lf, which says: $(cat "$BKP/run${lf##*/run}")"
+          rm -f "$BKP/run${lf##*/run}"; exit 0;;
+        "cat "*)
+          trace "bkp lock peek $lf"
+          [[ -f "$BKP/run${lf##*/run}" ]] && cat "$BKP/run${lf##*/run}"
+          exit 0;;
+        *"rm "*)
+          violation "C8: a release that removes $lf without asserting who owns it"
+          rm -f "$BKP/run${lf##*/run}"; exit 0;;
+      esac
+      violation "C8: lock command shape the simulator does not model: $c"
+      exit 1;;
+  esac
+
+  violation "remote command the simulator does not model on the backup node: $c"
+  exit 1
+fi
+
+# ------------------------------------------------------------- compute source
+S="$(src_dir "$host")"
+[[ -d "$S" ]] || { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+[[ -f "$S/.down" ]] && { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+
+case "$c" in
+  true) exit 0;;
+
+  *"readlink /etc/pve/local"*) cat "$S/node" 2>/dev/null; exit 0;;
+
+  # C4: is the DR container up or down. Its state decides whether this round is
+  # a presync or a cutover, and the engine refuses when it cannot be answered.
+  "pct status "*)
+    id="$(awk '{print $3}' <<<"$c")"; f="$S/ct/$id.status"
+    [[ -f "$f" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+    printf 'status: %s\n' "$(cat "$f")"; exit 0;;
+
+  # The transfer is issued here and PUSHES, so this path has to exist before
+  # anything is mounted. A scenario can take it away without taking the node
+  # away, which is the situation on a fleet where the compute nodes were
+  # rebuilt and nobody copied a key back.
+  "ssh "*" true")
+    [[ -f "$S/.nobkpssh" ]] && { echo "Permission denied (publickey)." >&2; exit 255; }
+    [[ -f "$BKP/.down" ]] && { echo "No route to host" >&2; exit 255; }
+    exit 0;;
+
+  # Byte-for-byte the shape of the real thing, header included. The Status
+  # column holds a WORD - active, inactive or disabled - and ct-distribute
+  # spent three weeks comparing it against 1, which is what the API returns and
+  # not what the CLI prints. The PVE 9 header is here too: "Total (KiB)" splits
+  # into two awk fields, so the header row has ten and a data row has seven.
+  "pvesm status -storage "*)
+    sid="${c#pvesm status -storage }"; sid="${sid%% *}"
+    [[ -f "$S/storage/$sid.type" ]] || { echo "storage '$sid' does not exist" >&2; exit 2; }
+    printf '%-20s %-10s %10s %15s %15s %15s %8s\n' \
+      Name Type Status 'Total (KiB)' 'Used (KiB)' 'Available (KiB)' '%'
+    printf '%-20s %-10s %10s %15s %15s %15s %8s\n' "$sid" "$(st_field "$host" "$sid" type)" \
+      "$(st_field "$host" "$sid" status)" 999999999 0 999999999 0.00%
+    exit 0;;
+
+  "pvesm path "*)
+    v="${c#pvesm path }"; v="${v%% *}"
+    sid="${v%%:*}"; volname="${v#*:}"
+    [[ -e "$S/vols/$sid/$volname" ]] || exit 1
+    printf '%s/vols/%s/%s\n' "$S" "$sid" "$volname"; exit 0;;
+
+  # C6. The mount this engine makes is READ-ONLY with noload, and that is not
+  # cosmetic: a live container is writing to this filesystem right now, and
+  # replaying its journal from the outside is how it gets corrupted. rw, or ro
+  # without noload, is recorded rather than simulated.
+  "mkdir -p "*" && mount "*)
+    dry_forbids "mount on $host" || exit 1
+    p="$(sed -n "s/.*mount -o [a-z,]* '\([^']*\)' '\([^']*\)'.*/\1/p" <<<"$c")"
+    m="$(sed -n "s/.*mount -o [a-z,]* '\([^']*\)' '\([^']*\)'.*/\2/p" <<<"$c")"
+    o="$(sed -n "s/.*mount -o \([a-z,]*\) '.*/\1/p" <<<"$c")"
+    [[ -n "$p" && -n "$m" ]] || { violation "mount the simulator cannot parse: $c"; exit 1; }
+    [[ "$o" == *ro* ]]     || violation "mounted $p READ-WRITE while its container is live"
+    [[ "$o" == *noload* ]] || violation "mounted $p without noload - that replays a live container's journal"
+    vtype="$(cat "$(dirname "$p")/.$(basename "$p").type" 2>/dev/null)"
+    if [[ "$o" == *loop* ]]; then
+      [[ "$vtype" == lvmthin || "$vtype" == lvm ]] \
+        && { violation "mount -o loop on a BLOCK device ($vtype) $p"; exit 1; }
+    else
+      [[ "$vtype" == dir || "$vtype" == nfs || "$vtype" == cifs ]] \
+        && { violation "mount without -o loop on a raw FILE ($vtype) $p"; exit 1; }
+    fi
+    is_mounted "$m" "$host" && { violation "mounted $m twice on $host"; exit 1; }
+    [[ -f "$S/mount.fail" ]] && { echo "mount: $p: failed" >&2; exit 32; }
+    mkdir -p "$m"
+    add_mount "$m" "$host" "$p" "$o"
+    exit 0;;
+
+  "mountpoint -q "*)
+    p="$(sed -n "s/.*mountpoint -q '\([^']*\)'.*/\1/p" <<<"$c")"
+    is_mounted "$p" "$host" && exit 0
+    # A zfspool volume is the storage's own mount, not one this engine made, so
+    # a scenario declares it mounted the same way. One that is NOT declared is
+    # the case C6 exists for: an unmounted dataset is an empty directory.
+    exit 1;;
+
+  "umount "*)
+    p="$(sed -n "s/.*umount '\([^']*\)'.*/\1/p" <<<"$c")"
+    # A dataset was never mounted by this engine and must never be unmounted by
+    # it: that would take the copy offline on a node serving customers.
+    if [[ "$(mount_backing "$p" "$host")" == "" && -d "$p" ]]; then
+      violation "umount of $p on $host, which this engine did not mount"
+    fi
+    del_mount "$p" "$host"; exit 0;;
+
+  "rsync "*)
+    dry_forbids "rsync on $host" || exit 1
+    src="$(sed -n "s|.*'\([^']*\)/' '\([^']*\):\([^']*\)/'.*|\1|p" <<<"$c")"
+    dst="$(sed -n "s|.*'\([^']*\)/' '\([^']*\):\([^']*\)/'.*|\3|p" <<<"$c")"
+    [[ -n "$src" && -n "$dst" ]] || { violation "rsync the simulator cannot parse: $c"; exit 1; }
+    # The SOURCE has to be a real mountpoint. Reading a path nothing mounted
+    # copies an empty directory, and --delete on the far end then empties the
+    # DR copy to match it - which is the one failure here that cannot be undone
+    # and the one that leaves a completely clean log.
+    back="$(mount_backing "$src" "$host")"
+    if [[ -z "$back" ]]; then
+      violation "rsync OUT of $src on $host, which is NOT a mountpoint - --delete would then empty the copy"
+      exit 1
+    fi
+    [[ "$c" == *--delete* ]] \
+      || violation "rsync without --delete: the copy would keep files the DR container deleted"
+    rc="$(cat "$SIMROOT/rsync.rc" 2>/dev/null)"; rc="${rc:-0}"
+    if [[ "$rc" == 0 || "$rc" == 24 ]]; then
+      mkdir -p "$BKP/fs$dst"
+      rm -rf "${BKP:?}/fs$dst"/* 2>/dev/null           # --delete
+      [[ -d "$back" ]] && cp -a "$back/." "$BKP/fs$dst/" 2>/dev/null
+    fi
+    # The engine's remote command ends in `; echo rc=$?` and then reads the
+    # stats out of rsync's log file. This fake answers a command string rather
+    # than running one, so it prints both.
+    printf 'rc=%s\n' "$rc"
+    if [[ "$rc" == 0 || "$rc" == 24 ]]; then
+      cat "$SIMROOT/rsync.stats" 2>/dev/null
+    fi
+    exit 0;;
+esac
+
+# ---- C8: the 9<id> lock, on the compute node that holds it ----------------
+case "$c" in
+  *ketsync-ct-*.lock*)
+    lf="$(printf '%s' "$c" | sed -n 's#.*\(/run/ketsync-ct-[0-9]*\.lock\).*#\1#p')"
+    [[ -n "$lf" ]] || violation "C8: lock command with no /run/ketsync-ct-<id>.lock path: $c"
+    [[ -f "$S/lock.fail" ]] && { echo "ssh_exchange_identification: closed" >&2; exit 255; }
+    mkdir -p "$S/run"
+    case "$c" in
+      "if (set -C;"*)
+        owner="${c#*\'%s\\n\' \'}"; owner="${owner%%\'*}"
+        if [[ -e "$S/run${lf##*/run}" ]]; then
+          echo KETSYNC_LOCK_HELD; cat "$S/run${lf##*/run}" 2>/dev/null; exit 0
+        fi
+        dry_forbids "9<id> lock $lf created on $host" || exit 1
+        printf '%s\n' "$owner" > "$S/run${lf##*/run}"
+        trace "src lock take $host $lf"
+        if [[ -s "$S/lock.steal" ]]; then
+          cat "$S/lock.steal" > "$S/run${lf##*/run}"; trace "src lock stolen $host $lf"
+        fi
+        echo KETSYNC_LOCK_TAKEN; exit 0;;
+      "grep -qxF"*)
+        owner="${c#grep -qxF \'}"; owner="${owner%%\'*}"
+        if [[ -f "$S/run${lf##*/run}" ]] && grep -qxF "$owner" "$S/run${lf##*/run}"; then
+          rm -f "$S/run${lf##*/run}"; trace "src lock release $host $lf"; exit 0
+        fi
+        case "$c" in *"&& rm -f"*) exit 1;; esac
+        [[ -f "$S/run${lf##*/run}" ]] && \
+          violation "C8: the release removed $lf on $host, which says: $(cat "$S/run${lf##*/run}")"
+        rm -f "$S/run${lf##*/run}"; exit 0;;
+      "cat "*)
+        trace "src lock peek $host $lf"
+        [[ -f "$S/run${lf##*/run}" ]] && cat "$S/run${lf##*/run}"
+        exit 0;;
+      *"rm "*)
+        violation "C8: a release that removes $lf on $host without asserting who owns it"
+        rm -f "$S/run${lf##*/run}"; exit 0;;
+    esac
+    violation "C8: lock command shape the simulator does not model: $c"
+    exit 1;;
+esac
+
+violation "remote command the simulator does not model on compute node $host: $c"
+exit 1

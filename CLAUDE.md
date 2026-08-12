@@ -45,10 +45,12 @@ config into another member's directory.
 commands **before** taking any lock: `flock` missing reads as "the lock is
 held", and the run exits 0 having done nothing.
 
-**7. A stub says it is a stub.** `recall` exits 2 with a pointer into
-`docs/decisions.md`. Do not make one half work. `distribute` stopped being a
-stub when `engines/tp/ct-distribute.sh` was written, with 46 scenarios and 50
-mutations behind it - which is the bar for the next one.
+**7. A stub says it is a stub.** Do not make one half work. There are none
+left: `distribute` stopped being one when `engines/tp/ct-distribute.sh` was
+written, and `recall` when `engines/tp/ct-recall.sh` was, with 46/50 and 48/41
+scenarios and mutations behind them - which is the bar for the next one. The
+helper that printed "designed but not built" is gone with the last stub; bring
+it back with the next one rather than keeping it warm.
 
 **8. Nothing that writes to a real machine ships without a simulator.** Read
 `tests/README.md`. `sync` has one - 21 scenarios and 19 mutations - and writing
@@ -60,8 +62,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 257 tp scenarios + 21 for ketsync sync
-    make mutation # 238 known bugs put back. None may survive
+    make test     # both layers: 305 tp scenarios + 21 for ketsync sync
+    make mutation # 279 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -95,7 +97,7 @@ being separate when they stopped being empty.
     fleet.tsv.sample     ct, home node, dr node, dr storage. Four columns, all
                          required, no tier and no fallback. "inventory" always
                          means one of tp's work lists
-    engines/tp/          the execution layer. Committed here, edited here
+    engines/tp/          the execution layer, five engines. Committed here
     docs/decisions.md    why it is shaped this way, and what is not built
     tests/sim/sync/      the sync simulator, and the pattern for the next one
     tests/mutation/      one mutation per guard, each proven to kill a scenario

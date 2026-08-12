@@ -161,7 +161,7 @@ cmd_doctor(){
     # ct-distribute.sh was missing from this list, which meant the one engine
     # you reach for while the storage node is dead was the one nobody checked
     # was runnable.
-    for f in tp ct-migrate.sh ct-replica.sh ct-failback.sh ct-distribute.sh; do
+    for f in tp ct-migrate.sh ct-replica.sh ct-failback.sh ct-distribute.sh ct-recall.sh; do
       if [[ -x "$KS_BASE/engines/tp/$f" ]]; then say "  $f ok"
       else say "  $f is NOT EXECUTABLE - cron would exit 126. chmod +x engines/tp/$f"; rc=1; fi
     done

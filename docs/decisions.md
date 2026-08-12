@@ -53,8 +53,8 @@ Split-brain still happens. It just stops costing anything.
 
 ### What that is, in the engines
 
-Built, and the same code in all three: `ct-replica.sh` R14, `ct-failback.sh`
-B8, `ct-distribute.sh` D8. This paragraph described a design for months while
+Built, and the same code in all four: `ct-replica.sh` R14, `ct-failback.sh`
+B8, `ct-distribute.sh` D8, `ct-recall.sh` C8. This paragraph described a design for months while
 every engine took a *local* `flock` instead — replica's keyed on the copy id,
 failback's on the production id, distribute's on nothing but the run — which
 between two machines settles nothing at all, and on one machine still let
@@ -87,9 +87,10 @@ clears what looks like a stale lock while that run is alive, the next run takes
 it legitimately — and an unconditional `rm` at the end of the first one would
 then delete a lock a live transfer is relying on.
 
-When `recall` is built it takes two: 9xxx on the compute node, then 8xxx on the
-backup node, in that order. A fixed order is what keeps it from deadlocking
-against the other three, each of which takes exactly one.
+`ct-recall.sh` C8 takes two, and it is the only one that does: 9xxx on the
+compute node, then 8xxx on the backup node, in that order. A fixed order is
+what keeps it from deadlocking against the other three, each of which takes
+exactly one - a cycle needs two engines that each take two.
 
 ## 3. One writer for the fleet map, ordered by a generation number
 
@@ -235,19 +236,46 @@ the day. Not from free RAM: choosing automatically is how a customer lands on
 the wrong machine at 3am, and it is the same "no defaults, never guess" rule
 the engines already enforce.
 
-## 6. `recall` — designed, not built, and the most dangerous thing here
+## 6. `recall` — built, as `engines/tp/ct-recall.sh`
 
+`9300` on a compute node's local disk has the real data. Everything the
+customer has done since the outage began is there, on one local disk, with
+nothing replicating it - which is a second single point of failure, created by
+the tool that was fixing the first one. `recall` is what ends that: it writes
+`9300` back into `8300`, the DR copy on the backup node, and it is repeatable,
+so it can run every hour of a long outage rather than once at the end.
 
-The return trip, once the storage node is back: `9300` on a compute node's
-local-lvm has the real data, and `300`'s image on the storage node is however
-many hours stale. The container ran on a compute node for hours; the image on
-the storage node is that many hours stale.
+It goes to the copy rather than straight to the production image on purpose.
+That keeps a second copy of the DR data at every moment, and it leaves the
+final write into the production image to `ct-failback.sh`, which already takes
+a safety snapshot first.
 
-**The sync must go compute -> storage.** One inverted flag destroys every hour
-of customer work since the disaster, and it cannot be undone. So `recall` may
-not simply take a direction as an argument - it has to establish which side is
-newer and **refuse to write into a destination that is newer than its source**.
-The person running it has just been awake for six hours.
+**One inverted direction destroys every hour of customer work since the
+disaster, and there is nothing to restore it from.** So the engine does not
+take a direction as an argument, and it does not decide which side is newer by
+comparing timestamps: rsync preserves mtimes, so the copy's files can be newer
+on disk than the DR container's while holding older data.
+
+It uses provenance. `ct-distribute.sh` writes a marker line into the `9300`
+config naming the container and the copy it came out of, and that line is a
+fact PVE is holding: this rootfs descends from that copy. A `9300` without it
+was not made by `ct-distribute` out of this copy, its relationship to the copy
+is unknown, and C3 refuses rather than guesses. The person running this has
+been awake for six hours; the answer has to come from the machine.
+
+Two more things it does not do. It does not decide where the DR container is -
+one `ls /etc/pve/nodes/*/lxc/9300.conf` through the backup node names the
+holder, because pmxcfs is cluster-shared and a node typed by a human is a node
+that can be wrong. And it does not run the `pct destroy 9300` it prints:
+destroying that container is what releases `ct-replica`'s R13, and releasing
+the shield on data nobody has checked is the one step here that cannot be
+undone.
+
+There is deliberately no PAUSE requirement, unlike `ct-failback`'s `--final`.
+R13 keys on the `9300` config existing rather than on it running, so it holds
+through the shutdown, through `--final`, and until a human destroys it.
+
+48 scenarios, 41 mutations.
 
 ## 7. `status` — designed, not built
 
@@ -324,11 +352,11 @@ doctor` says so on the next good day.
     ketsync failback     tp's
     ketsync distribute   tp's - engines/tp/ct-distribute.sh, 46 scenarios,
                          50 mutations. See section 5
+    ketsync recall       tp's - engines/tp/ct-recall.sh, 48 scenarios,
+                         41 mutations. See section 6
     ketsync status       tp's
-    ketsync recall       stub, exits 2. See section 6 for why it is the one
-                         command that must not be written carelessly
 
-The one remaining stub says so rather than half working. ketsync's own `tests/`
-is empty and that is a debt: see `tests/README.md`. Nothing in `lib/` should
-write to a real machine before it has a simulator, for the same reason `tp` has
-four.
+Nothing here is a stub any more. ketsync's own `tests/` covers `sync` and not
+`role` or `doctor`, and that is the remaining debt: see `tests/README.md`.
+Nothing in `lib/` should write to a real machine before it has a simulator,
+for the same reason `tp` has five.

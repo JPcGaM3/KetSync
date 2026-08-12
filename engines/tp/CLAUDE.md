@@ -5,7 +5,7 @@ is here because getting it wrong has a cost that is not obvious from the code.
 
 ## What this is
 
-`tp` — teleport. Three engines that move **running production LXC containers**
+`tp` — teleport. Five engines that move **running production LXC containers**
 around a real fleet, on a real schedule. There is no staging copy of the fleet.
 A bug here does not fail a test — it corrupts somebody's container at 2am.
 
@@ -13,6 +13,7 @@ A bug here does not fail a test — it corrupts somebody's container at 2am.
     tp replica    live image here      ->  stopped copy on the backup node
     tp failback   promoted copy        ->  back into the production image
     tp distribute DR copy on the backup ->  a compute node's OWN storage
+    tp recall     a compute node's 9<id> ->  back into its copy on the backup
 
 Every engine runs on the **storage node**. The machines around it:
 
@@ -36,6 +37,7 @@ halves, do not touch the engine — say so instead.
     ct-replica.sh    tests/mutation/run-mutation-replica.sh     57 mutations
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    58 mutations
     ct-distribute.sh tests/mutation/run-mutation-distribute.sh  50 mutations
+    ct-recall.sh     tests/mutation/run-mutation-recall.sh      41 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
@@ -117,8 +119,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 76 + 69 + 46 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 57 + 58 + 50 engine + 9 dispatcher bugs, all caught
+    make test       # 66 + 76 + 69 + 46 + 48 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 57 + 58 + 50 + 41 engine + 9 dispatcher bugs, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did
@@ -286,9 +288,35 @@ and a dry run may mount only `ro`.
         engine does happens elsewhere - during a DR it is driven from two
         machines on purpose. R14, same code, same file
 
-The order matters in all four. G1 runs before allocation for a reason, G7 runs
-with G2 before anything is transferred, B1 runs before anything is mounted, and
-D8 runs before D3 because an answer nothing holds still is not an answer.
+`ct-recall.sh` — C1..C8:
+
+    C1  the 9<id> is found by asking the CLUSTER, never from a typed argument.
+        pmxcfs is shared, so one ls through the backup node names the holder
+    C2  the copy must be STOPPED. A running one was promoted by somebody, so
+        two rootfs are taking writes and which is real is a human's decision
+    C3  direction comes from PROVENANCE, not timestamps. ct-distribute wrote a
+        marker naming the container and the copy this 9<id> came out of; rsync
+        preserves mtimes, so the copy's files can be newer on disk while
+        holding older data. No marker, no run - see docs/decisions.md section 6
+    C4  presync needs the 9<id> RUNNING, --final needs it STOPPED. A stopped
+        one without --final is refused: "it is down right now" and "we are
+        cutting over" are different intentions. No PAUSE requirement, because
+        R13 keys on the config existing rather than on it running
+    C5  the destination dataset must report mounted=yes. R3, restated
+    C6  a verified mountpoint before rsync, read-only with noload - a live
+        container is writing to that filesystem and replaying its journal from
+        the outside corrupts it. A zfspool volume is the storage's own mount:
+        never mounted by this engine and never unmounted by it
+    C7  nothing is started, stopped or destroyed. `pct destroy 9<id>` is what
+        releases R13, and releasing that on unchecked data cannot be undone
+    C8  BOTH ends locked where they live, 9<id> first then 8<id>. The only
+        engine here that holds two, so it fixes the order. R14, same code
+
+The order matters in all five. G1 runs before allocation for a reason, G7 runs
+with G2 before anything is transferred, B1 runs before anything is mounted, D8
+runs before D3 because an answer nothing holds still is not an answer, and C3
+runs before anything is mounted because a direction nobody established is the
+one mistake in this repo with no way back.
 
 Two things that are not guards but fail a run for the same reason — a silent
 success is worse than a loud failure:

@@ -32,7 +32,7 @@ customer's service back is a decision, not a step.
 
 ## The two layers
 
-`ketsync` decides **who** does **what** and **where**. `tp` — the four engines
+`ketsync` decides **who** does **what** and **where**. `tp` — the five engines
 under `engines/tp/` — does it. Nothing in the decision layer moves customer
 data by itself; if you find an `rsync` outside an engine, it is in the wrong
 place.
@@ -307,8 +307,8 @@ chose.
 
 ```bash
 make lint       # bash -n, shellcheck, the language rule, the separator rule
-make test       # 257 simulator scenarios + 21 for ketsync sync, plus c2v
-make mutation   # 238 known bugs put back one at a time; none may survive
+make test       # 305 simulator scenarios + 21 for ketsync sync, plus c2v
+make mutation   # 279 known bugs put back one at a time; none may survive
 ```
 
 Every engine runs against a **simulator**: the real script, in a sandbox, with
@@ -334,7 +334,7 @@ that is not obvious from the code.
 ```
 ketsync                      the dispatcher. No logic of its own
 lib/                         one file per subcommand
-engines/tp/                  the four engines that move data
+engines/tp/                  the five engines that move data
 docs/start-here.html         the operator's front door (Thai)
 docs/infrastructure-setup.html   build it from nothing (Thai)
 docs/disaster-recovery.html  the storage node is dead (Thai)

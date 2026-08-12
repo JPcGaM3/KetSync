@@ -13,6 +13,10 @@
 #    tp distribute DR copy on the backup ->  a compute node's OWN storage
 #                  (only while the storage node is gone: the copies have to run
 #                   somewhere, and the backup node cannot run them all)
+#    tp recall     a compute node's 9<id> ->  back into its copy on the backup
+#                  (while the storage node is STILL gone: whatever the customer
+#                   has done since the outage lives on one local disk until it
+#                   has been somewhere else too)
 #
 #  Read-only helpers:
 #    tp status     what every CT's last run did, both engines, one table
@@ -198,6 +202,7 @@ case "${1:-}" in
   replica)  shift; engine ct-replica.sh  "$@";;
   failback) shift; engine ct-failback.sh "$@";;
   distribute) shift; engine ct-distribute.sh "$@";;
+  recall)   shift; engine ct-recall.sh   "$@";;
   status)   shift; cmd_status "$@";;
   doctor)   shift; cmd_doctor "$@";;
   version)  echo "tp $(cd "$TP_HOME" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;

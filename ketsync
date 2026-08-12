@@ -14,7 +14,7 @@
 #
 #    ketsync distribute DR: a copy on the backup node -> a compute node's own
 #                       storage, so it can run while the storage node is gone
-#    ketsync recall       the return trip, once storage is back (not built)
+#    ketsync recall       a 9<id> on a compute node -> back into its DR copy
 #
 #    ketsync tp <anything>   pass straight through to the engines, for a flag
 #                            this dispatcher has not been taught
@@ -44,12 +44,11 @@ export KS_BASE="$BASE"
 
 usage(){ awk 'NR>1{ if (/^#/) { sub(/^#[ ]?/,""); print } else exit }' "${BASH_SOURCE[0]}"; }
 
-not_built(){    # $1 = subcommand, $2 = which section of docs/decisions.md
-  log "ketsync $1 is designed but not built yet - see docs/decisions.md $2"
-  log "  it is a stub on purpose: a command that half works is worse than one"
-  log "  that says it does not, especially the one you reach for during a DR."
-  exit 2
-}
+# Every subcommand this dispatcher names is built. `recall` was the last stub
+# and it is an engine now, so the helper that printed "designed but not built"
+# is gone rather than kept warm for a hypothetical next one - CLAUDE.md rule 7
+# is about a stub SAYING it is a stub, not about keeping the machinery for one.
+# The next stub can bring its own three lines back.
 
 # Hand off to tp and become it. exec rather than a call: tp's exit code is the
 # contract cron reads, and anything that runs after the engine here is a chance
@@ -69,7 +68,7 @@ run_tp(){
 
 case "${1:-}" in
   # --- tp's, passed through untouched ---
-  migrate|replica|failback|status|distribute)
+  migrate|replica|failback|status|distribute|recall)
               run_tp "$@";;
   tp)         shift; run_tp "$@";;
 
@@ -77,7 +76,6 @@ case "${1:-}" in
   sync)       shift; . "$BASE/lib/cmd_sync.sh";     cmd_sync "$@";;
   role)       shift; . "$BASE/lib/cmd_role.sh";     cmd_role "$@";;
   doctor)     shift; . "$BASE/lib/cmd_doctor.sh";   cmd_doctor "$@";;
-  recall)     shift; not_built recall     "section 6";;
 
   version)    echo "ketsync $(cd "$BASE" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;
   ""|-h|--help|help) usage;;
