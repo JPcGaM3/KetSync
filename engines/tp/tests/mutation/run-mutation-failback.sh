@@ -403,6 +403,14 @@ mutant "the fallback log directory is not the engine's own" \
   's{\QLOGDIR="\E\$BASE\Q/logs"\E}{LOGDIR="\$BASE/../logs"}' \
   1
 
+# ---------- ketsync's node map, not a copy of it ----------------------------
+# The copy this replaced was refreshed by `ketsync doctor` and by nothing else,
+# so a machine that had been SENT the tables was still reading a file nobody
+# had written - see the note in ct-distribute.sh.
+mutant "the engine reads the node map beside itself instead of ketsync's own" \
+  's{\Qif [[ -f "\E\$BASE\Q/../../ketsync" && -f "\E\$BASE\Q/../../lib/common.sh" && -f "\E\$BASE\Q/../../nodes.map" ]]; then\E}{if false; then}' \
+  57
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

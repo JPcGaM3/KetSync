@@ -119,7 +119,14 @@ INV="$BASE/inventory-replica.tsv"
 # never hand-edited. Optional: without it this engine falls back to using the
 # pmxcfs name as a hostname, which is what it did before and which needs
 # /etc/hosts or DNS to work. See node_ip() below.
+# Read where ketsync keeps it, not from a copy - see the note in
+# ct-distribute.sh. A mirror that only one command refreshed is how a machine
+# ended up holding a table it had been sent and an engine reading a file that
+# was never written.
 NODEMAP="$BASE/nodes.map"
+if [[ -f "$BASE/../../ketsync" && -f "$BASE/../../lib/common.sh" && -f "$BASE/../../nodes.map" ]]; then
+  NODEMAP="$(cd "$BASE/../.." && pwd)/nodes.map"
+fi
 
 # ---------- defaults (ctrep.conf wins; they are the same knobs) ----------
 BKP_SSH="root@100.100.100.35"

@@ -34,8 +34,8 @@ halves, do not touch the engine — say so instead.
 
     ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
     ct-replica.sh    tests/mutation/run-mutation-replica.sh     43 mutations
-    ct-failback.sh   tests/mutation/run-mutation-failback.sh    44 mutations
-    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  32 mutations
+    ct-failback.sh   tests/mutation/run-mutation-failback.sh    45 mutations
+    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  35 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.

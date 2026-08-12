@@ -261,7 +261,10 @@ run_engine(){
     sync(){       "$SIMBIN/sync"       "$@"; }
     export -f pvesm zfs ssh rsync mount umount mountpoint findmnt losetup \
               truncate resize2fs e2fsck df hostname sync
-    "$WORK/ct-failback.sh" "$@" ) > "$SIMROOT/out" 2>&1
+    # Overridable so one scenario can run the engine from a VENDORED layout -
+    # <repo>/engines/tp/ - and prove it reads ketsync's own tables rather than
+    # stale copies sitting beside itself.
+    "${ENGINE_PATH:-$WORK/ct-failback.sh}" "$@" ) > "$SIMROOT/out" 2>&1
   RC=$?
   OUT="$(cat "$SIMROOT/out")"
   TRACE="$(cat "$SIMROOT/trace")"
@@ -1032,6 +1035,29 @@ if scenario "55: a copy id typed instead of a source id is told which one to use
   has "8105 is the COPY of CT 105"
   has "--ctid 105"
   untraced "rsync"
+  done_scenario
+fi
+
+
+# ---------- vendored inside ketsync -----------------------------------------
+# nodes.map is what turns the pmxcfs node name out of a config path into an
+# address, and B1 cannot ask a production node whether a container is stopped
+# without it. It used to be a COPY that only `ketsync doctor` refreshed, which
+# is how the backup node ended up reading a file that had never been written -
+# see the note in ct-distribute.sh. The stale copy is left beside the engine on
+# purpose: reading it sends the ssh to the wrong machine.
+if scenario "57: vendored under a ketsync, its nodes.map wins over the copy beside the engine"; then
+  REPO="$SIMROOT/repo"
+  mkdir -p "$REPO/engines/tp" "$REPO/lib"
+  : > "$REPO/ketsync"; : > "$REPO/lib/common.sh"
+  cp "$WORK/ctrep.conf" "$WORK/inventory-replica.tsv" "$REPO/engines/tp/"
+  cp -r "$WORK/state" "$REPO/engines/tp/" 2>/dev/null || mkdir -p "$REPO/engines/tp/state"
+  ln -s "$ENGINE" "$REPO/engines/tp/ct-failback.sh"
+  printf '# ip\tpve node name\n10.100.9.99\tpve01\n' > "$REPO/engines/tp/nodes.map"
+  cp "$WORK/nodes.map" "$REPO/nodes.map"
+  ENGINE_PATH="$REPO/engines/tp/ct-failback.sh" run_engine --list
+  clean
+  hasnt "10.100.9.99"
   done_scenario
 fi
 

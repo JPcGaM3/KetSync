@@ -118,19 +118,16 @@ nodemap_refresh(){   # -> writes ip<TAB>name, one node per line. rc 1 if it coul
   # it here rather than making the engine call back up into ketsync keeps the
   # engines standalone - without the map they fall back to the name, which is
   # what they always did.
-  [[ -d "$KS_BASE/engines/tp" ]] && cp -f "$KS_NODEMAP" "$KS_BASE/engines/tp/nodes.map" 2>/dev/null
   return 0
 }
 
-# The same idea for the placement table. ct-distribute.sh reads fleet.tsv to
-# find out which compute node a container goes to, and it has to be able to
-# read it during the incident - when the machine holding this layer may be the
-# machine that died. Mirroring beats calling upward: the engines keep working
-# with no ketsync above them at all, which is what --to is for.
-fleet_mirror(){
-  [[ -f "$KS_INV" && -d "$KS_BASE/engines/tp" ]] || return 0
-  cp -f "$KS_INV" "$KS_BASE/engines/tp/fleet.tsv" 2>/dev/null
-}
+# There is no mirror any more. `ketsync doctor` used to cp fleet.tsv and
+# nodes.map down into engines/tp and the engines read those copies. It failed
+# exactly where it mattered: `ketsync sync` delivers fleet.tsv to a slave's repo
+# root, nothing on that machine refreshed the copy, and the copy is gitignored
+# so a fresh clone never had one. The backup node answered "CT 110 has no row in
+# fleet.tsv" 43 seconds after being sent a fleet.tsv. The engines read these
+# files where they live now - see the note at the top of ct-distribute.sh.
 
 node_name(){   # $1 = ip -> its PVE node name from the cache, or empty
   awk -v i="$1" '$1!~/^#/ && $1==i{print $2; exit}' "$KS_NODEMAP" 2>/dev/null; }

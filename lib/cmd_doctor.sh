@@ -96,10 +96,12 @@ cmd_doctor(){
     (( bad )) && rc=1 || say "  every home and dr address is in nodes.tsv"
   fi
 
-  # The engines read their own copies of both tables. A stale mirror during a
-  # DR places a container where the map said last month.
-  fleet_mirror && [[ -f "$KS_BASE/engines/tp/fleet.tsv" ]] \
-    && say "  fleet.tsv mirrored to engines/tp"
+  # There is no mirror any more, and a leftover one is worth naming: it is not
+  # read, but somebody will find it during an incident and believe it.
+  for f in fleet.tsv nodes.map; do
+    [[ -e "$KS_BASE/engines/tp/$f" ]] \
+      && say "  engines/tp/$f is a LEFTOVER from the old mirror - nothing reads it, delete it"
+  done
 
   say "== the engines"
   if [[ ! -f "$KS_BASE/engines/tp/tp" ]]; then

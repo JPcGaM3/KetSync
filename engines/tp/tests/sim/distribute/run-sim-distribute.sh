@@ -173,7 +173,10 @@ run_engine(){
     # An exported function is resolved before PATH and survives the exec.
     ssh(){ "$SIMBIN/ssh" "$@"; }
     export -f ssh
-    "$WORK/ct-distribute.sh" "$@" ) > "$SIMROOT/out" 2>&1
+    # Overridable so one scenario can run the engine from a VENDORED layout -
+    # <repo>/engines/tp/ - and prove it reads ketsync's own tables rather than
+    # stale copies sitting beside itself.
+    "${ENGINE_PATH:-$WORK/ct-distribute.sh}" "$@" ) > "$SIMROOT/out" 2>&1
   RC=$?
   OUT="$(cat "$SIMROOT/out")"
   TRACE="$(cat "$SIMROOT/trace")"
@@ -590,6 +593,36 @@ if scenario "31: --help prints the whole header, exit-code contract included"; t
   [[ "$rc" == 0 ]] || _err "--help exit code $rc, expected 0"
   grep -q "exit code" <<<"$out" || _err "--help does not reach the exit-code contract"
   grep -q "^#" <<<"$out" && _err "--help should print the header without its # markers"
+  done_scenario
+fi
+
+
+# ---------- vendored inside ketsync -----------------------------------------
+# The layout every real install has: <repo>/engines/tp/. ketsync keeps fleet.tsv
+# and nodes.map at the top of the repo, and the engine has to read THOSE. There
+# used to be a mirror instead - `ketsync doctor` copied both files down here and
+# the engine read the copies - and it failed in the only place it mattered:
+# `ketsync sync` delivers fleet.tsv to a slave's repo root, nothing on that
+# machine refreshed the copy, and the copy is gitignored so a fresh clone never
+# had one. The backup node answered "CT 110 has no row in fleet.tsv" 43 seconds
+# after being sent a fleet.tsv. The stale copy is left in place here on purpose:
+# if the engine reads it, it places the container on the wrong node and this
+# scenario says so.
+if scenario "35: vendored under a ketsync, its tables win over the copies beside the engine"; then
+  REPO="$SIMROOT/repo"
+  mkdir -p "$REPO/engines/tp" "$REPO/lib"
+  : > "$REPO/ketsync"; : > "$REPO/lib/common.sh"
+  cp "$WORK/ctrep.conf" "$WORK/inventory-replica.tsv" "$REPO/engines/tp/"
+  ln -s "$ENGINE" "$REPO/engines/tp/ct-distribute.sh"
+  # beside the engine: the wrong answer. At the top of the repo: the right one.
+  printf '300\thdd\t10.100.1.31\t%s\tlocal-zfs\n' "$T2" > "$REPO/engines/tp/fleet.tsv"
+  printf '# ip\tpve node name\n%s\tpve01\n%s\tpve02\n' "$T1" "$T2" > "$REPO/engines/tp/nodes.map"
+  printf '300\thdd\t10.100.1.31\t%s\tlocal-lvm\n' "$T1" > "$REPO/fleet.tsv"
+  printf '# ip\tpve node name\n%s\tpve01\n%s\tpve02\n' "$T1" "$T2" > "$REPO/nodes.map"
+  ENGINE_PATH="$REPO/engines/tp/ct-distribute.sh" run_engine --ctid 300 --list
+  rc_is 0; clean
+  has "CT 9300 on pve01 ($T1)"
+  hasnt "pve02"
   done_scenario
 fi
 
