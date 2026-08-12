@@ -1,35 +1,73 @@
 # Tests
 
-Empty on purpose, and that is a debt, not a decision.
+`sync` has a simulator. `role` and `doctor` do not, and that is the remaining
+debt.
 
-`tp` has 221 simulator scenarios and 173 mutations behind it, and the reason
-is written down in its `CLAUDE.md`: five bugs found in one week were the same
-bug living in two engines, and every one of them was caught by a scenario
-rather than by review. `ketsync` moves the same customer data through the same
-`rsync --delete`, so it earns the same discipline.
+`sync` went first because it is the only command in this layer that WRITES to
+another machine, and because everything it can get wrong is silent: a push that
+went nowhere, a push that went to the wrong path, a slave left holding last
+month's inventory. None of those print an error on the machine you are standing
+on. The first anybody hears of one is a container that had no DR copy.
 
-Nothing in `ketsync` should be allowed to write to a real machine until this
-directory looks like `tp/tests/`:
+Three bugs were live in `cmd_sync.sh` when the simulator was written, and all
+three had been running on a real fleet:
 
-    sim/         the real dispatcher, in a sandbox, against fake ssh and rsync,
-                 with fakes that refuse to pretend and record a VIOLATION
-                 instead - an inventory pushed over a newer one, a sync run
-                 from a slave, a distribute onto a node that already has that
-                 VMID
-    mutation/    one mutation per guard, each proven to kill a scenario. A
-                 green suite means nothing until you have watched it go red
-                 for the right reason.
+- the remote path was assumed to be the local one, so a fleet whose clones sit
+  at different absolute paths pushed into a directory that did not exist and
+  reported success
+- every row in `nodes.tsv` was a target, including compute nodes, which have no
+  ketsync and are not supposed to
+- equal generations were treated as identical files, so two machines both
+  saying "generation 1" with different contents stayed that way forever - which
+  is the state of every fleet that has never synced
 
-Copy the harness rather than inventing one: `tp/tests/sim/run-sim.sh` is the
-pattern, and its `scenario` / `done_scenario` / `has` / `traced` / `clean`
-helpers are the whole interface.
+None of them were found by reading the file. The simulator found all three in
+its first run.
 
-Two traps that cost an hour each in `tp`, written here so they cost nothing:
+    sim/sync/        the real dispatcher, in a sandbox, against fake ssh and
+                     rsync. Every other machine is modelled as a WHOLE
+                     FILESYSTEM rather than as "this directory again", which is
+                     what makes the first bug above visible at all
+    mutation/        one mutation per guard, each proven to kill a scenario. A
+                     green suite means nothing until you have watched it go red
+                     for the right reason
 
-Every engine sets its own PATH, so a simulator cannot reach its fakes by
-prepending a directory - `run_engine` exports shell *functions*, and a fake has
-to be both shimmed and listed in `export -f`.
+    make test-ketsync       17 scenarios
+    make mutation-ketsync   14 mutations
 
-A mutation that cannot be applied proves nothing and can still look green: perl
-writes nothing when its program does not compile, and an empty mutant "kills"
-every scenario because it does nothing at all. Check perl's exit status.
+`role` and `doctor` are next. Neither writes to another machine, which is why
+they are second rather than first - but `doctor` refreshes `nodes.map`, and a
+`nodes.map` written from a cluster that answered strangely is a config written
+into another member's directory.
+
+Copy the harness rather than inventing one: `sim/sync/run-sim-sync.sh` is the
+pattern here, and `tp/tests/sim/run-sim.sh` is the older one it came from.
+`scenario` / `done_scenario` / `has` / `traced` / `clean` are the whole
+interface.
+
+Traps that have each cost an hour, written down so they cost nothing:
+
+**Exported functions need an exported environment.** The dispatcher sets its own
+PATH, so a simulator cannot reach its fakes by prepending a directory -
+`run_ks` exports shell *functions* instead. Those bodies are re-parsed by the
+child bash, so every variable they name has to be in its environment. A shell
+variable of the harness is not, and under `set -u` the dispatcher dies on the
+first ssh complaining about an unbound variable, which looks nothing like the
+actual cause.
+
+**A mutation suite must load the mutant.** `cmd_sync.sh` is sourced, not
+executed, so the mutation runner hands the simulator a whole ketsync tree with
+one file swapped. The simulator has to take `lib/` from beside the dispatcher
+it was given - taking it from the repo root loads the good copy and reports
+every single mutation as survived, which is how you get a suite that proves
+nothing while looking thorough.
+
+**A mutation that cannot be applied proves nothing and can still look green.**
+perl writes nothing when its program does not compile, and an empty mutant
+"kills" every scenario because it does nothing at all. Check perl's exit status,
+check the size, and check that the mutant actually differs from the original.
+`self_check` runs all three probes before grading anything.
+
+**An exit inside `$( )` ends the subshell, not the run.** `target="$(require_node
+"$2")"` prints the refusal and then carries on with an empty target, which means
+every node instead of none.

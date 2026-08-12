@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  fake rsync — the push half, and the only thing in this simulator that writes.
+# -----------------------------------------------------------------------------
+#  It behaves the way rsync really does in the one case that matters here: a
+#  destination whose PARENT DIRECTORY does not exist is an error, not a
+#  directory rsync helpfully creates. That is what happens when the master
+#  pushes to its own absolute path on a machine whose install is somewhere
+#  else, and it is why "sync ran and said nothing was wrong" and "the slave has
+#  the file" are two different statements.
+#
+#  It also refuses to pretend about three things the engine is supposed to
+#  prevent, so a scenario fails on the consequence rather than on the message:
+#
+#    - a per-machine file arriving from another machine  (the split brain)
+#    - a write to a host that is down
+#    - overwriting a file whose generation is HIGHER than the one being sent
+#      (a demoted master walking its stale tables back over everyone)
+# =============================================================================
+set -uo pipefail
+# shellcheck source=../lib.sh disable=SC1090
+. "$SIMLIB"
+
+src=""; dst=""
+while (( $# )); do
+  case "$1" in
+    -e) shift 2;;
+    -*) shift;;
+    *) if [[ -z "$src" ]]; then src="$1"; else dst="$1"; fi; shift;;
+  esac
+done
+trace "rsync $src -> $dst"
+
+if [[ "$dst" != *:* ]]; then
+  echo "fake rsync: only remote destinations are modelled: $dst" >&2; exit 1
+fi
+host="${dst%%:*}"; host="${host#root@}"
+path="${dst#*:}"
+
+if ! host_up "$host"; then
+  violation "rsync wrote to $host, which is DOWN"
+  echo "rsync: connection unexpectedly closed" >&2; exit 255
+fi
+if is_per_machine "$path"; then
+  violation "rsync pushed the per-machine file $(basename "$path") to $host"
+  exit 1
+fi
+[[ -f "$src" ]] || { echo "rsync: link_stat \"$src\" failed: No such file or directory (2)" >&2; exit 23; }
+
+target="$(remote_path "$host" "$path")"
+if [[ ! -d "$(dirname "$target")" ]]; then
+  # Exactly what real rsync says, and exit 3 - "errors selecting input/output
+  # files". No directory is created, nothing is written, and the file the
+  # operator believes was delivered is not there.
+  echo "rsync: mkdir \"$(dirname "$path")\" failed: No such file or directory (2)" >&2
+  echo "rsync error: error in file IO (code 11) at main.c" >&2
+  exit 11
+fi
+
+if [[ -f "$target" ]]; then
+  rgen="$(gen_of "$target")"; sgen="$(gen_of "$src")"
+  if [[ -n "$rgen" && -n "$sgen" ]] && (( rgen > sgen )); then
+    violation "rsync overwrote generation $rgen on $host with the older generation $sgen"
+  fi
+fi
+cp -f "$src" "$target"
+exit 0

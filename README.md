@@ -95,7 +95,8 @@ docs/infrastructure-setup.html   build it from nothing, in Thai
 docs/disaster-recovery.html      the storage node is dead, in Thai
 docs/start-here.html the operator's front door, in Thai
 docs/decisions.md    why it is shaped this way, and what is not built yet
-tests/               the debt
+tests/sim/sync/      the sync simulator
+tests/mutation/      its mutations
 ```
 
 Three tables, and they are not interchangeable — that is why none of them share
@@ -112,8 +113,8 @@ engines/tp/inventory-replica.tsv   a work list: which CTs to copy nightly
 
 ```bash
 make lint       # both layers: bash -n, shellcheck, the language rule, doc embeds
-make test       # engines/tp: 221 simulator scenarios, the dispatcher, c2v, python
-make mutation   # 173 known bugs put back one at a time; none may survive
+make test       # 221 tp scenarios + 17 for ketsync sync, the dispatcher, c2v, python
+make mutation   # 187 known bugs put back one at a time; none may survive
 ```
 
 `make -C engines/tp test-replica` and friends still work if you want one engine.
@@ -124,9 +125,10 @@ make mutation   # 173 known bugs put back one at a time; none may survive
 still a stub that says so and exits 2 — a command that half works is worse than
 one that admits it does not, especially the one you reach for during a DR.
 
-`engines/tp` is tested hard. `ketsync` itself is not tested at all: `tests/`
-is empty, and that is a debt rather than a decision. `make test` says so on
-every run. Read `tests/README.md` before adding anything here that writes to a
-real machine.
+`engines/tp` is tested hard. `ketsync` is now partly tested: `sync` has 17
+scenarios and 14 mutations, and writing them found three bugs that had been
+live on the fleet. `role` and `doctor` still have none, and `make test` says so
+on every run. Read `tests/README.md` before adding anything here that writes to
+a real machine.
 
 The design, and the arguments behind it, are in `docs/decisions.md`.

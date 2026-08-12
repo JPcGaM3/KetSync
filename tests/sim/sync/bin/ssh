@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  fake ssh — answers the two questions `ketsync sync` and `ketsync doctor` ask
+#  over the wire, and refuses to answer for a machine that is down.
+# -----------------------------------------------------------------------------
+#  Real ssh exits 255 when it cannot connect, and that is the difference
+#  between "the file is not there" and "the machine is not there". An engine
+#  that cannot tell those apart pushes into the dark.
+# =============================================================================
+set -uo pipefail
+# shellcheck source=../lib.sh disable=SC1090
+. "$SIMLIB"
+
+host=""; cmd=()
+while (( $# )); do
+  case "$1" in
+    -o|-c|-i|-p) shift 2;;
+    -*) shift;;
+    *) if [[ -z "$host" ]]; then host="${1#root@}"; shift
+       else cmd+=("$1"); shift; fi;;
+  esac
+done
+c="${cmd[*]}"
+trace "ssh $host :: $c"
+
+host_up "$host" || { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+
+case "$c" in
+  true|"") exit 0;;
+
+  # "is there a ketsync here", asked rather than assumed. The whole point is
+  # that this machine's install path is not automatically that machine's.
+  "test -f "*)
+    p="$(sed -n "s/^test -f '\\([^']*\\)'.*/\\1/p" <<<"$c")"
+    [[ -f "$(remote_path "$host" "$p")" ]] || exit 1
+    printf '%s\n' "$(sed -n "s/.*echo '\\([^']*\\)'.*/\\1/p" <<<"$c")"
+    exit 0;;
+
+  # the whole file, which is what tells a stale copy from a forked one. Asking
+  # only for the generation is what let a fork hide behind a matching number.
+  "cat "*)
+    p="$(sed -n "s/^cat '\\([^']*\\)'.*/\\1/p" <<<"$c")"
+    f="$(remote_path "$host" "$p")"
+    [[ -f "$f" ]] || exit 1            # real cat: nothing on stdout, non-zero
+    cat "$f"
+    exit 0;;
+
+  *) echo "fake ssh: unmodelled command: $c" >&2; violation "unmodelled ssh command on $host: $c"; exit 127;;
+esac

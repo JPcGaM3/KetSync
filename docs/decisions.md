@@ -84,9 +84,35 @@ edit. `ketsync sync` refuses to push a file over a newer one, so a master that
 was promoted by mistake and then demoted cannot walk its stale map back over
 the fleet.
 
-A new machine joins by being added to `nodes.tsv` and receiving a sync. There
-is no membership protocol, because with manual promotion there is nothing for
-one to agree about.
+A generation orders two versions of a file. It does not identify one, and for
+a while this command behaved as though it did: equal generations were taken to
+mean equal content, and the push was skipped. That is wrong in the one case
+that matters most. Every install starts at the generation its `.sample` shipped
+with, so two machines both saying "generation 1" and holding different content
+is the normal state of a fleet that has never synced - which is exactly the
+moment somebody runs this for the first time. sync reported success and the
+disagreement survived every run afterwards.
+
+Content is compared now, and equal generations with different content is a
+**fork**: the run stops and sends nothing. There is no version to prefer, and
+picking one would delete whichever side was right. `ketsync sync --diff` shows
+what differs; `ketsync sync --bump` raises this machine's generation above
+every other copy and pushes, which is the human saying "mine is the one". That
+sentence has to be typed. It is not something a tool can work out.
+
+`sync` writes to other machines, so it is the first command in this layer to
+have a simulator: 17 scenarios and 14 mutations, in `tests/`. Writing it found
+three bugs that were live on the fleet at the time, including the one above.
+None had been caught by reading the file.
+
+A new machine joins by being added to `nodes.tsv`, having ketsync cloned to the
+**same absolute path** the rest of the fleet uses, and receiving a sync. The
+path is not a style preference: sync pushes to the path it is installed at, so
+a clone at `/root/github/KetSync` receiving from a master at
+`/root/script/KetSync` gets nothing at all. That used to fail silently; it is
+now named, per node, and it raises the exit code. There is no membership
+protocol, because with manual promotion there is nothing for one to agree
+about.
 
 ## 4. VMID numbering, and the two places a container can be
 
