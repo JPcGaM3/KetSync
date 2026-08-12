@@ -314,6 +314,50 @@ mutant "the placement column moves back to where the tier column pushed it" \
   's{\Q{print \E\$3\Q; exit}\E}{{print \$4; exit}}' \
   1
 
+# ---------- D8: the lock lives on the machine receiving the copy -------------
+# This engine's own lock is a flock on the machine typing the commands, and
+# everything it does happens somewhere else. During a DR it is driven from two
+# machines on purpose - the storage node as it comes back, and the backup node,
+# which is where a disaster is run from - so that flock is the one guard that
+# cannot see the other contender at all.
+# The delimiter is ! where an anchor closes a shell function: perl balances a
+# brace inside s{}{} against its own delimiter.
+mutant "D8 is gone: the volume is allocated with only a local flock held" \
+  's!\Q    take_dst_lock "\E\$CT_TO\Q" "\E\$CT_DR\Q"; _dl=\E\$\?!    _dl=0!' \
+  38 39
+
+mutant "D8 treats a target that did not answer as a free lock" \
+  's!\Q  esac\E\n\Q  return 2\E!  esac\n  return 0!' \
+  40
+
+mutant "D8 removes the lock without asking whether it is still ours" \
+  's!\Q2>/dev/null && rm -f \E!2>/dev/null; rm -f !' \
+  44
+
+mutant "D8 releases by deleting the file, with no owner check at all" \
+  's!\Qgrep -qxF \E\x27\$DST_LOCK_OWNER\x27\Q \E\x27\$f\x27\Q 2>/dev/null && \E!!' \
+  38 44
+
+mutant "D8 takes the lock with a plain redirect, so it overwrites whoever holds it" \
+  's!\Qif (set -C; printf \E!if (printf !' \
+  39
+
+mutant "D8 locks a name of its own instead of the 9<id> being placed" \
+  's!\Qdst_lock_file(){ printf \E\x27\Q/run/ketsync-ct-%s.lock\E\x27\Q "\E\$1\Q"; }\E!dst_lock_file(){ printf \x27/run/ketsync-ct.lock\x27; }!' \
+  39
+
+mutant "D8 names the holder and then allocates on top of it anyway" \
+  's!\Q      log "[\E\$ct\Q] GUARD D8:   is the point - the one that got here first owns this container."\E\n\Q      st_fail "\E\$ct\Q" d8_target_locked; return 1\E!      st_fail "\$ct" d8_target_locked!' \
+  39
+
+mutant "the lock is held for the whole run instead of one container at a time" \
+  's!\Qrelease_dst_lock(){\E\n\Q  [[ -n "\E\$DST_LOCK_ID\Q" ]] || return 0\E!release_dst_lock(){\n  return 0!' \
+  38
+
+mutant "--list takes the lock for real on every target it reads" \
+  's!\Q    peek_dst_lock "\E\$CT_TO\Q" "\E\$CT_DR\Q"; _dl=\E\$\?!    take_dst_lock "\$CT_TO" "\$CT_DR"; _dl=\$?!' \
+  43
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

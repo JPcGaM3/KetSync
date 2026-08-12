@@ -51,6 +51,46 @@ that copy and skips.
 
 Split-brain still happens. It just stops costing anything.
 
+### What that is, in the engines
+
+Built, and the same code in all three: `ct-replica.sh` R14, `ct-failback.sh`
+B8, `ct-distribute.sh` D8. This paragraph described a design for months while
+every engine took a *local* `flock` instead — replica's keyed on the copy id,
+failback's on the production id, distribute's on nothing but the run — which
+between two machines settles nothing at all, and on one machine still let
+failback read a copy that replica was writing.
+
+    /run/ketsync-ct-<vmid>.lock     on the machine that holds that VMID
+                                    8110 -> the backup node
+                                    9110 -> the compute node running the copy
+
+Taken with `set -C`, which makes the redirect `O_EXCL`, so the destination's
+own kernel picks the winner. The file holds one line — the verb, the machine,
+the pid, and when it started — and a run that loses prints it. `/run` because
+it is tmpfs: a destination that reboots cannot leave a lock behind, and one
+that rebooted has already killed whatever held it.
+
+Three rules that are not obvious from the code:
+
+**An unanswered destination is refused, not treated as free.** It is a separate
+return value from "somebody has it" and it has its own message, because that is
+the case where carrying on puts two `rsync --delete` into one dataset.
+
+**Nothing ever breaks somebody else's lock, and there is no timeout.** A run
+that is SIGKILLed leaves one, and the remedy is a human reading the holder line
+and removing the file the refusal names. Deciding from the outside that
+somebody else's transfer into a customer's rootfs has finished is the guess the
+rest of this repo refuses everywhere else.
+
+**A release removes the file only while it still says it is ours.** If a human
+clears what looks like a stale lock while that run is alive, the next run takes
+it legitimately — and an unconditional `rm` at the end of the first one would
+then delete a lock a live transfer is relying on.
+
+When `recall` is built it takes two: 9xxx on the compute node, then 8xxx on the
+backup node, in that order. A fixed order is what keeps it from deadlocking
+against the other three, each of which takes exactly one.
+
 ## 3. One writer for the fleet map, ordered by a generation number
 
 What is synced is everything that is **fleet-wide** - the same bytes correct on
@@ -159,7 +199,7 @@ resolves the target from `fleet.tsv`'s `dr` column (`--to` overrides, and a
 container with neither is refused rather than placed somewhere reasonable),
 checks `9<id>` is free across the whole cluster, allocates on the target's own
 storage, transfers, writes the config carrying the production network, and then
-prints the `pct start` for a human. 39 scenarios, 41 mutations.
+prints the `pct start` for a human. 46 scenarios, 50 mutations.
 
 Two things about it are new to this repo.
 
@@ -282,8 +322,8 @@ doctor` says so on the next good day.
     ketsync migrate      tp's, passed through untouched
     ketsync replica      tp's
     ketsync failback     tp's
-    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 39 scenarios,
-                         41 mutations. See section 5
+    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 46 scenarios,
+                         50 mutations. See section 5
     ketsync status       tp's
     ketsync recall       stub, exits 2. See section 6 for why it is the one
                          command that must not be written carelessly

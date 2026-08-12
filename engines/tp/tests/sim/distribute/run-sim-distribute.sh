@@ -117,6 +117,23 @@ add_storage(){ # ip sid type status availKiB
   printf '%s\n' "$5" > "$d/$2.avail"; }
 storage_set(){ printf '%s\n' "$4" > "$SIMROOT/targets/$1/storage/$2.$3"; }
 target_down(){ : > "$SIMROOT/targets/$1/.down"; }
+# D8. A lock left by somebody else on the target - which during a DR is either
+# a distribute in flight from the other machine, or one that was killed. The
+# engine cannot tell those apart and must not try, so these do not either.
+tgt_lock(){ # ip vmid owner
+  mkdir -p "$SIMROOT/targets/$1/run"
+  printf '%s\n' "$3" > "$SIMROOT/targets/$1/run/ketsync-ct-$2.lock"; }
+# Somebody clears a lock that looks stale while the run holding it is alive,
+# and the next run takes it for real. This run must leave that file alone.
+tgt_lock_steal(){ printf '%s\n' "$2" > "$SIMROOT/targets/$1/lock.steal"; }
+tgt_lock_unreachable(){ : > "$SIMROOT/targets/$1/lock.fail"; }
+lock_held(){ [[ -f "$SIMROOT/targets/$1/run/ketsync-ct-$2.lock" ]] \
+               || _err "the 9<id> lock for $2 is gone from $1"; }
+lock_free(){ [[ -f "$SIMROOT/targets/$1/run/ketsync-ct-$2.lock" ]] \
+               && _err "the 9<id> lock for $2 was left on $1: $(cat "$SIMROOT/targets/$1/run/ketsync-ct-$2.lock")"
+             return 0; }
+lock_owner(){ grep -qF -- "$3" "$SIMROOT/targets/$1/run/ketsync-ct-$2.lock" 2>/dev/null \
+                || _err "the 9<id> lock for $2 on $1 no longer says '$3'"; }
 no_backup_ssh(){ : > "$SIMROOT/targets/$1/.nobkpssh"; }
 bkp_down(){ : > "$BKP/.down"; }
 
@@ -693,6 +710,92 @@ if scenario "37: the OLD five-column fleet table is named, not read as the new o
   has "is in the OLD five-column format"
   has "column 2 must be the home node ADDRESS"
   untraced "pvesm alloc"
+  done_scenario
+fi
+
+if scenario "38: D8 the target holds the 9<id> lock for the placement, then drops it"; then
+  # The lock has to exist while the volume is allocated and the bytes move, and
+  # be gone afterwards. A lock never taken and a lock never released both look
+  # like a clean run from the outside.
+  run_engine --ctid 300
+  rc_is 0; clean
+  traced "tgt lock take $T1 /run/ketsync-ct-9300.lock"
+  traced "tgt lock release $T1 /run/ketsync-ct-9300.lock"
+  lock_free "$T1" 9300
+  done_scenario
+fi
+
+if scenario "39: D8 a 9<id> another machine is placing is refused before D3 is asked"; then
+  # The case the guard exists for. During a DR this engine is driven from two
+  # machines - one on the storage node as it comes back, one on the backup node
+  # - and its own lock is a flock that neither of them can see.
+  tgt_lock "$T1" 9300 "distribute bkp02 pid 4211 started 2026-08-12 03:14:00"
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "GUARD D8: 9300 is locked on pve01 by another run - NOTHING was allocated"
+  has "holder: distribute bkp02 pid 4211 started 2026-08-12 03:14:00"
+  has "/run/ketsync-ct-9300.lock"
+  untraced "pvesm alloc"
+  no_cfg pve01 9300
+  lock_held "$T1" 9300; lock_owner "$T1" 9300 "distribute bkp02 pid 4211"
+  done_scenario
+fi
+
+if scenario "40: D8 a target that does not answer is refused, never assumed free"; then
+  # Treating an empty answer as "nobody has it" allocates a second rootfs for a
+  # container that already has one on the same node.
+  tgt_lock_unreachable "$T1"
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "GUARD D8: could not take 9300 on pve01"
+  has "NOTHING was allocated"
+  untraced "pvesm alloc"
+  done_scenario
+fi
+
+if scenario "41: D8 the lock is dropped when a later guard refuses the container"; then
+  # A lock released only on the happy path wedges that 9<id> the first time a
+  # guard fires - and during a DR every guard fires on somebody.
+  storage_set "$T1" local-lvm status inactive     # D4 refuses
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "GUARD D4"
+  traced "tgt lock take $T1 /run/ketsync-ct-9300.lock"
+  lock_free "$T1" 9300
+  done_scenario
+fi
+
+if scenario "42: D8 --list and --dry-run report the lock and create none"; then
+  # --list is the command an operator runs first, from the machine that is not
+  # doing the placing. It must not leave a lock behind on every target it read.
+  tgt_lock "$T1" 9300 "distribute bkp02 pid 900 started 2026-08-12 02:00:00"
+  run_engine --ctid 300 --list
+  rc_is 1; clean
+  has "GUARD D8: list: 9300 is locked on pve01 - a real run would refuse"
+  has "holder: distribute bkp02 pid 900"
+  untraced "tgt lock take"
+  lock_owner "$T1" 9300 "pid 900"
+  done_scenario
+fi
+
+if scenario "43: D8 --list against a free target creates no lock at all"; then
+  run_engine --ctid 300 --list
+  rc_is 0; clean
+  traced "tgt lock peek $T1 /run/ketsync-ct-9300.lock"
+  untraced "tgt lock take"
+  lock_free "$T1" 9300
+  done_scenario
+fi
+
+if scenario "44: D8 a lock that stopped being ours is left where it is"; then
+  # Somebody decides this run is dead and clears its lock; the next run takes
+  # the 9<id> legitimately. This run finishing must not remove a lock that a
+  # live placement is relying on.
+  tgt_lock_steal "$T1" "recall pve01 pid 7788 started 2026-08-12 04:00:00"
+  run_engine --ctid 300
+  rc_is 0; clean
+  traced "tgt lock stolen $T1 /run/ketsync-ct-9300.lock"
+  lock_held "$T1" 9300; lock_owner "$T1" 9300 "recall pve01 pid 7788"
   done_scenario
 fi
 

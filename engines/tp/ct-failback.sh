@@ -66,7 +66,7 @@
 #  A filter that matches no row exits NON-ZERO: under cron, exit 0 with no work
 #  done looks exactly like a healthy night.
 # -----------------------------------------------------------------------------
-#  THE GUARDS (B1..B7). Failback is the one direction where a mistake destroys
+#  THE GUARDS (B1..B8). Failback is the one direction where a mistake destroys
 #  PRODUCTION data rather than a copy, so these refuse rather than warn.
 #
 #   B1  the production CT must be STOPPED on its own node. Its rootfs is a raw
@@ -104,6 +104,19 @@
 #       written during DR can exceed the original quota; refusing there would
 #       strand the failback at the worst moment. Bounded, and it says loudly
 #       that the CT config's size= no longer matches.
+#
+#   B7  --final refuses when the safety snapshot cannot be taken. That snapshot
+#       is the only way back from a round that overwrites the production image,
+#       and every other guard here refuses rather than warns. --no-snapshot is
+#       the way past it, typed by hand by somebody who read the refusal.
+#
+#   B8  the copy is locked on the machine that HOLDS it, not on this one. The
+#       local lock here is keyed on the production id and ct-replica's is keyed
+#       on the copy id, so on one machine those two exclude nothing - and this
+#       engine reads a copy that ct-replica writes. Across machines a flock
+#       says nothing at all, and during an outage recall runs from the backup
+#       node while this runs here. An unanswered destination is refused, not
+#       treated as free.
 # =============================================================================
 set -uo pipefail
 
@@ -444,8 +457,68 @@ take_ct_lock(){   # keep two invocations off the same CT, same idea as R10
   exec 8>&-; return 1
 }
 release_ct_lock(){ [[ -n "$CT_LOCK" ]] || return 0; exec 8>&-; CT_LOCK=""; }
+
+# --- B8: the lock that lives on the machine holding the copy -----------------
+# The lock above is a local flock on THIS machine, keyed on the production id.
+# ct-replica takes one on the same machine keyed on the COPY id, so today those
+# two do not exclude each other at all - and this engine reads the copy while
+# replica writes it. What comes back into the production image is then half of
+# one round and half of another, which no guard downstream can see.
+#
+# Worse, the two contenders are not always on one machine: during an outage the
+# recall path is driven from the backup node while this runs on the storage
+# node, and a flock says nothing across an ssh. So the lock goes where the data
+# is, named after the copy's VMID. `set -C` makes the redirect O_EXCL, so the
+# destination's own kernel picks the winner. docs/decisions.md section 2.
+#
+# /run because it is tmpfs: a destination that reboots cannot leave a lock
+# behind, and one that rebooted has already killed whatever held it. Nothing
+# here ever breaks somebody else's - the refusal names the holder and the file,
+# and a human decides. Same code, same file names, as ct-replica.sh's R14.
+DST_LOCK_OWNER="failback $(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-') pid $$ started $(date '+%F %T')"
+DST_LOCK_HOST=""; DST_LOCK_ID=""; DST_LOCK_WHO=""
+dst_lock_file(){ printf '/run/ketsync-ct-%s.lock' "$1"; }
+
+# 0 = ours, 1 = somebody else's, 2 = the destination could not be asked. Two is
+# not one: an unanswered destination is exactly the case where carrying on
+# writes a torn rootfs into production.
+take_dst_lock(){   # $1 = ssh destination, $2 = vmid
+  local f out; f="$(dst_lock_file "$2")"; DST_LOCK_WHO=""
+  out=$(ssh $SSH_OPT "$1" \
+    "if (set -C; printf '%s\n' '$DST_LOCK_OWNER' > '$f') 2>/dev/null; then echo KETSYNC_LOCK_TAKEN; else echo KETSYNC_LOCK_HELD; cat '$f' 2>/dev/null; fi" \
+    </dev/null 2>/dev/null)
+  case "$out" in
+    KETSYNC_LOCK_TAKEN*) DST_LOCK_HOST="$1"; DST_LOCK_ID="$2"; return 0;;
+    KETSYNC_LOCK_HELD*)  DST_LOCK_WHO="$(printf '%s\n' "$out" | sed -n '2p')"; return 1;;
+  esac
+  return 2
+}
+# The grep is not belt-and-braces. If a human clears a lock that looks stale
+# while this run is still alive, the next run takes it legitimately - and an
+# unconditional rm here would delete a lock a live transfer is relying on.
+release_dst_lock(){
+  [[ -n "$DST_LOCK_ID" ]] || return 0
+  local f; f="$(dst_lock_file "$DST_LOCK_ID")"
+  ssh $SSH_OPT "$DST_LOCK_HOST" \
+      "grep -qxF '$DST_LOCK_OWNER' '$f' 2>/dev/null && rm -f '$f'" \
+      </dev/null >/dev/null 2>&1 || true
+  DST_LOCK_HOST=""; DST_LOCK_ID=""
+}
+# A dry run reads and never creates: --dry-run writing a file on another
+# machine is the thing dry-run exists not to do. `exit 0` on the far end keeps
+# "nothing is there" apart from "that machine did not answer" - without it an
+# unreachable destination reads exactly like a free lock.
+peek_dst_lock(){   # $1 = ssh destination, $2 = vmid -> 0 free, 1 held, 2 no answer
+  local out rc; DST_LOCK_WHO=""
+  out=$(ssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
+  (( rc == 0 )) || return 2
+  [[ -n "$out" ]] || return 0
+  DST_LOCK_WHO="$(printf '%s\n' "$out" | sed -n '1p')"
+  return 1
+}
+
 cleanup(){
-  cleanup_ct; release_ct_lock
+  cleanup_ct; release_ct_lock; release_dst_lock
   for s in /run/ctback-$$-*.sock; do
     [[ -S "$s" ]] && ssh -O exit -o ControlPath="$s" x >/dev/null 2>&1
   done
@@ -718,7 +791,7 @@ RS=(-aHAX --numeric-ids --delete --inplace "--bwlimit=$BWLIMIT" --timeout=300
 
 ok=0; skipped=0; failed=0; matched=0; FAILED_IDS=(); DONE_IDS=()
 for ct in "${CTS[@]}"; do
-  cleanup_ct; release_ct_lock
+  cleanup_ct; release_ct_lock; release_dst_lock
   # One rule per container, at the top of its block. A disaster runs --all
   # over twenty CTs and every per-CT guard SKIPS rather than stopping the
   # batch, so the log is long and the reader is hunting for the two that
@@ -743,6 +816,40 @@ for ct in "${CTS[@]}"; do
   fi
   if [[ -n "$ONLY_DEST" && "$CT_DEST" != "$ONLY_DEST" ]]; then continue; fi
   matched=$(( matched + 1 ))
+
+  # --- B8: and take the copy on the backup node, where the copy actually is --
+  # After probe_ct, because the copy's VMID comes from it, and before anything
+  # reads or writes the copy for real. probe_ct's own read of the copy state is
+  # milliseconds ahead of this, which is the one gap left; what it costs is a
+  # B2 decision made against a state that changed in that window, and what it
+  # buys is not restructuring identity resolution around a lock.
+  if (( DRY )); then
+    peek_dst_lock "$BKP_SSH" "$CT_TGT"; _dl=$?
+    if (( _dl == 1 )); then
+      log "[$ct] GUARD B8: DRY: copy $CT_TGT is locked on $BKP_NODE - a real run would skip it"
+      log "[$ct] GUARD B8: DRY:   holder: ${DST_LOCK_WHO:-<lock file unreadable>}"
+      skipped=$(( skipped + 1 )); continue
+    elif (( _dl == 2 )); then
+      log "[$ct] GUARD B8: DRY: $BKP_NODE did not answer - cannot say whether $CT_TGT is free"
+      failed=$(( failed + 1 )); FAILED_IDS+=("$ct"); continue
+    fi
+  else
+    take_dst_lock "$BKP_SSH" "$CT_TGT"; _dl=$?
+    if (( _dl == 1 )); then
+      log "[$ct] GUARD B8: copy $CT_TGT is locked on $BKP_NODE by another run - skip"
+      log "[$ct] GUARD B8:   holder: ${DST_LOCK_WHO:-<lock file unreadable>}"
+      log "[$ct] GUARD B8:   file:   $BKP_SSH:$(dst_lock_file "$CT_TGT")"
+      log "[$ct] GUARD B8:   reading a copy while another machine writes it puts half of one"
+      log "[$ct] GUARD B8:   round and half of another into the production image."
+      skipped=$(( skipped + 1 )); continue
+    elif (( _dl == 2 )); then
+      log "[$ct] GUARD B8: could not take the copy lock for $CT_TGT on $BKP_NODE - NOTHING was written"
+      log "[$ct] GUARD B8:   no answer is not 'nobody has it', and this one writes into the"
+      log "[$ct] GUARD B8:   image a customer is coming back to."
+      failed=$(( failed + 1 )); FAILED_IDS+=("$ct"); continue
+    fi
+  fi
+
   failback_one "$ct"; r=$?
   case $r in
     0) ok=$(( ok + 1 )); DONE_IDS+=("$ct");;

@@ -411,6 +411,49 @@ mutant "the engine reads the node map beside itself instead of ketsync's own" \
   's{\Qif [[ -f "\E\$BASE\Q/../../ketsync" && -f "\E\$BASE\Q/../../lib/common.sh" && -f "\E\$BASE\Q/../../nodes.map" ]]; then\E}{if false; then}' \
   57
 
+# ---------- B8: the lock lives on the machine holding the copy ---------------
+# The local lock here is keyed on the PRODUCTION id and ct-replica's is keyed
+# on the COPY id, so even on one machine those two never excluded each other -
+# and this engine reads a copy that ct-replica writes. Across machines a flock
+# says nothing at all. Every mutation below is the shape of that bug.
+# The delimiter is ! where an anchor closes a shell function: perl balances a
+# brace inside s{}{} against its own delimiter.
+mutant "B8 is gone: the copy is read with only a local lock held" \
+  's!\Q    take_dst_lock "\E\$BKP_SSH\Q" "\E\$CT_TGT\Q"; _dl=\E\$\?!    _dl=0!' \
+  58 59
+
+mutant "B8 treats a destination that did not answer as a free lock" \
+  's!\Q  esac\E\n\Q  return 2\E!  esac\n  return 0!' \
+  60
+
+mutant "B8 removes the lock without asking whether it is still ours" \
+  's!\Q2>/dev/null && rm -f \E!2>/dev/null; rm -f !' \
+  64
+
+mutant "B8 releases by deleting the file, with no owner check at all" \
+  's!\Qgrep -qxF \E\x27\$DST_LOCK_OWNER\x27\Q \E\x27\$f\x27\Q 2>/dev/null && \E!!' \
+  58 64
+
+mutant "B8 takes the lock with a plain redirect, so it overwrites whoever holds it" \
+  's!\Qif (set -C; printf \E!if (printf !' \
+  59
+
+mutant "B8 locks a name of its own instead of the copy's VMID" \
+  's!\Qdst_lock_file(){ printf \E\x27\Q/run/ketsync-ct-%s.lock\E\x27\Q "\E\$1\Q"; }\E!dst_lock_file(){ printf \x27/run/ketsync-ct.lock\x27; }!' \
+  59
+
+mutant "B8 names the holder and then reads the copy anyway" \
+  's!\Q      log "[\E\$ct\Q] GUARD B8:   round and half of another into the production image."\E\n\Q      skipped=\E\$\(\( skipped \+ 1 \)\)\Q; continue\E!      skipped=\$(( skipped + 1 ))!' \
+  59
+
+mutant "the lock is only released between containers, never when the run ends" \
+  's!\Qrelease_dst_lock(){\E\n\Q  [[ -n "\E\$DST_LOCK_ID\Q" ]] || return 0\E!release_dst_lock(){\n  return 0!' \
+  58
+
+mutant "a dry run takes the lock for real on another machine" \
+  's!\Q    peek_dst_lock "\E\$BKP_SSH\Q" "\E\$CT_TGT\Q"; _dl=\E\$\?!    take_dst_lock "\$BKP_SSH" "\$CT_TGT"; _dl=\$?!' \
+  63
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

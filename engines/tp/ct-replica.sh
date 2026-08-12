@@ -61,7 +61,7 @@
 #  A filter that matches no row exits NON-ZERO: under cron, exit 0 with no work
 #  done looks exactly like a healthy night.
 # -----------------------------------------------------------------------------
-#  THE GUARDS (R1..R12) — same contract as ct-migrate's G1..G7: each exists
+#  THE GUARDS (R1..R14) — same contract as ct-migrate's G1..G7: each exists
 #  because of a real incident on this fleet; keep them and keep their ORDER.
 #
 #   R1  point-in-time source, never a moving one. A ZFS-backed storage is
@@ -125,6 +125,28 @@
 #       leaves a copy holding a production IP and MAC one click from the wire,
 #       somewhere R9 cannot see. Warned every round, never silently fixed - the
 #       config belongs to whoever promoted it.
+#
+#   R12 a whole source storage being down is ONE fact, not one per container.
+#       Its CTs are skipped, the reason is said once, and the run still refuses
+#       to exit 0. It clears itself the moment the storage comes back, which is
+#       the whole difference from pause/<ctid> - that one a human has to undo.
+#
+#   R13 a live 9<id> placement means ct-distribute.sh has already moved this
+#       container somewhere else, so the copy here is the last data from BEFORE
+#       the outage and the newest data is on a compute node. R2 does not shield
+#       it - a DR copy is stopped by design - and PAUSE cannot, because the
+#       storage node dies with no warning and PAUSE lives on the machine that
+#       died. So the copy is left alone while that config exists anywhere in
+#       the cluster. Per-container, so containers that never moved keep being
+#       replicated, and it clears itself when somebody runs the `pct destroy`
+#       the DR guide already ends with.
+#
+#   R14 the copy is locked on the machine that HOLDS it, not on this one. R7
+#       and R10 are local flocks and settle nothing between machines, and more
+#       than one machine writes into a copy - during an outage distribute and
+#       recall are driven from the backup node, because the machine that
+#       normally drives replication is the machine that died. An unanswered
+#       destination is refused, not treated as free.
 # =============================================================================
 set -uo pipefail
 
@@ -847,6 +869,74 @@ release_tgt_lock(){  # closing the fd is what drops the flock
   TGT_LOCK=""
 }
 
+# --- R14: the lock that lives on the machine holding the copy ----------------
+# R7 and R10 are local flocks. They serialise runs on THIS machine and nothing
+# else - and the copy is not on this machine. More than one machine writes into
+# it: this engine runs on the storage node, while ct-distribute.sh and the
+# recall path can both be driven from the backup node, which during an outage
+# is the entire point - the machine that normally drives replication is the
+# machine that died. Two local locks, with different keys, on different hosts,
+# exclude nothing at all.
+#
+# So the lock goes where the data is: one file on the machine that holds the
+# copy, named after the copy's VMID, that every contender fights over with no
+# consensus and no clock. `set -C` makes the redirect O_EXCL, so the winner is
+# decided by the destination's own kernel. docs/decisions.md section 2 has the
+# argument; it described this for months before anything implemented it.
+#
+# /run because it is tmpfs: a destination that reboots cannot leave a lock
+# behind, and a destination that rebooted has already killed whatever held it.
+# Same reason the ssh control sockets live there - rule 7.
+#
+# Nothing here ever breaks somebody else's lock, and there is no timeout. A run
+# that is SIGKILLed leaves one behind; the refusal names the holder and the
+# exact file, and `ketsync doctor` reports it. Deciding from the outside that
+# somebody else's transfer into a customer's rootfs has finished is precisely
+# the guess this repo refuses everywhere else.
+DST_LOCK_OWNER="replica $(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-') pid $$ started $(date '+%F %T')"
+DST_LOCK_HOST=""; DST_LOCK_ID=""; DST_LOCK_WHO=""
+dst_lock_file(){ printf '/run/ketsync-ct-%s.lock' "$1"; }
+
+# 0 = this run owns it, 1 = somebody else holds it, 2 = the destination could
+# not be asked. Two is NOT one: an unanswered destination is the case where
+# writing anyway puts two rsync --delete into one dataset, so it gets its own
+# return value and its own refusal rather than sharing "busy".
+take_dst_lock(){   # $1 = ssh destination, $2 = vmid
+  local f out; f="$(dst_lock_file "$2")"; DST_LOCK_WHO=""
+  out=$(ssh $SSH_OPT "$1" \
+    "if (set -C; printf '%s\n' '$DST_LOCK_OWNER' > '$f') 2>/dev/null; then echo KETSYNC_LOCK_TAKEN; else echo KETSYNC_LOCK_HELD; cat '$f' 2>/dev/null; fi" \
+    </dev/null 2>/dev/null)
+  case "$out" in
+    KETSYNC_LOCK_TAKEN*) DST_LOCK_HOST="$1"; DST_LOCK_ID="$2"; return 0;;
+    KETSYNC_LOCK_HELD*)  DST_LOCK_WHO="$(printf '%s\n' "$out" | sed -n '2p')"; return 1;;
+  esac
+  return 2
+}
+# The grep is not belt-and-braces. If a human clears a stale lock while this run
+# is still alive, the next run takes it legitimately - and an unconditional rm
+# here would then delete a lock somebody else is relying on. Only ever remove a
+# file that still says it is ours.
+release_dst_lock(){
+  [[ -n "$DST_LOCK_ID" ]] || return 0
+  local f; f="$(dst_lock_file "$DST_LOCK_ID")"
+  ssh $SSH_OPT "$DST_LOCK_HOST" \
+      "grep -qxF '$DST_LOCK_OWNER' '$f' 2>/dev/null && rm -f '$f'" \
+      </dev/null >/dev/null 2>&1 || true
+  DST_LOCK_HOST=""; DST_LOCK_ID=""
+}
+# A dry run reads the lock and never creates one: `--dry-run` writing a file on
+# another machine is the thing dry-run exists not to do. `exit 0` on the far end
+# separates "nothing is there" from "that machine did not answer" - without it
+# an unreachable destination reads exactly like a free lock.
+peek_dst_lock(){   # $1 = ssh destination, $2 = vmid -> 0 free, 1 held, 2 no answer
+  local out rc; DST_LOCK_WHO=""
+  out=$(ssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
+  (( rc == 0 )) || return 2
+  [[ -n "$out" ]] || return 0
+  DST_LOCK_WHO="$(printf '%s\n' "$out" | sed -n '1p')"
+  return 1
+}
+
 # every exit path, including a kill: bring the loop-mount down and record what
 # happened. A CT still marked "running" here was interrupted, and saying so
 # beats leaving a state file that claims a sync is still in progress.
@@ -857,6 +947,12 @@ end_iteration(){
     CUR_MNT=""
   fi
   release_tgt_lock
+  # Here rather than in cleanup(), because cleanup() tears the ssh control
+  # masters down and this needs one: releasing over a connection that is
+  # already gone opens a fresh one, and on a killed run that is the moment the
+  # network is least likely to cooperate. cleanup() calls end_iteration first,
+  # so the order holds on the trap path too.
+  release_dst_lock
   [[ "$ST_STATUS" == running ]] && { ST_STATUS=interrupted; ST_REASON=interrupted; }
   st_flush
 }
@@ -1022,6 +1118,39 @@ for CT in "${CTS[@]}"; do
   if ! take_tgt_lock "$TGT"; then
     log "[$CT] NOTE: copy $TGT is being synced by another lane right now - skip (next run picks it up)"
     st_skip target_busy; continue
+  fi
+
+  # --- R14: and take it on the backup node too, where the copy actually is ---
+  # Cheap and local first, then the one that costs an ssh: two lanes on this
+  # machine settle it between themselves without touching the network. This
+  # runs BEFORE R2 for the same reason it runs before the transfer - R2 reads
+  # the copy's state, and an answer that another machine can change while it is
+  # being acted on is not an answer.
+  if (( DRY )); then
+    peek_dst_lock "$BKP_SSH" "$TGT"; _dl=$?
+    if (( _dl == 1 )); then
+      log "[$CT] GUARD R14: DRY: copy $TGT is locked on $BKP_NODE - a real run would skip it"
+      log "[$CT] GUARD R14: DRY:   holder: ${DST_LOCK_WHO:-<lock file unreadable>}"
+      st_skip r14_dst_locked; continue
+    elif (( _dl == 2 )); then
+      log "[$CT] GUARD R14: DRY: $BKP_NODE did not answer - cannot say whether $TGT is free"
+      st_fail r14_dst_unreachable; continue
+    fi
+  else
+    take_dst_lock "$BKP_SSH" "$TGT"; _dl=$?
+    if (( _dl == 1 )); then
+      log "[$CT] GUARD R14: copy $TGT is locked on $BKP_NODE by another run - skip"
+      log "[$CT] GUARD R14:   holder: ${DST_LOCK_WHO:-<lock file unreadable>}"
+      log "[$CT] GUARD R14:   file:   $BKP_SSH:$(dst_lock_file "$TGT")"
+      log "[$CT] GUARD R14:   if that run is gone, remove that file by hand. Nothing here"
+      log "[$CT] GUARD R14:   breaks a lock on its own - see 'ketsync doctor'."
+      st_skip r14_dst_locked; continue
+    elif (( _dl == 2 )); then
+      log "[$CT] GUARD R14: could not take the copy lock for $TGT on $BKP_NODE - NOTHING was transferred"
+      log "[$CT] GUARD R14:   no answer is not 'nobody has it'. Syncing anyway is how two"
+      log "[$CT] GUARD R14:   machines end up running rsync --delete into one dataset."
+      st_fail r14_dst_unreachable; continue
+    fi
   fi
 
   # --- every net line must carry a bridge=, or this CT does not get copied ---

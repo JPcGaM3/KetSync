@@ -446,7 +446,52 @@ mutant "a held-back container leaves the night reading as healthy" \
 # on a storage called 'hdd' - true, and nowhere near the mistake.
 mutant "the old short dest name falls through to a storage assertion again" \
   's{\Q      elif [[ "\E\$f\Q" == hdd || "\E\$f\Q" == ssd ]]; then\E}{      elif false; then}' \
-  51
+  64
+
+# ---------- R14: the lock lives on the machine holding the copy --------------
+# Every other lock here is a local flock, and local flocks settle nothing
+# between machines. ct-replica runs on the storage node while distribute and
+# recall are driven from the backup node - during an outage that is not an
+# edge case, it is the normal shape of the day. decisions.md section 2 called
+# this "the lock therefore lives on the destination" for months while nothing
+# implemented it.
+mutant "R14 is gone: the copy is written with only a local lock held" \
+  's{\Q    take_dst_lock "\E\$BKP_SSH\Q" "\E\$TGT\Q"; _dl=\E\$\?}{    _dl=0}' \
+  70 71
+
+# The delimiter is ! because the anchors close a shell function and perl
+# balances a brace inside s{}{} against its own delimiter.
+mutant "R14 treats a destination that did not answer as a free lock" \
+  's!\Q  esac\E\n\Q  return 2\E!  esac\n  return 0!' \
+  72
+
+mutant "R14 removes the lock without asking whether it is still ours" \
+  's!\Q2>/dev/null && rm -f \E!2>/dev/null; rm -f !' \
+  77
+
+mutant "R14 releases by deleting the file, with no owner check at all" \
+  's!\Qgrep -qxF \E\x27\$DST_LOCK_OWNER\x27\Q \E\x27\$f\x27\Q 2>/dev/null && \E!!' \
+  70 77
+
+mutant "R14 takes the lock with a plain redirect, so it overwrites whoever holds it" \
+  's{\Qif (set -C; printf \E}{if (printf }' \
+  71
+
+mutant "R14 locks a name of its own instead of the copy's VMID" \
+  's{\Qdst_lock_file(){ printf \E.\Q/run/ketsync-ct-%s.lock\E.\Q "\E\$1\Q"; }\E}{dst_lock_file(){ printf \x27/run/ketsync-ct.lock\x27; }}' \
+  71
+
+mutant "R14 names the holder and then syncs on top of it anyway" \
+  's!\Q      log "[\E\$CT\Q] GUARD R14:   breaks a lock on its own - see \E\x27\Qketsync doctor\E\x27\Q."\E\n\Q      st_skip r14_dst_locked; continue\E!      st_skip r14_dst_locked!' \
+  71
+
+mutant "the lock is never released, so one round wedges that copy for good" \
+  's!\Qrelease_dst_lock(){\E\n\Q  [[ -n "\E\$DST_LOCK_ID\Q" ]] || return 0\E!release_dst_lock(){\n  return 0!' \
+  70
+
+mutant "a dry run takes the lock for real on another machine" \
+  's!\Q    peek_dst_lock "\E\$BKP_SSH\Q" "\E\$TGT\Q"; _dl=\E\$\?!    take_dst_lock "\$BKP_SSH" "\$TGT"; _dl=\$?!' \
+  76
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

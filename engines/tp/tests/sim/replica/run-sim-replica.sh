@@ -48,6 +48,24 @@ fi
 ONLY="${1:-}"
 PASS=0; FAIL=0; FAILED_NAMES=()
 
+# The number in front of a scenario name is its selector, and the mutation
+# suite is the thing that selects: `run-mutation-replica.sh` runs
+# `run-sim-replica.sh <n>` and reads the exit code. Two scenarios sharing one
+# number make that ambiguous - both run, and a mutation aimed at one of them
+# can be "killed" by the other failing for an unrelated reason, which is a
+# mutation that has quietly stopped proving anything. Three numbers were
+# duplicated here before this check existed.
+#
+# Reported through the normal summary rather than as an exit: a filtered run IS
+# the mutation runner, and exiting non-zero there reads to it as "the scenario
+# died", which would turn every mutation green at once. The full suite is where
+# this has to be loud, and the full suite is what `make test` runs.
+_dups="$(grep -o 'scenario "[0-9a-z]*:' "$HERE/run-sim-replica.sh" \
+          | sed 's/.*"//; s/:$//' | sort | uniq -d | tr '\n' ' ')"
+if [[ -z "$ONLY" && -n "${_dups// /}" ]]; then
+  FAIL=$((FAIL+1)); FAILED_NAMES+=("duplicate scenario numbers: $_dups")
+fi
+
 # ---------- sandbox ----------
 new_world(){
   SIMROOT="$(mktemp -d /tmp/ctrep-sim.XXXXXX)"
@@ -131,6 +149,22 @@ bkp_dataset(){  # dataset mounted(yes|no) mountpoint
   printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$BKP/zfs.tsv"
   [[ "$2" == yes ]] && mkdir -p "$BKP/fs$3"; return 0; }
 bkp_ct(){ printf '%s\n' "$2" > "$BKP/ct/$1.status"; }      # vmid status
+# R14. A lock left by somebody else - which on a real fleet is either a run in
+# flight on another machine, or one that was killed and never cleaned up. The
+# engine cannot tell those apart and must not try, so the scenarios do not
+# either: both are "not yours".
+bkp_lock(){ mkdir -p "$BKP/fs/run"; printf '%s\n' "$2" > "$BKP/fs/run/ketsync-ct-$1.lock"; }
+# Somebody clears a lock that looks stale while the run holding it is still
+# alive, and the next run takes it for real. The first run must now leave that
+# file alone - which is the whole reason its release asserts the owner first.
+bkp_lock_steal(){ printf '%s\n' "$1" > "$BKP/lock.steal"; }
+lock_held(){  [[ -f "$BKP/fs/run/ketsync-ct-$1.lock" ]] \
+                || _err "the copy lock for $1 is gone from the backup node"; }
+lock_free(){  [[ -f "$BKP/fs/run/ketsync-ct-$1.lock" ]] \
+                && _err "the copy lock for $1 was left behind: $(cat "$BKP/fs/run/ketsync-ct-$1.lock")"
+              return 0; }
+lock_owner(){ grep -qF -- "$2" "$BKP/fs/run/ketsync-ct-$1.lock" 2>/dev/null \
+                || _err "the copy lock for $1 no longer says '$2'"; }
 bkp_cfg(){ # node vmid <<<text - a guest config that is already over there
   mkdir -p "$BKP/fs/etc/pve/nodes/$1/lxc"; cat > "$BKP/fs/etc/pve/nodes/$1/lxc/$2.conf"; }
 add_src_ct(){ # node ctid storage size [extra config lines...]
@@ -1316,7 +1350,7 @@ EOF
   done_scenario
 fi
 
-if scenario "50: R13 blocks only the containers that moved, not the whole fleet"; then
+if scenario "63: R13 blocks only the containers that moved, not the whole fleet"; then
   # A DR is rarely all-or-nothing: the important containers get placed and the
   # rest stay where they are. Those still have their production image as the
   # newest copy, and they must keep being replicated - during a long outage
@@ -1335,7 +1369,7 @@ EOF
 fi
 
 
-if scenario "51: the old short dest name is named as such, not read as a storage assertion"; then
+if scenario "64: the old short dest name is named as such, not read as a storage assertion"; then
   # The dest column used to take `hdd`. It takes the PVE storage id now. Without
   # a branch for the old word it falls through to "source storage assertion" and
   # the row fails saying the CT does not live on a storage called 'hdd' - true,
@@ -1347,6 +1381,108 @@ if scenario "51: the old short dest name is named as such, not read as a storage
   has "'hdd' is the OLD short dest name"
   has "replica-hdd"
   untraced "rsync"
+  done_scenario
+fi
+
+if scenario "70: R14 the copy is locked on the backup node for the whole transfer, then released"; then
+  # The lock has to exist while the bytes move and be gone afterwards. A lock
+  # that is never taken and a lock that is never released both look like a
+  # clean run from the outside, which is why both halves are asserted here.
+  run_engine --ctid 105
+  rc_is 0; clean
+  traced "bkp lock take /run/ketsync-ct-8105.lock"
+  traced "bkp lock release /run/ketsync-ct-8105.lock"
+  lock_free 8105
+  done_scenario
+fi
+
+if scenario "71: R14 a copy another machine is holding is skipped, and its lock is left alone"; then
+  # The case the guard exists for. ct-replica runs on the storage node; the
+  # holder here is a recall driven from the backup node, which is exactly what
+  # a DR looks like. No local lock on this machine knows anything about it.
+  bkp_lock 8105 "recall bkp02 pid 4211 started 2026-08-12 03:14:00"
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "GUARD R14: copy 8105 is locked on bkp02 by another run - skip"
+  has "holder: recall bkp02 pid 4211 started 2026-08-12 03:14:00"
+  has "/run/ketsync-ct-8105.lock"
+  untraced "rsync"
+  # Left exactly as it was: nothing here breaks a lock, not even one that is
+  # blocking every round.
+  lock_held 8105; lock_owner 8105 "recall bkp02 pid 4211"
+  done_scenario
+fi
+
+if scenario "72: R14 a destination that does not answer is refused, never assumed free"; then
+  # The mistake this kills is treating an empty answer as "nobody has it". That
+  # reads as a clean run and puts two rsync --delete into one dataset.
+  : > "$BKP/lock.fail"
+  run_engine --ctid 105
+  rc_is 1; clean
+  has "GUARD R14: could not take the copy lock for 8105 on bkp02"
+  has "NOTHING was transferred"
+  untraced "rsync"
+  done_scenario
+fi
+
+if scenario "73: R14 the lock is released when the CT fails later in the round"; then
+  # A lock only released on the happy path is worse than no lock: the first bad
+  # night wedges that copy until somebody reads a log nobody reads.
+  rsync_rc 23                                      # 23 = partial transfer = failure
+  run_engine --ctid 105
+  rc_is 1
+  traced "bkp lock take /run/ketsync-ct-8105.lock"
+  lock_free 8105
+  done_scenario
+fi
+
+if scenario "74: R14 a dry run says the real run would be blocked"; then
+  # A dry run that cannot see the lock reads as a plan that will work, and the
+  # operator finds out at 3am that it does not.
+  bkp_lock 8105 "replica nfs01 pid 900 started 2026-08-12 02:00:00"
+  run_engine --ctid 105 --dry-run
+  rc_is 0; clean
+  has "GUARD R14: DRY: copy 8105 is locked on bkp02 - a real run would skip it"
+  has "holder: replica nfs01 pid 900"
+  untraced "bkp lock take"
+  lock_owner 8105 "pid 900"
+  done_scenario
+fi
+
+if scenario "76: R14 a dry run against a free copy creates no lock at all"; then
+  # The other half, and the one a held lock hides: --dry-run must not write a
+  # file on another machine. It reads, and that is all it does.
+  run_engine --ctid 105 --dry-run
+  rc_is 0; clean
+  traced "bkp lock peek /run/ketsync-ct-8105.lock"
+  untraced "bkp lock take"
+  lock_free 8105
+  done_scenario
+fi
+
+if scenario "77: R14 a lock that stopped being ours is left where it is"; then
+  # Somebody decides this run is dead and clears its lock; the next run takes
+  # the copy legitimately. This run finishing must not then remove a lock that
+  # a live transfer is relying on - which is why the release asserts the owner
+  # before it removes anything.
+  bkp_lock_steal "recall bkp02 pid 7788 started 2026-08-12 04:00:00"
+  run_engine --ctid 105
+  rc_is 0; clean
+  traced "bkp lock stolen /run/ketsync-ct-8105.lock"
+  lock_held 8105; lock_owner 8105 "recall bkp02 pid 7788"
+  done_scenario
+fi
+
+if scenario "75: R14 one lock per copy, so a lane blocked on one CT still does the others"; then
+  # Per-copy, not per-run: a single stuck copy must not stop the fleet. This is
+  # the same shape as R13 and for the same reason.
+  bkp_lock 8105 "recall bkp02 pid 4211 started 2026-08-12 03:14:00"
+  run_engine
+  rc_is 0; clean
+  has "GUARD R14: copy 8105 is locked on bkp02"
+  hasnt "GUARD R14: copy 8113 is locked"
+  cfg_exists 8113; cfg_absent 8105
+  lock_free 8113
   done_scenario
 fi
 

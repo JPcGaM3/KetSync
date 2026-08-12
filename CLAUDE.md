@@ -47,7 +47,7 @@ held", and the run exits 0 having done nothing.
 
 **7. A stub says it is a stub.** `recall` exits 2 with a pointer into
 `docs/decisions.md`. Do not make one half work. `distribute` stopped being a
-stub when `engines/tp/ct-distribute.sh` was written, with 39 scenarios and 41
+stub when `engines/tp/ct-distribute.sh` was written, with 46 scenarios and 50
 mutations behind it - which is the bar for the next one.
 
 **8. Nothing that writes to a real machine ships without a simulator.** Read
@@ -60,8 +60,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 236 tp scenarios + 21 for ketsync sync
-    make mutation # 207 known bugs put back. None may survive
+    make test     # both layers: 253 tp scenarios + 21 for ketsync sync
+    make mutation # 234 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

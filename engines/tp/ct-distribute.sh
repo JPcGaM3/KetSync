@@ -67,7 +67,7 @@
 #  by name. A storage type nobody has thought about is not a storage type to
 #  guess at.
 # -----------------------------------------------------------------------------
-#  THE GUARDS (D1..D7). This engine runs during the worst hour this fleet will
+#  THE GUARDS (D1..D8). This engine runs during the worst hour this fleet will
 #  have, so every one of them refuses rather than warns.
 #
 #   D1  the PRODUCTION container must be verifiably down, and must STAY down.
@@ -114,6 +114,13 @@
 #       rule as every engine in this repo, and it matters most here - this is
 #       the moment a customer's service either comes back or collides with
 #       something.
+#
+#   D8  9<id> is locked on the TARGET, before D3 asks whether it is free. The
+#       run lock here is a local flock and everything this engine does happens
+#       on other machines - and during an outage this is the engine two people
+#       reach for at once, from two machines, which is the point. D3's answer
+#       is only worth having if nothing can change it in between. An
+#       unanswered target is refused, not treated as free.
 # =============================================================================
 set -uo pipefail
 
@@ -420,8 +427,66 @@ if ! flock -n 9; then
 fi
 RUN_LOCK=1
 
+# --- D8: the lock that lives on the machine receiving the copy ---------------
+# The lock above is a local flock: it stops two distributes on THIS machine and
+# nothing else. Everything this engine does happens on other machines, and
+# during an outage this is exactly the engine two people reach for at once -
+# one on the storage node when it comes back, one on the backup node, because
+# the backup node is where a DR is driven from.
+#
+# So the lock goes where the data is going: one file on the TARGET, named after
+# the 9<id> about to be allocated. `set -C` makes the redirect O_EXCL, so the
+# target's own kernel picks the winner. docs/decisions.md section 2 - the same
+# lock ct-replica R14 and ct-failback B8 take, in the same place, under the
+# same name, because recall will have to interlock with all three.
+#
+# /run because it is tmpfs: a target that reboots cannot leave a lock behind,
+# and one that rebooted has already killed whatever held it. Nothing here ever
+# breaks somebody else's - the refusal names the holder and the file.
+DST_LOCK_OWNER="distribute $(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-') pid $$ started $(date '+%F %T')"
+DST_LOCK_HOST=""; DST_LOCK_ID=""; DST_LOCK_WHO=""
+dst_lock_file(){ printf '/run/ketsync-ct-%s.lock' "$1"; }
+
+# 0 = ours, 1 = somebody else's, 2 = the target could not be asked. Two is not
+# one: an unanswered target is the case where carrying on allocates a second
+# volume for a container that already has one somewhere.
+take_dst_lock(){   # $1 = ssh destination, $2 = vmid
+  local f out; f="$(dst_lock_file "$2")"; DST_LOCK_WHO=""
+  out=$(ssh $SSH_OPT "$1" \
+    "if (set -C; printf '%s\n' '$DST_LOCK_OWNER' > '$f') 2>/dev/null; then echo KETSYNC_LOCK_TAKEN; else echo KETSYNC_LOCK_HELD; cat '$f' 2>/dev/null; fi" \
+    </dev/null 2>/dev/null)
+  case "$out" in
+    KETSYNC_LOCK_TAKEN*) DST_LOCK_HOST="$1"; DST_LOCK_ID="$2"; return 0;;
+    KETSYNC_LOCK_HELD*)  DST_LOCK_WHO="$(printf '%s\n' "$out" | sed -n '2p')"; return 1;;
+  esac
+  return 2
+}
+# The grep is not belt-and-braces. If a human clears a lock that looks stale
+# while this run is alive, the next run takes it legitimately - and an
+# unconditional rm here would delete a lock a live transfer is relying on.
+release_dst_lock(){
+  [[ -n "$DST_LOCK_ID" ]] || return 0
+  local f; f="$(dst_lock_file "$DST_LOCK_ID")"
+  ssh $SSH_OPT "$DST_LOCK_HOST" \
+      "grep -qxF '$DST_LOCK_OWNER' '$f' 2>/dev/null && rm -f '$f'" \
+      </dev/null >/dev/null 2>&1 || true
+  DST_LOCK_HOST=""; DST_LOCK_ID=""
+}
+# A dry run - and --list - reads and never creates. `exit 0` on the far end
+# keeps "nothing is there" apart from "that machine did not answer"; without it
+# an unreachable target reads exactly like a free lock.
+peek_dst_lock(){   # $1 = ssh destination, $2 = vmid -> 0 free, 1 held, 2 no answer
+  local out rc; DST_LOCK_WHO=""
+  out=$(ssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
+  (( rc == 0 )) || return 2
+  [[ -n "$out" ]] || return 0
+  DST_LOCK_WHO="$(printf '%s\n' "$out" | sed -n '1p')"
+  return 1
+}
+
 cleanup(){
   local s
+  release_dst_lock
   for s in /run/ctdist-$$-*.sock; do
     [[ -S "$s" ]] && ssh -O exit -o ControlPath="$s" x >/dev/null 2>&1
   done
@@ -647,6 +712,38 @@ do_ct(){   # $1 = production ctid
     st_fail "$ct" target_no_identity; return 1
   fi
 
+  # ---- GUARD D8: take 9<id> on the target, before asking whether it is free -
+  # Before D3 on purpose. D3 asks the cluster whether that VMID belongs to
+  # anybody, and an answer nothing holds still is not an answer: two runs can
+  # both be told "free" and both allocate. Inside this lock, the machine that
+  # would receive the volume has already refused one of them.
+  if (( DRY || LIST )); then
+    peek_dst_lock "$CT_TO" "$CT_DR"; _dl=$?
+    if (( _dl == 1 )); then
+      log "[$ct] GUARD D8: $MODE: $CT_DR is locked on $CT_TONODE - a real run would refuse"
+      log "[$ct] GUARD D8: $MODE:   holder: ${DST_LOCK_WHO:-<lock file unreadable>}"
+      st_fail "$ct" d8_target_locked; return 1
+    elif (( _dl == 2 )); then
+      log "[$ct] GUARD D8: $MODE: $CT_TONODE ($CT_TO) did not answer - cannot say whether $CT_DR is free"
+      st_fail "$ct" d8_target_unreachable; return 1
+    fi
+  else
+    take_dst_lock "$CT_TO" "$CT_DR"; _dl=$?
+    if (( _dl == 1 )); then
+      log "[$ct] GUARD D8: $CT_DR is locked on $CT_TONODE by another run - NOTHING was allocated"
+      log "[$ct] GUARD D8:   holder: ${DST_LOCK_WHO:-<lock file unreadable>}"
+      log "[$ct] GUARD D8:   file:   $CT_TO:$(dst_lock_file "$CT_DR")"
+      log "[$ct] GUARD D8:   during a DR this engine is run from two machines at once, which"
+      log "[$ct] GUARD D8:   is the point - the one that got here first owns this container."
+      st_fail "$ct" d8_target_locked; return 1
+    elif (( _dl == 2 )); then
+      log "[$ct] GUARD D8: could not take $CT_DR on $CT_TONODE ($CT_TO) - NOTHING was allocated"
+      log "[$ct] GUARD D8:   no answer is not 'nobody has it'. Allocating anyway is how one"
+      log "[$ct] GUARD D8:   container ends up with two rootfs volumes and one IP."
+      st_fail "$ct" d8_target_unreachable; return 1
+    fi
+  fi
+
   # ---- GUARD D3: 9<id> must be free, everywhere ---------------------------
   local owners
   owners=$(rsh "${BKP_SSH#*@}" "ls /etc/pve/nodes/*/lxc/$CT_DR.conf /etc/pve/nodes/*/qemu-server/$CT_DR.conf 2>/dev/null")
@@ -814,6 +911,10 @@ for _ct in "${CTS[@]}"; do
   hr_ct
   do_ct "$_ct" || true
   cleanup_ct
+  # D8 is per container, so it is dropped per container. Holding one CT's lock
+  # while the next one runs would make a --all over twenty containers look, to
+  # every other machine, like one enormous transaction.
+  release_dst_lock
 done
 
 hr2

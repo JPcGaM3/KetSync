@@ -187,6 +187,21 @@ copy_nomount(){   # zfs get mountpoint answers "none" - nothing to read from
 bkp_cfg(){ # node ctid - move a production config to another node in the cluster
   mkdir -p "$BKP/fs/etc/pve/nodes/$1/lxc"
   mv "$BKP/fs/etc/pve/nodes"/*/lxc/"$2".conf "$BKP/fs/etc/pve/nodes/$1/lxc/$2.conf"; }
+# B8. A lock left by somebody else - on a real fleet either a run in flight on
+# another machine, or one that was killed. The engine cannot tell those apart
+# and must not try, so these do not either: both are "not yours".
+bkp_lock(){ mkdir -p "$BKP/fs/run"; printf '%s\n' "$2" > "$BKP/fs/run/ketsync-ct-$1.lock"; }
+# Somebody clears a lock that looks stale while the run holding it is alive,
+# and the next run takes it for real. This run must now leave that file alone.
+bkp_lock_steal(){ printf '%s\n' "$1" > "$BKP/lock.steal"; }
+bkp_lock_unreachable(){ : > "$BKP/lock.fail"; }
+lock_held(){ [[ -f "$BKP/fs/run/ketsync-ct-$1.lock" ]] \
+               || _err "the copy lock for $1 is gone from the backup node"; }
+lock_free(){ [[ -f "$BKP/fs/run/ketsync-ct-$1.lock" ]] \
+               && _err "the copy lock for $1 was left behind: $(cat "$BKP/fs/run/ketsync-ct-$1.lock")"
+             return 0; }
+lock_owner(){ grep -qF -- "$2" "$BKP/fs/run/ketsync-ct-$1.lock" 2>/dev/null \
+                || _err "the copy lock for $1 no longer says '$2'"; }
 
 # ---------- what the engine reads out of its own folder ----------
 write_conf(){
@@ -1058,6 +1073,106 @@ if scenario "57: vendored under a ketsync, its nodes.map wins over the copy besi
   ENGINE_PATH="$REPO/engines/tp/ct-failback.sh" run_engine --list
   clean
   hasnt "10.100.9.99"
+  done_scenario
+fi
+
+if scenario "58: B8 the copy is locked on the backup node for the round, then released"; then
+  # The lock has to exist while the bytes move and be gone afterwards. A lock
+  # never taken and a lock never released both look like a clean run from the
+  # outside, which is why both halves are asserted.
+  run_engine --ctid 105
+  rc_is 0; clean
+  traced "bkp lock take /run/ketsync-ct-8105.lock"
+  traced "bkp lock release /run/ketsync-ct-8105.lock"
+  lock_free 8105
+  done_scenario
+fi
+
+if scenario "59: B8 a copy another machine is holding is skipped, and its lock is left alone"; then
+  # The case the guard exists for. ct-replica takes a LOCAL lock keyed on the
+  # copy id and this engine takes one keyed on the production id, so on one
+  # machine those two never met - and across machines neither means anything.
+  bkp_lock 8105 "replica nfs01 pid 4211 started 2026-08-12 03:14:00"
+  run_engine --ctid 105
+  rc_is 1; clean
+  has "GUARD B8: copy 8105 is locked on bkp02 by another run - skip"
+  has "holder: replica nfs01 pid 4211 started 2026-08-12 03:14:00"
+  has "/run/ketsync-ct-8105.lock"
+  untraced "rsync"
+  image_hasnt 105 "generation 7"
+  lock_held 8105; lock_owner 8105 "replica nfs01 pid 4211"
+  done_scenario
+fi
+
+if scenario "60: B8 a destination that does not answer is refused, never assumed free"; then
+  # Treating an empty answer as "nobody has it" reads as a clean run and puts
+  # a half-written copy into the image a customer is coming back to.
+  bkp_lock_unreachable
+  run_engine --ctid 105
+  rc_is 1; clean
+  has "GUARD B8: could not take the copy lock for 8105 on bkp02"
+  has "NOTHING was written"
+  untraced "rsync"
+  done_scenario
+fi
+
+if scenario "61: B8 the lock is released when the CT is skipped by a later guard"; then
+  # A lock released only on the happy path wedges that copy the first time a
+  # guard fires - and B1 firing is an ordinary evening, not an incident.
+  prod_state 105 running                  # B1 refuses: production is not stopped
+  run_engine --ctid 105
+  rc_is 1
+  has "GUARD B1"
+  traced "bkp lock take /run/ketsync-ct-8105.lock"
+  lock_free 8105
+  done_scenario
+fi
+
+if scenario "62: B8 a dry run reports the lock and creates none"; then
+  # --dry-run must not write a file on another machine, and must still say the
+  # real run would be blocked - a dry run that cannot see the lock reads as a
+  # plan that will work.
+  bkp_lock 8105 "replica nfs01 pid 900 started 2026-08-12 02:00:00"
+  run_engine --ctid 105 --dry-run
+  rc_is 1; clean
+  has "GUARD B8: DRY: copy 8105 is locked on bkp02 - a real run would skip it"
+  has "holder: replica nfs01 pid 900"
+  untraced "bkp lock take"
+  lock_owner 8105 "pid 900"
+  done_scenario
+fi
+
+if scenario "63: B8 a dry run against a free copy creates no lock at all"; then
+  run_engine --ctid 105 --dry-run
+  rc_is 0; clean
+  traced "bkp lock peek /run/ketsync-ct-8105.lock"
+  untraced "bkp lock take"
+  lock_free 8105
+  done_scenario
+fi
+
+if scenario "64: B8 a lock that stopped being ours is left where it is"; then
+  # Somebody decides this run is dead and clears its lock; the next run takes
+  # the copy legitimately. This run finishing must not remove a lock that a
+  # live transfer is relying on.
+  bkp_lock_steal "recall bkp02 pid 7788 started 2026-08-12 04:00:00"
+  run_engine --ctid 105
+  rc_is 0; clean
+  traced "bkp lock stolen /run/ketsync-ct-8105.lock"
+  lock_held 8105; lock_owner 8105 "recall bkp02 pid 7788"
+  done_scenario
+fi
+
+if scenario "65: B8 one lock per copy, so a blocked CT does not stop the batch"; then
+  # Per-copy, not per-run: a disaster runs --all over twenty containers and one
+  # stuck copy must not strand the other nineteen.
+  bkp_lock 8105 "replica nfs01 pid 4211 started 2026-08-12 03:14:00"
+  run_engine --all
+  rc_is 1; clean
+  has "GUARD B8: copy 8105 is locked on bkp02"
+  hasnt "GUARD B8: copy 8113 is locked"
+  image_has 113 "generation 7"
+  lock_free 8113
   done_scenario
 fi
 

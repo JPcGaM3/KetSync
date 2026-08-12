@@ -157,6 +157,69 @@ case "$c" in
     fi
     exit 0;;
 
+  # ---- R14: the copy lock, on the machine that holds the copy --------------
+  # A real file under the backup node's /run, not a polite "yes, you have it".
+  # The whole claim of this guard is that the DESTINATION decides who wins, so
+  # a fake that answers TAKEN every time proves nothing about the only case it
+  # exists for. Two runs against one sandbox therefore contend for real.
+  *ketsync-ct-*.lock*)
+    lf="$(printf '%s' "$c" | sed -n 's#.*\(/run/ketsync-ct-[0-9]*\.lock\).*#\1#p')"
+    [[ -n "$lf" ]] || violation "R14: lock command with no /run/ketsync-ct-<id>.lock path: $c"
+    # A backup node that answers everything else and drops this one connection.
+    # Narrow on purpose: a node that is simply down never reaches R14, because
+    # R9 refuses the whole run first. What R14 has to survive is the transient.
+    [[ -f "$BKP/lock.fail" ]] && { echo "ssh_exchange_identification: closed" >&2; exit 255; }
+    mkdir -p "$BKP/fs/run"
+    case "$c" in
+      "if (set -C;"*)
+        owner="${c#*\'%s\\n\' \'}"; owner="${owner%%\'*}"
+        if [[ -e "$BKP/fs$lf" ]]; then
+          echo KETSYNC_LOCK_HELD; cat "$BKP/fs$lf" 2>/dev/null; exit 0
+        fi
+        dry_forbids "copy lock $lf created on the backup node"
+        printf '%s\n' "$owner" > "$BKP/fs$lf"
+        trace "bkp lock take $lf"
+        # A human clears what looks like a stale lock while this run is still
+        # alive, and the next run takes it legitimately. From here on the file
+        # says somebody else's name, and this run must not remove it at the
+        # end. Arranged by the scenario rather than asserted on the shape of
+        # the command, so a release that removes the file for any other reason
+        # is caught too.
+        if [[ -s "$BKP/lock.steal" ]]; then
+          cat "$BKP/lock.steal" > "$BKP/fs$lf"; trace "bkp lock stolen $lf"
+        fi
+        echo KETSYNC_LOCK_TAKEN; exit 0;;
+      "grep -qxF"*)
+        owner="${c#grep -qxF \'}"; owner="${owner%%\'*}"
+        if [[ -f "$BKP/fs$lf" ]] && grep -qxF "$owner" "$BKP/fs$lf"; then
+          rm -f "$BKP/fs$lf"; trace "bkp lock release $lf"; exit 0
+        fi
+        # The grep said no. Whether the rm still runs is decided by how the two
+        # are joined, exactly as a real shell would decide it: `&&` gates it,
+        # `;` does not. Emulated rather than pattern-matched, because the bug
+        # worth catching is a release that removes a lock a LIVE transfer on
+        # another machine is relying on - and with `;` that is what it does.
+        case "$c" in
+          *"&& rm -f"*) exit 1;;      # gated: somebody else's, or already gone
+        esac
+        [[ -f "$BKP/fs$lf" ]] && \
+          violation "R14: the release removed $lf, which says: $(cat "$BKP/fs$lf")"
+        rm -f "$BKP/fs$lf"; exit 0;;
+      "cat "*)
+        trace "bkp lock peek $lf"
+        [[ -f "$BKP/fs$lf" ]] && cat "$BKP/fs$lf"
+        exit 0;;
+      *"rm "*)
+        # Judged on SHAPE, not on who happens to own the file at the time: a
+        # release that does not name an owner is one a human clearing a stale
+        # lock turns into "delete the run that legitimately replaced me". That
+        # it usually removes the right file is exactly why it would survive.
+        violation "R14: a release that removes $lf without asserting who owns it"
+        rm -f "$BKP/fs$lf"; exit 0;;
+    esac
+    violation "R14: lock command shape the simulator does not model: $c"
+    exit 1;;
+
   "cat "*)
     f="${c#cat }"; f="${f%% *}"
     [[ -f "$BKP/fs$f" ]] || exit 1

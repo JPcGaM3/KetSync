@@ -17,8 +17,8 @@ place to prove it still holds.
 
 ## Why it is vendored rather than rewritten
 
-`tp` is three bash engines that move running production containers, anchored by
-236 simulator scenarios and 188 mutations. In one week those suites caught five
+`tp` is four bash engines that move running production containers, anchored by
+253 simulator scenarios and 215 mutations. In one week those suites caught five
 real bugs, and every one of them was the same shape: a lesson learned once in
 `ct-migrate.sh` and lost when a newer engine was written from scratch.
 

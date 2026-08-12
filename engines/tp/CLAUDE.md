@@ -33,9 +33,9 @@ anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
     ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
-    ct-replica.sh    tests/mutation/run-mutation-replica.sh     48 mutations
-    ct-failback.sh   tests/mutation/run-mutation-failback.sh    45 mutations
-    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  41 mutations
+    ct-replica.sh    tests/mutation/run-mutation-replica.sh     57 mutations
+    ct-failback.sh   tests/mutation/run-mutation-failback.sh    54 mutations
+    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  50 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
@@ -117,8 +117,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 68 + 57 + 39 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 48 + 45 + 41 engine + 9 dispatcher bugs, all caught
+    make test       # 66 + 76 + 65 + 46 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 57 + 54 + 50 engine + 9 dispatcher bugs, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did
@@ -209,6 +209,18 @@ and a dry run may mount only `ro`.
          never moved keep being replicated; it clears itself when somebody runs
          the `pct destroy 9<id>` the DR guide already ends with; and the run
          refuses to exit 0 while it is true
+    R14  the copy is locked on the machine that HOLDS it. R7 and R10 are local
+         flocks and settle nothing between machines, and more than one machine
+         writes into a copy - during an outage distribute and recall are driven
+         from the backup node, because the machine that normally drives
+         replication is the machine that died. `set -C` on
+         /run/ketsync-ct-<vmid>.lock over ssh; the destination's kernel picks
+         the winner. An unanswered destination is refused, never treated as
+         free. Nothing breaks a lock it does not own, and a release only
+         removes a file that still says it is ours. Same code, same file, in
+         ct-failback.sh (B8) and ct-distribute.sh (D8) - it is ONE lock and
+         three engines disagreeing about it would be worse than none.
+         docs/decisions.md section 2
 
 `ct-failback.sh` — B1..B6:
 
@@ -243,9 +255,38 @@ and a dry run may mount only `ro`.
         production image, and every other guard here refuses rather than
         warns; this one used to be the exception. --no-snapshot is the way
         past it, typed by hand by somebody who read the refusal
+    B8  the copy is locked on the machine that HOLDS it, not on this one. The
+        local lock here is keyed on the production id and ct-replica's on the
+        copy id, so even on one machine those two never excluded each other -
+        and this engine READS a copy that ct-replica writes. R14, same code,
+        same file
 
-The order matters in all three. G1 runs before allocation for a reason, G7 runs
-with G2 before anything is transferred, and B1 runs before anything is mounted.
+`ct-distribute.sh` — D1..D8:
+
+    D1  the production container must be verifiably down and must STAY down:
+        running refuses, unreachable refuses (unverified is not stopped), and
+        `onboot: 1` refuses - a container that is stopped today and boots
+        itself when the storage node returns puts two machines on one IP,
+        each writing a rootfs that can never be merged with the other
+    D2  the source copy must exist on the backup node and be STOPPED
+    D3  9<id> must be free everywhere: no config anywhere in the cluster and
+        no volume already allocated. G7/R4 again
+    D4  the destination storage must be ACTIVE on the target and must not sit
+        on the node root filesystem. The Status column is the WORD pvesm
+        prints, not a boolean - comparing it against 1 passed every scenario
+        and refused every storage on the fleet
+    D5  free space is checked BEFORE anything is allocated. A thin pool that
+        fills can go read-only and take every container on that node with it
+    D6  the config is written only after a good transfer, then read back
+    D7  nothing is started, ever
+    D8  9<id> is locked on the TARGET, before D3 is asked. The run lock here
+        is a flock on the machine typing the commands and everything this
+        engine does happens elsewhere - during a DR it is driven from two
+        machines on purpose. R14, same code, same file
+
+The order matters in all four. G1 runs before allocation for a reason, G7 runs
+with G2 before anything is transferred, B1 runs before anything is mounted, and
+D8 runs before D3 because an answer nothing holds still is not an answer.
 
 Two things that are not guards but fail a run for the same reason — a silent
 success is worse than a loud failure:

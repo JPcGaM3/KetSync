@@ -263,6 +263,61 @@ case "$c" in
     else cat > "$PVE${f#/etc/pve}"; fi
     exit 0;;
 
+  # ---- D8: the 9<id> lock, on the target that will receive it --------------
+  # A real file under the target's /run, not a polite "yes, you have it". The
+  # claim being tested is that the TARGET decides who wins, so a fake that
+  # answers TAKEN every time proves nothing about the only case the guard
+  # exists for. Same model, same file names, as ct-replica R14 and
+  # ct-failback B8 - it is one lock, and three simulators disagreeing about it
+  # would be worse than none.
+  *ketsync-ct-*.lock*)
+    lf="$(printf '%s' "$c" | sed -n 's#.*\(/run/ketsync-ct-[0-9]*\.lock\).*#\1#p')"
+    [[ -n "$lf" ]] || violation "D8: lock command with no /run/ketsync-ct-<id>.lock path: $c"
+    # A target that answers everything else and drops this one connection.
+    # Narrow on purpose: a target that is simply down is refused earlier.
+    [[ -f "$T/lock.fail" ]] && { echo "ssh_exchange_identification: closed" >&2; exit 255; }
+    mkdir -p "$T/run"
+    case "$c" in
+      "if (set -C;"*)
+        owner="${c#*\'%s\\n\' \'}"; owner="${owner%%\'*}"
+        if [[ -e "$T/run${lf##*/run}" ]]; then
+          echo KETSYNC_LOCK_HELD; cat "$T/run${lf##*/run}" 2>/dev/null; exit 0
+        fi
+        dry_forbids "9<id> lock $lf created on $host" || exit 1
+        printf '%s\n' "$owner" > "$T/run${lf##*/run}"
+        trace "tgt lock take $host $lf"
+        # A human clears what looks like a stale lock while this run is alive,
+        # and the next run takes it legitimately. From here on the file names
+        # somebody else, and this run must leave it alone at the end.
+        if [[ -s "$T/lock.steal" ]]; then
+          cat "$T/lock.steal" > "$T/run${lf##*/run}"; trace "tgt lock stolen $host $lf"
+        fi
+        echo KETSYNC_LOCK_TAKEN; exit 0;;
+      "grep -qxF"*)
+        owner="${c#grep -qxF \'}"; owner="${owner%%\'*}"
+        if [[ -f "$T/run${lf##*/run}" ]] && grep -qxF "$owner" "$T/run${lf##*/run}"; then
+          rm -f "$T/run${lf##*/run}"; trace "tgt lock release $host $lf"; exit 0
+        fi
+        # The grep said no. Whether the rm still runs is decided by how the two
+        # are joined, exactly as a real shell decides it: `&&` gates it, `;`
+        # does not. Emulated rather than pattern-matched.
+        case "$c" in
+          *"&& rm -f"*) exit 1;;
+        esac
+        [[ -f "$T/run${lf##*/run}" ]] && \
+          violation "D8: the release removed $lf on $host, which says: $(cat "$T/run${lf##*/run}")"
+        rm -f "$T/run${lf##*/run}"; exit 0;;
+      "cat "*)
+        trace "tgt lock peek $host $lf"
+        [[ -f "$T/run${lf##*/run}" ]] && cat "$T/run${lf##*/run}"
+        exit 0;;
+      *"rm "*)
+        violation "D8: a release that removes $lf on $host without asserting who owns it"
+        rm -f "$T/run${lf##*/run}"; exit 0;;
+    esac
+    violation "D8: lock command shape the simulator does not model: $c"
+    exit 1;;
+
   "cat "*)
     f="${c#cat }"; f="${f//\'/}"; f="${f%% *}"
     [[ -f "$PVE${f#/etc/pve}" ]] || exit 1
