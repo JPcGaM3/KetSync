@@ -36,7 +36,7 @@ halves, do not touch the engine — say so instead.
     ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
     ct-replica.sh    tests/mutation/run-mutation-replica.sh     57 mutations
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    59 mutations
-    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  57 mutations
+    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  62 mutations
     ct-recall.sh     tests/mutation/run-mutation-recall.sh      47 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
@@ -81,6 +81,16 @@ copies of one host must never be reachable at once. R9 verifies the bridge has
 no uplink before every run, and R11 warns when a promoted copy was never put
 back. Do not weaken either.
 
+`distribute` is the third direction and the only one that puts a container ON
+the wire deliberately, because a `9<id>` is placed in order to answer. It takes
+its net lines from the **production** container's config rather than the copy's
+— the copy's bridge is the isolated one by design — and it may, because D1 has
+already established that production cannot answer. Nothing starts, so a wrong
+bridge costs a command and not an outage. What it never does is invent one: a
+production container that was moved onto `MOCKNET_BRIDGE` by hand has had its
+real bridge overwritten by the operator, and the run says so instead of
+guessing.
+
 **5. Nothing has a default. Not `new_node`, not `storage`, not a dest.**
 A row missing one is an ERROR - the inventory ones refuse the whole file,
 naming the line. There is no `DEFAULT_DEST` any more and there must not be a
@@ -122,8 +132,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 75 + 70 + 53 + 53 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 57 + 59 + 57 + 47 engine + 9 dispatcher bugs, all caught
+    make test       # 66 + 75 + 70 + 58 + 53 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 57 + 59 + 62 + 47 engine + 9 dispatcher bugs, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did

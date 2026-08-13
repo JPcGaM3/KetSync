@@ -330,10 +330,18 @@ ls /sys/class/net/vmbr99/brif/</pre></div>
   <p>มันจะจองเนื้อที่บนเครื่องปลายทาง ทำ filesystem ก๊อปข้อมูลจากเครื่อง backup
      แล้วเขียน config ให้ — แต่ไม่เปิดให้ มันจะพิมพ์คำสั่งเปิดออกมาให้คนกดเอง</p>
   <div class="out"><pre>[300] placed: CT 9300 on pve01, local-lvm:vm-9300-disk-0, rsync rc=0 in 412s
-[300]   its network is still on the copy's bridge. Check it, then start it BY HAND:
+[300]   net: net0 on vmbr0 - taken from CT 300's own config
+[300]   check it, then start it BY HAND:
 [300]     ssh root@10.100.1.32 pct config 9300
-[300]     ssh root@10.100.1.32 pct set 9300 --net0 &lt;the production bridge&gt;
 [300]     ssh root@10.100.1.32 pct start 9300</pre></div>
+  <p>network ของ 9300 มาจาก config ของ CT 300 ตัวจริงโดยตรง ไม่ใช่ของสำเนา —
+     สำเนาบนเครื่อง backup อยู่บน <span class="m">vmbr99</span> โดยตั้งใจ ส่วนตัวนี้วางไว้เพื่อให้
+     <b>ตอบ</b> IP MAC และ VLAN จึงตรงกับของเดิมทุกตัว ไม่ต้องพิมพ์เอง
+     (พิมพ์ MAC ผิดตัวเดียวคือ ARP ทั้งวงเพี้ยน)</p>
+  <div class="warn"><p><b>ยกเว้นกรณีเดียว</b> ถ้าคุณย้าย CT 300 ไป <span class="m">vmbr99</span>
+     เองเพื่อผ่านด่าน D1 แปลว่า bridge จริงถูกทับไปแล้วและไม่มีใครจดไว้
+     ตอนนั้นมันจะวางให้ตามปกติ แต่ขึ้นเตือนตัวใหญ่ว่า
+     <span class="m">would come up UNABLE TO ANSWER</span> — ต้องใส่ bridge จริงเองก่อนเปิด</p></div>
 
   <h3>ขั้นที่ 4 — ทั้งฟลีตทีเดียว เมื่อซ้อมตัวแรกผ่านแล้ว</h3>
   <div class="code"><pre>./ketsync distribute --all</pre></div>

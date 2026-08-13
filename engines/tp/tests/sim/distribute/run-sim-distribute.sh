@@ -269,6 +269,12 @@ no_vol(){ [[ -e "$SIMROOT/targets/$1/vols/$2/$3" ]] && _err "$1:$2:$3 should NOT
 cfg_exists(){ [[ -f "$PVE/nodes/$1/lxc/$2.conf" ]] || _err "no config $1/lxc/$2.conf"; }
 no_cfg(){ [[ -f "$PVE/nodes/$1/lxc/$2.conf" ]] && _err "config $1/lxc/$2.conf should NOT exist"; return 0; }
 cfg_has(){ grep -qF -- "$3" "$PVE/nodes/$1/lxc/$2.conf" 2>/dev/null || _err "$1/lxc/$2.conf lacks '$3'"; }
+# Two net0 lines is a config PVE reads the wrong half of, and it is what
+# appending the production net without removing the copy's produces. Content
+# assertions cannot see it - only counting can.
+cfg_net_count(){ # node vmid expected
+  local n; n=$(grep -cE '^net[0-9]+:' "$PVE/nodes/$1/lxc/$2.conf" 2>/dev/null || echo 0)
+  [[ "$n" == "$3" ]] || _err "$1/lxc/$2.conf has $n net lines, expected $3"; }
 nothing_mounted(){ local m
   m="$(cat "$SIMROOT"/targets/*/mounted 2>/dev/null)"
   [[ -z "$m" ]] || _err "still mounted after the run: $m"; return 0; }
@@ -733,6 +739,80 @@ if scenario "28: the config keeps the production IP and MAC, and drops onboot"; 
   cfg_has pve01 9300 "ip=10.100.2.50/24"
   cfg_has pve01 9300 "onboot: 0"
   cfg_has pve01 9300 "temporary DR copy of CT 300"
+  done_scenario
+fi
+
+if scenario "28b: the 9<id> gets the PRODUCTION container's net, not the copy's"; then
+  # The copy's net line is on vmbr99 because ct-replica put it there - a copy
+  # that could answer is a second machine on a customer's address. The 9<id> is
+  # the opposite: it is placed in order to answer. The real bridge is in the
+  # production config, which is readable even with the storage dead because it
+  # lives in /etc/pve, and reading it beats printing a line for somebody to
+  # retype at 4am.
+  prod_ct 300 pve01 stopped; node_up pve01
+  run_engine --ctid 300
+  rc_is 0; clean
+  cfg_has pve01 9300 "bridge=vmbr0"
+  has "net: net0 on vmbr0 - taken from CT 300's own config"
+  hasnt "bridge=vmbr99"
+  cfg_net_count pve01 9300 1
+  done_scenario
+fi
+
+if scenario "28c: every net line comes across, and the copy's are REMOVED not edited"; then
+  # Two interfaces, and a config that ends up holding two net0 lines is one PVE
+  # reads the wrong half of. Appending without removing is the easy way to
+  # write one, so the count is asserted, not just the content.
+  prod_ct 300 pve01 stopped; node_up pve01
+  ct_nets 300 pve01 vmbr0 vmbr7
+  run_engine --ctid 300
+  rc_is 0; clean
+  cfg_has pve01 9300 "bridge=vmbr0"
+  cfg_has pve01 9300 "bridge=vmbr7"
+  cfg_net_count pve01 9300 2
+  done_scenario
+fi
+
+if scenario "28d: a production CT isolated by hand cannot say where its bridge was"; then
+  # The operator moved it onto vmbr99 to get past D1 - which D1 now allows -
+  # and by doing so overwrote the only record of the real bridge. Nothing here
+  # invents one. The placement still happens, because the data is what matters
+  # and the config is one command to fix, but the run says out loud that this
+  # container cannot answer yet.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets  300 pve01 vmbr99
+  ct_veths 300 pve01 vmbr99
+  run_engine --ctid 300
+  rc_is 0; clean
+  cfg_exists pve01 9300
+  has "came across on vmbr99, which has no uplink"
+  has "would come up UNABLE TO ANSWER"
+  has "nothing recorded where it came from"
+  done_scenario
+fi
+
+if scenario "28e: no production config anywhere - the copy's net stays, and it says why"; then
+  # CT 300 has no config in this cluster at all, so there is nothing to read
+  # the real bridge from. It keeps the copy's line rather than guessing, and
+  # names the reason instead of leaving somebody to notice.
+  run_engine --ctid 300
+  rc_is 0; clean
+  cfg_has pve01 9300 "bridge=vmbr99"
+  has "there was nothing to read the real one from"
+  done_scenario
+fi
+
+if scenario "28f: vmbr990 is not vmbr99, and a fleet big enough has both"; then
+  # The isolation check compares the bridge FIELD, not the text of the line. A
+  # substring match reads vmbr990 as vmbr99 and warns that a container which is
+  # perfectly on the wire cannot answer - which teaches the operator to ignore
+  # the warning, on the one night it means something.
+  prod_ct 300 pve01 stopped; node_up pve01
+  ct_nets 300 pve01 vmbr990
+  run_engine --ctid 300
+  rc_is 0; clean
+  cfg_has pve01 9300 "bridge=vmbr990"
+  hasnt "would come up UNABLE TO ANSWER"
   done_scenario
 fi
 

@@ -131,6 +131,17 @@
 #       read back afterwards. A truncated config is permanent: nothing here
 #       ever rewrites one.
 #
+#       Its network comes from the PRODUCTION container's config, not from the
+#       copy's. The copy carries the right IP, MAC and VLAN but ct-replica
+#       parks its bridge on MOCKNET_BRIDGE on purpose, and the 9<id> exists to
+#       answer. That used to be a line printed for a human to type; one wrong
+#       character in a MAC is a segment's ARP table. The copy's net lines are
+#       removed, not edited - two net0 lines is a config PVE reads the wrong
+#       half of. If the production container was moved onto MOCKNET_BRIDGE by
+#       hand to get past D1, its real bridge is gone and nobody wrote it down:
+#       the placement still happens and says, loudly, that it cannot answer
+#       until somebody sets that bridge.
+#
 #   D7  nothing is started, ever. It prints the `pct start` for a human. Same
 #       rule as every engine in this repo, and it matters most here - this is
 #       the moment a customer's service either comes back or collides with
@@ -629,6 +640,12 @@ st_skip(){ SKIPPED=$(( SKIPPED + 1 )); SKIPPED_IDS+=("$1"); st_write "$1" skippe
 # =============================================================================
 CT_SRC=""; CT_DR=""; CT_TO=""; CT_TONODE=""; CT_DST=""; CT_DSTTYPE=""
 CT_SIZE=""; CT_SRCMNT=""; CT_CFG=""; CUR_MNT=""; CUR_HOST=""
+CT_PNET=""; CT_PNET_ISO=""
+
+# The bridge named by one net line. Split on commas and take the field, rather
+# than matching bridge=vmbr99 inside a string - which also matches vmbr990, and
+# the whole point of the check that uses this is that it is exact.
+net_bridge(){ printf '%s' "$1" | tr ',' '\n' | sed -n 's/^bridge=//p' | head -1; }
 
 # The mount is on the TARGET, not here, so cleaning it up is a remote call. It
 # is done in the per-CT path rather than the exit trap on purpose: the trap
@@ -645,6 +662,7 @@ do_ct(){   # $1 = production ctid
   local ct="$1" rc=0 out cfg
   CT_SRC="${SRC_MAP[$ct]}"; CT_DR=$(( ct + DR_OFFSET ))
   CT_TO=""; CT_TONODE=""; CT_DST=""; CT_DSTTYPE=""; CT_SIZE=""; CT_SRCMNT=""; CT_CFG=""
+  CT_PNET=""; CT_PNET_ISO=""
 
   CT_TO="$(target_of "$ct")"
   if [[ -z "$CT_TO" ]]; then
@@ -823,6 +841,38 @@ do_ct(){   # $1 = production ctid
         log "[$ct] GUARD D1:   put it back to 1 after the recall - the DR guide says where."
         st_skip "$ct" prod_onboot; return 1
       fi
+    fi
+
+    # ---- where the 9<id>'s network comes from -----------------------------
+    # The copy's config carries the production IP, MAC and VLAN, but ct-replica
+    # parks its bridge on MOCKNET_BRIDGE on purpose - a copy that could answer
+    # is a second machine on a customer's address. The 9<id> is the opposite:
+    # it exists TO answer. So its net lines come from the production
+    # container's own config, which is readable even now because it lives in
+    # /etc/pve and not on the storage that died.
+    #
+    # This used to be a line printed for a human to type at the end of the run.
+    # One wrong character in a MAC address is a segment's ARP table, and the
+    # person typing it has been awake since the storage node died.
+    #
+    # The bridge NAME is carried across unchanged, which is right while every
+    # node calls a segment the same thing and wrong the moment one does not.
+    # bridgemap.tsv is this repo's answer to that and c2v-prepare.sh reads it;
+    # this does not, because a DR placement stays inside one cluster. If that
+    # ever stops being true, that table is where the answer belongs.
+    CT_PNET=$(rsh "$pip" "pct config $ct 2>/dev/null" | grep -E '^net[0-9]+:' || true)
+    if [[ -n "$CT_PNET" ]]; then
+      # A production container that was moved onto the isolated bridge to get
+      # past D1 has had its real bridge overwritten, by hand, and nobody wrote
+      # down what it was. Saying so is the only honest option: a 9<id> placed
+      # with this net line comes up unable to answer, which is the one thing
+      # the whole DR exists to prevent.
+      local _n _b
+      while IFS= read -r _n; do
+        [[ -n "$_n" ]] || continue
+        _b="$(net_bridge "$_n")"
+        [[ "$_b" == "$MOCKNET_BRIDGE" ]] && CT_PNET_ISO="$CT_PNET_ISO ${_n%%:*}"
+      done <<< "$CT_PNET"
     fi
   fi
 
@@ -1034,12 +1084,20 @@ do_ct(){   # $1 = production ctid
   # ---- GUARD D6: the config, only now, and read back ----------------------
   # The copy's own config is the source: it already carries the production IP,
   # MAC and VLAN, which is exactly what has to come back up. Two lines change -
-  # where the rootfs lives, and the bridge, because the copy sits on one with
-  # no uplink by design and this container is meant to answer.
+  # where the rootfs lives, and onboot, because nothing this engine writes may
+  # start by itself.
   local newcfg
   newcfg=$(printf '%s\n' "$cfg" \
     | sed -e "s|^rootfs:.*|rootfs: $CT_DST:$volname,size=$CT_SIZE|" \
           -e "s|^onboot:.*|onboot: 0|")
+  # And the network, which does not come from the copy at all - see where
+  # CT_PNET is read. The copy's net lines are REMOVED rather than edited: a
+  # config holding two net0 lines is one PVE reads the wrong half of, and
+  # appending without removing is the easy way to write one.
+  if [[ -n "$CT_PNET" ]]; then
+    newcfg=$(printf '%s\n' "$newcfg" | grep -vE '^net[0-9]+:')
+    newcfg=$(printf '%s\n%s' "$newcfg" "$CT_PNET")
+  fi
   newcfg=$(printf '%s\n' "$newcfg"; printf '# ct-distribute: temporary DR copy of CT %s, from %s on %s\n' "$ct" "$CT_SRC" "$BKP_NODE")
   CT_CFG="/etc/pve/nodes/$CT_TONODE/lxc/$CT_DR.conf"
   if ! printf '%s\n' "$newcfg" | ssh $SSH_OPT "root@$CT_TO" "cat > '$CT_CFG'" 2>/dev/null; then
@@ -1055,9 +1113,23 @@ do_ct(){   # $1 = production ctid
 
   # ---- GUARD D7: a human starts it ---------------------------------------
   log "[$ct] placed: CT $CT_DR on $CT_TONODE, $CT_DST:$volname, rsync rc=$rc in ${RS_SECS}s"
-  log "[$ct]   its network is still on the copy's bridge. Check it, then start it BY HAND:"
+  if [[ -n "$CT_PNET" ]]; then
+    local _n
+    while IFS= read -r _n; do
+      [[ -n "$_n" ]] && log "[$ct]   net: ${_n%%:*} on $(net_bridge "$_n") - taken from CT $ct's own config"
+    done <<< "$CT_PNET"
+  else
+    log "[$ct]   net: the COPY's, which sits on $MOCKNET_BRIDGE by design - CT $ct has no config"
+    log "[$ct]   anywhere in this cluster, so there was nothing to read the real one from."
+  fi
+  if [[ -n "$CT_PNET_ISO" ]]; then
+    log "[$ct]   WARNING:$CT_PNET_ISO came across on $MOCKNET_BRIDGE, which has no uplink."
+    log "[$ct]   CT $CT_DR would come up UNABLE TO ANSWER. Production CT $ct was moved onto"
+    log "[$ct]   that bridge by hand and nothing recorded where it came from, so this engine"
+    log "[$ct]   cannot put it back. Set it yourself before you start the container."
+  fi
+  log "[$ct]   check it, then start it BY HAND:"
   log "[$ct]     ssh root@$CT_TO pct config $CT_DR"
-  log "[$ct]     ssh root@$CT_TO pct set $CT_DR --net0 <the production bridge>"
   log "[$ct]     ssh root@$CT_TO pct start $CT_DR"
   st_ok "$ct" placed
   return 0

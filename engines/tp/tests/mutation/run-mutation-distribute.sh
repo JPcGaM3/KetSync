@@ -395,6 +395,30 @@ mutant "the onboot check is asked of a container that is already running" \
   's{\Q    if [[ "\E\$pstat\Q" != running ]]; then\E}{    if true; then}' \
   4g
 
+# ---------- D6: the 9<id> is placed in order to ANSWER -----------------------
+# Which makes its network the one thing it may not inherit from the copy: the
+# copy sits on a bridge with no uplink on purpose. Everything below is a way of
+# ending up with a container that is placed, looks placed, and cannot answer.
+mutant "the copy's isolated net line is written into the container meant to answer" \
+  's{\Q  if [[ -n "\E\$CT_PNET\Q" ]]; then\E\n\Q    newcfg=\E}{  if false; then\n    newcfg=}' \
+  28b
+
+mutant "the production net is appended and the copy's is left where it was" \
+  's{\Q | grep -vE \E\x27\Q^net[0-9]+:\E\x27\Q)\E}{)}' \
+  28c
+
+mutant "D6 reads the net of the COPY id instead of the production one" \
+  's{\Q    CT_PNET=\E\$\Q(rsh "\E\$pip\Q" "pct config \E\$ct\Q 2>/dev/null"\E}{    CT_PNET=\$(rsh "\$pip" "pct config \$CT_SRC 2>/dev/null"}' \
+  28b
+
+mutant "a bridge that came back isolated is placed without a word about it" \
+  's{\Q      [[ "\E\$_b\Q" == "\E\$MOCKNET_BRIDGE\Q" ]] && CT_PNET_ISO=\E}{      false \&\& CT_PNET_ISO=}' \
+  28d
+
+mutant "the bridge is matched inside the line, so vmbr990 reads as vmbr99" \
+  's{\Q      [[ "\E\$_b\Q" == "\E\$MOCKNET_BRIDGE\Q" ]] && CT_PNET_ISO=\E}{      [[ "\$_n" == *"bridge=\$MOCKNET_BRIDGE"* ]] \&\& CT_PNET_ISO=}' \
+  28f
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

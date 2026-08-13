@@ -50,7 +50,7 @@ held", and the run exits 0 having done nothing.
 
 **7. A stub says it is a stub.** Do not make one half work. There are none
 left: `distribute` stopped being one when `engines/tp/ct-distribute.sh` was
-written, and `recall` when `engines/tp/ct-recall.sh` was, with 53/57 and 53/47
+written, and `recall` when `engines/tp/ct-recall.sh` was, with 58/62 and 53/47
 scenarios and mutations behind them - which is the bar for the next one. The
 helper that printed "designed but not built" is gone with the last stub; bring
 it back with the next one rather than keeping it warm.
@@ -65,8 +65,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 317 tp scenarios + 21 for ketsync sync
-    make mutation # 293 known bugs put back. None may survive
+    make test     # both layers: 322 tp scenarios + 21 for ketsync sync
+    make mutation # 298 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
