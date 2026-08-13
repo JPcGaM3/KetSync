@@ -370,14 +370,22 @@ KS_MASTER_IP=10.100.1.17</pre></div>
      ซึ่งห้ามแก้มือ</p>
 
   <h3>ไฟล์ที่ 3 — engines/tp/inventory-replica.tsv: จะก๊อป CT ตัวไหนบ้าง</h3>
-  <div class="code"><pre># src_ctid  [tgt_ctid]  [storage-assert]  [dest]
-105                                       ssd
-113                                       hdd</pre></div>
-  <p>คอลัมน์แรกคือเลข CT ที่จะก๊อป ส่วน <code class="inl">ssd</code> กับ
-     <code class="inl">hdd</code> คือจะเก็บลง pool ไหนที่เครื่อง backup
+  <div class="code"><pre># src_ctid  [tgt_ctid]  [storage-assert]  dest
+105                                       replica-ssd
+113                                       replica-hdd</pre></div>
+  <p>คอลัมน์แรกคือเลข CT ที่จะก๊อป ส่วน <code class="inl">replica-ssd</code> กับ
+     <code class="inl">replica-hdd</code> คือจะเก็บลง pool ไหนที่เครื่อง backup
      เริ่มจากใส่แค่ตัวเดียวก่อนก็ได้ แล้วค่อยเพิ่มทีหลัง</p>
-  <div class="tip"><p><b>ไม่ต้องกรอก fleet.tsv ตอนนี้</b> มันใช้ตอนเครื่อง storage ล่มแล้วต้องกระจาย CT
-     ไปรันที่ compute ซึ่งยังทำไม่เสร็จ ปล่อยเป็นตัวอย่างไว้ก่อนได้</p></div>
+  <div class="stop"><p><b>คอลัมน์ dest ต้องมีทุกแถว</b> ไม่มีค่า default ให้แล้ว
+     แถวที่ลืมใส่จะทำให้ทั้งไฟล์ถูกปฏิเสธ พร้อมบอกเลขบรรทัด — เพราะแถวที่ลืม
+     กับแถวที่ตั้งใจ หน้าตาเหมือนกันทุกอย่าง และผลคือสำเนาของลูกค้าไปลง pool ที่ไม่มีใครเลือก</p>
+  <p>ชื่อ pool เขียนเต็มเสมอ เมื่อก่อนใช้คำสั้นว่า <code class="inl">hdd</code> กับ
+     <code class="inl">ssd</code> ซึ่งไปอยู่ข้าง <code class="inl">tank-hdd-nas</code>
+     แล้วอ่านเหมือนเป็นของอย่างเดียวกัน ทั้งที่เป็นคนละปลายของการก๊อป
+     ถ้ายังใช้คำเก่าอยู่ engine จะบอกให้ตรงๆ ว่าต้องเขียนว่าอะไร</p></div>
+  <div class="tip"><p><b>fleet.tsv ต้องกรอกด้วย</b> สี่คอลัมน์ <code class="inl">ct home dr dst</code>
+     ครบทุกแถว มันคือแผนที่ที่ <span class="m">ketsync distribute</span> ใช้ตอนเครื่อง storage ล่ม
+     ตอนนี้ทำงานได้จริงแล้ว ไม่ใช่ของที่ยังไม่เสร็จ — และไม่มี default ให้เหมือนกัน</p></div>
 </section>
 
 <section id="s8">

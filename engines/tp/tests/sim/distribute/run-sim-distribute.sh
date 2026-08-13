@@ -85,7 +85,7 @@ new_world(){
   ln -s "$ENGINE" "$WORK/ct-distribute.sh"
   write_conf
   write_nodemap
-  inventory "300" "113" "121	replica-ssd"
+  inventory "300	replica-hdd" "113	replica-hdd" "121	replica-ssd"
   fleet "300	10.100.1.31	$T1	local-lvm" "113	10.100.1.31	$T2	local-zfs"
 }
 
@@ -162,7 +162,6 @@ write_conf(){
   cat > "$WORK/ctrep.conf" <<EOF
 BKP_SSH="root@$BKP_HOST"
 BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
-DEFAULT_DEST="replica-hdd"
 OFFSET=8000
 DR_OFFSET=9000
 DR_HEADROOM_PCT=25
@@ -796,6 +795,16 @@ if scenario "44: D8 a lock that stopped being ours is left where it is"; then
   rc_is 0; clean
   traced "tgt lock stolen $T1 /run/ketsync-ct-9300.lock"
   lock_held "$T1" 9300; lock_owner "$T1" 9300 "recall pve01 pid 7788"
+  done_scenario
+fi
+
+if scenario "45: the OLD BKP_DESTS format is named, not read as a working map"; then
+  conf_set BKP_DESTS '"hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"'
+  run_engine --ctid 300
+  rc_is 2
+  has "is the OLD key=dataset:storage-id form"
+  has 'BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"'
+  untraced "pvesm alloc"
   done_scenario
 fi
 

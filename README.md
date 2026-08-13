@@ -164,10 +164,11 @@ disk and not the CPU. `dst` is the storage on that machine, spelled exactly as
 `pvesm status` there spells it.
 
 `engines/tp/inventory-replica.tsv` — which containers get copied, and to which
-pool on the backup node:
+pool on the backup node. The dest is required on every row; there is no
+default, for the same reason `fleet.tsv` has no fallback storage:
 
 ```
-# src_ctid	[tgt_ctid]	[storage-assert]	[dest]
+# src_ctid	[tgt_ctid]	[storage-assert]	dest
 110					replica-hdd
 120					replica-hdd
 ```
@@ -308,8 +309,8 @@ chose.
 
 ```bash
 make lint       # bash -n, shellcheck, the language rule, the separator rule
-make test       # 305 simulator scenarios + 21 for ketsync sync, plus c2v
-make mutation   # 279 known bugs put back one at a time; none may survive
+make test       # 309 simulator scenarios + 21 for ketsync sync, plus c2v
+make mutation   # 286 known bugs put back one at a time; none may survive
 ```
 
 Every engine runs against a **simulator**: the real script, in a sandbox, with

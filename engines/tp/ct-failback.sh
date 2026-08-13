@@ -158,7 +158,6 @@ BKP_NODE=""                      # pmxcfs name, discovered - see ct-replica.sh
 # short alias any more. "hdd" and "ssd" meant nothing to anybody who had not
 # read this file.
 BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
-DEFAULT_DEST="replica-hdd"
 OFFSET=8000
 DR_OFFSET=9000           # src_ctid + this = ct-distribute's temporary DR copy.
                          # B2 asks whether that one is live before it will read
@@ -224,6 +223,21 @@ fi
 declare -A DEST_DS=()
 for _kv in $BKP_DESTS; do
   _k="${_kv%%:*}"; DEST_DS[$_k]="${_kv#*:}"
+  # The old form was key=dataset:storage-id - `hdd=replica-hdd/ct:replica-hdd`.
+  # It still contains a colon, so nothing here noticed: the entry parsed as a
+  # key of `hdd=replica-hdd/ct`, every row then fell through to DEFAULT_DEST,
+  # and the run failed somewhere else entirely. An `=` is the old file every
+  # time - a PVE storage id cannot contain one - and every fleet upgrading has
+  # that line in ctrep.conf today. Refused here rather than three engines
+  # deep, and worded identically in all four: it is one file.
+  if [[ "$_kv" == *=* ]]; then
+    echo "ctrep.conf: BKP_DESTS entry '$_kv' is the OLD key=dataset:storage-id form" >&2
+    echo "ctrep.conf:   the short key ('hdd', 'ssd') is gone. The key IS the storage id now:" >&2
+    echo "ctrep.conf:   BKP_DESTS=\"replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct\"" >&2
+    echo "ctrep.conf:   every row in inventory-replica.tsv names one of those, and" >&2
+    echo "ctrep.conf:   a row without a dest is refused - there is no default." >&2
+    exit 2
+  fi
 done
 if [[ -n "$ONLY_DEST" && -z "${DEST_DS[$ONLY_DEST]:-}" ]]; then
   echo "--dest '$ONLY_DEST' is not a key in BKP_DESTS ($BKP_DESTS)" >&2; exit 2
@@ -355,8 +369,10 @@ st_history(){
 
 # ---------- the CT list, from the same inventory ct-replica reads ----------
 declare -a CTS=(); declare -A TGT_MAP=() DEST_MAP=(); declare -a UNREACHABLE=()
+declare -a INV_ERRS=(); ln=0
 if [[ -f "$INV" ]]; then
   while IFS= read -r line || [[ -n "${line:-}" ]]; do
+    ln=$(( ln + 1 ))
     line="${line%%#*}"; read -r c rest <<<"$line" || true
     [[ "${c:-}" =~ ^[0-9]+$ ]] || continue
     t=""; dd=""
@@ -365,15 +381,45 @@ if [[ -f "$INV" ]]; then
       elif [[ -n "${DEST_DS[$f]:-}" ]]; then dd="$f"
       fi
     done
+    # No dest, no run. This used to fall through to DEFAULT_DEST, which sent
+    # this engine looking for the copy on whichever pool that variable named -
+    # and finding nothing there reads as "no copy", not as "wrong pool".
+    if [[ -z "$dd" ]]; then
+      INV_ERRS+=("line $ln: CT $c has no dest column. Every row names its pool: ${!DEST_DS[*]}")
+      continue
+    fi
     TGT_MAP[$c]=${t:-$(( c + OFFSET ))}
-    DEST_MAP[$c]=${dd:-$DEFAULT_DEST}
+    DEST_MAP[$c]="$dd"
     CTS+=("$c")
   done < "$INV"
 fi
+if (( ${#INV_ERRS[@]} )); then
+  log "ERROR: inventory is broken - NOTHING was run"
+  for _e in "${INV_ERRS[@]}"; do log "ERROR:   $_e"; done
+  log "ERROR: fix $INV, then run again"
+  exit 2
+fi
 if [[ -n "$ONLY_CTID" ]]; then
-  # a CT that is not in the inventory is still failback-able: it may have been
-  # removed from replication already. Fall back to the derived defaults.
-  [[ -n "${TGT_MAP[$ONLY_CTID]:-}" ]] || { TGT_MAP[$ONLY_CTID]=$(( ONLY_CTID + OFFSET )); DEST_MAP[$ONLY_CTID]=$DEFAULT_DEST; }
+  # A CT that is not in the inventory used to be failback-able anyway, on the
+  # theory that it may have been removed from replication already. That worked
+  # only because DEFAULT_DEST answered "which pool is its copy on" - and it
+  # answered with a guess. Without one there is no answer, so this is a
+  # refusal: the row is the only place that knows.
+  if [[ -z "${TGT_MAP[$ONLY_CTID]:-}" ]]; then
+    log "ERROR: CT $ONLY_CTID has no row in $(basename "$INV") - NOTHING was run"
+    # The copy id is the number on the screen during a DR, so it is the number
+    # that gets typed. Said here rather than after the cluster lookup, because
+    # the missing row now stops the run before that lookup ever happens.
+    for _s in "${!TGT_MAP[@]}"; do
+      [[ "${TGT_MAP[$_s]}" == "$ONLY_CTID" ]] || continue
+      log "ERROR:   $ONLY_CTID is the COPY of CT $_s. This tool is driven by the SOURCE id:"
+      log "ERROR:     ./$(basename "${BASH_SOURCE[0]}") --ctid $_s${FINAL:+ --final}"
+      exit 2
+    done
+    log "ERROR:   the row is what says which pool its copy is on, and there is no"
+    log "ERROR:   default. Add it back, with its dest, then run again."
+    exit 2
+  fi
   CTS=("$ONLY_CTID")
 fi
 if (( ! ${#CTS[@]} )); then
@@ -551,7 +597,7 @@ CT_TGT=""; CT_DEST=""; CT_NODE=""; CT_HOST=""; CT_SID=""; CT_VOL=""; CT_IMG=""
 CT_PSTAT=""; CT_CSTAT=""; CT_SRCDS=""
 probe_ct(){
   local ct="$1" cfgpath srccfg
-  CT_TGT="${TGT_MAP[$ct]}"; CT_DEST="${DEST_MAP[$ct]:-$DEFAULT_DEST}"
+  CT_TGT="${TGT_MAP[$ct]}"; CT_DEST="${DEST_MAP[$ct]}"
   CT_NODE=""; CT_HOST=""; CT_SID=""; CT_VOL=""; CT_IMG=""; CT_PSTAT=""; CT_CSTAT=""
   CT_SRCDS="${DEST_DS[$CT_DEST]}/subvol-$CT_TGT-disk-0"
   cfgpath=$(ssh $SSH_OPT "$BKP_SSH" "ls /etc/pve/nodes/*/lxc/$ct.conf 2>/dev/null" </dev/null 2>/dev/null | head -1)

@@ -162,6 +162,26 @@ case "$c" in
     [[ -f "$f" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
     printf 'status: %s\n' "$(cat "$f")"; exit 0;;
 
+  # C6, the running case. The container's init pid, which is how its mount
+  # namespace is reached: /proc/<pid>/root IS the rootfs LXC mounted, so
+  # nothing has to mount anything a second time. -1 when it is not running,
+  # exactly as lxc-info prints it.
+  "lxc-info -n "*" -pH"*)
+    id="$(awk '{print $3}' <<<"$c")"
+    if [[ "$(cat "$S/ct/$id.status" 2>/dev/null)" == running ]]; then
+      printf '%s\n' "$(cat "$S/ct/$id.pid" 2>/dev/null || echo 4242)"
+    else
+      printf -- '-1\n'
+    fi
+    exit 0;;
+
+  # The engine checks the container's root really is one before it reads it.
+  "test -d "*)
+    d="$(sed -n "s/.*test -d '\([^']*\)'.*/\1/p" <<<"$c")"
+    [[ -n "$d" ]] || exit 1
+    is_mounted "${d%/etc}" "$host" && exit 0
+    exit 1;;
+
   # The transfer is issued here and PUSHES, so this path has to exist before
   # anything is mounted. A scenario can take it away without taking the node
   # away, which is the situation on a fleet where the compute nodes were
@@ -192,15 +212,30 @@ case "$c" in
     printf '%s/vols/%s/%s\n' "$S" "$sid" "$volname"; exit 0;;
 
   # C6. The mount this engine makes is READ-ONLY with noload, and that is not
-  # cosmetic: a live container is writing to this filesystem right now, and
-  # replaying its journal from the outside is how it gets corrupted. rw, or ro
-  # without noload, is recorded rather than simulated.
+  # cosmetic: replaying a journal that was not cleanly closed is a write into
+  # the one copy of the customer's data. rw, or ro without noload, is recorded
+  # rather than simulated.
   "mkdir -p "*" && mount "*)
     dry_forbids "mount on $host" || exit 1
     p="$(sed -n "s/.*mount -o [a-z,]* '\([^']*\)' '\([^']*\)'.*/\1/p" <<<"$c")"
     m="$(sed -n "s/.*mount -o [a-z,]* '\([^']*\)' '\([^']*\)'.*/\2/p" <<<"$c")"
     o="$(sed -n "s/.*mount -o \([a-z,]*\) '.*/\1/p" <<<"$c")"
     [[ -n "$p" && -n "$m" ]] || { violation "mount the simulator cannot parse: $c"; exit 1; }
+    # The one this fake refuses hardest, because a real node refuses it too and
+    # the engine found out on live hardware rather than here. LXC already has
+    # this device mounted read-write for the container that is running on it.
+    # ext4 will not add a read-only mount of the same device -
+    #   mount warning: * dm-6: Can't mount, would change RO state
+    # - and the only way to make it "work" is a second rw mount, which is two
+    # kernels writing one journal. A running container's device is not this
+    # engine's to mount at all: it reads the container's own mount instead.
+    if [[ -f "$S/ct/$(printf '%s' "$p" | sed -n 's/.*-\([0-9]*\)-disk-0.*/\1/p').status" ]] \
+       && [[ "$(cat "$S/ct/$(printf '%s' "$p" | sed -n 's/.*-\([0-9]*\)-disk-0.*/\1/p').status" 2>/dev/null)" == running ]]; then
+      violation "mounted $p while its container is RUNNING - the device is already mounted rw by LXC"
+      echo "mount warning:" >&2
+      echo "      * $(basename "$p"): Cannot mount, would change RO state" >&2
+      exit 32
+    fi
     [[ "$o" == *ro* ]]     || violation "mounted $p READ-WRITE while its container is live"
     [[ "$o" == *noload* ]] || violation "mounted $p without noload - that replays a live container's journal"
     vtype="$(cat "$(dirname "$p")/.$(basename "$p").type" 2>/dev/null)"
@@ -250,6 +285,14 @@ case "$c" in
     fi
     [[ "$c" == *--delete* ]] \
       || violation "rsync without --delete: the copy would keep files the DR container deleted"
+    # Reading a running container's root means reading through its mount
+    # namespace, and everything it has mounted hangs under that path: /proc,
+    # /sys, /dev, and any mp0 somebody added. Without -x the copy stops being
+    # a rootfs and becomes the whole container, mountpoints included.
+    if [[ "$src" == /proc/*/root ]]; then
+      [[ "$c" == *" -x "* ]] \
+        || violation "rsync out of $src without -x - that copies /proc, /sys, /dev and every extra mountpoint into the DR copy"
+    fi
     rc="$(cat "$SIMROOT/rsync.rc" 2>/dev/null)"; rc="${rc:-0}"
     if [[ "$rc" == 0 || "$rc" == 24 ]]; then
       mkdir -p "$BKP/fs$dst"

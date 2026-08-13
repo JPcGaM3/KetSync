@@ -233,22 +233,17 @@ mutant "a --storage or --ctid that matched nothing still exits 0" \
   's{\Qif (( matched == 0 )) && [[ -n "\E\$\QLANE_STORAGE\E\$\QONLY_CTID" ]]; then\E}{if false; then}' \
   34
 
-mutant "AUTO_DISCOVER finding nothing means nothing to do, exit 0" \
-  's{\Q  if [[ \E\$\Q{#CTS[\E\@\Q]} -eq 0 || -z "\E\$\Q{CTS[0]:-}" ]]; then\E(\n\Q    log "ERROR: AUTO_DISCOVER=1\E)}{  if false; then$1}' \
+# AUTO_DISCOVER used to walk /cluster/resources and pick up every container in
+# the fleet, and two mutations lived here about how it did that: one that let
+# an empty discovery exit 0, and one that put `jq` back in the pipeline that
+# Proxmox has no jq for. Both went when the mode did. Not to reach green - the
+# CODE they anchored on is gone, because a mode that replicates containers with
+# no inventory row cannot say which pool their copies belong on, and there is
+# no default to answer with any more. What is left is one mutation on the
+# refusal itself.
+mutant "AUTO_DISCOVER=1 is accepted, and then replicates to nowhere" \
+  's{\Q  log "ERROR: AUTO_DISCOVER=1 is not usable without a default destination - NOTHING was run"\E}{  :}' \
   37
-
-# Proxmox ships no jq (rule 6), and this engine used to pipe /cluster/resources
-# through one: on a real node the pipe then produces nothing, CTS comes back
-# empty and the run looks like a quiet night. A developer box usually HAS jq,
-# which would make this mutation pass here and fail on the only machine it is
-# about - so the node's truth is handed to the mutant instead of assumed: jq
-# does not exist. An exported function is the same hook the simulator uses for
-# pvesm and zfs, because bash finds those before PATH even in an engine that
-# sets its own; BASH_FUNC_x%% is how bash carries one through the environment.
-RUN_ENV=('BASH_FUNC_jq%%=() { return 127; }')
-mutant "jq is back in the discover pipeline (Proxmox has none)" \
-  's{\Q    | tr \E.*?\Q    | grep -vxFf \E}{    | jq -r \x27.[] | select(.type=="lxc") | .vmid\x27 \\\n    | grep -vxFf }s' \
-  38
 
 # Deleting the value check leaves `LANE_STORAGE="$2"` with nothing in $2, which
 # set -u turns into an immediate death. That is deliberate: restoring the old
@@ -492,6 +487,16 @@ mutant "the lock is never released, so one round wedges that copy for good" \
 mutant "a dry run takes the lock for real on another machine" \
   's!\Q    peek_dst_lock "\E\$BKP_SSH\Q" "\E\$TGT\Q"; _dl=\E\$\?!    take_dst_lock "\$BKP_SSH" "\$TGT"; _dl=\$?!' \
   76
+
+# ---------- the dest map's own format ----------------------------------------
+# `hdd=replica-hdd/ct:replica-hdd` still contains a colon, so the shape check
+# below it never fired: the entry parsed as a key of `hdd=replica-hdd/ct` and
+# the run died one check later saying DEFAULT_DEST was not a key - which points
+# at the wrong line. This engine SHIPPED that line in ctrep.conf, so it is the
+# first thing every fleet upgrading hits.
+mutant "the OLD key=dataset:storage-id map is read as though it worked" \
+  's{\Q  if [[ "\E\$_kv\Q" == *=* ]]; then\E}{  if false; then}' \
+  78
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

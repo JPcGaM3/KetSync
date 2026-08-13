@@ -223,12 +223,18 @@
      ดูเทียบกันแล้วจะเห็นว่าไม่มีทางใช้แทนกันได้เลย</p>
 
   <h3>fleet.tsv — แผนที่ ไม่ใช่ใบงาน</h3>
-  <div class="code"><pre># ct	tier	home	dr
-110	hdd	10.100.1.32	10.100.1.33
-120	hdd	10.100.1.33	10.100.1.32</pre></div>
-  <p>อ่านว่า “CT 110 ปกติอยู่ที่ 10.100.1.32 ถ้าเครื่องนั้นล่ม ให้ไปขึ้นที่ 10.100.1.33” เขียนไว้ล่วงหน้า
-     ไม่ใช่ให้เครื่องเลือกเองตอนตี 3 ทุก IP ที่เขียนตรงนี้ต้องมีแถวใน <code class="inl">nodes.tsv</code>
+  <div class="code"><pre># ct	home	dr	dst
+110	10.100.1.32	10.100.1.32	local-lvm
+120	10.100.1.33	10.100.1.33	local-lvm</pre></div>
+  <p>อ่านว่า “CT 110 ปกติอยู่ที่ 10.100.1.32 ถ้า storage ล่ม ให้ไปขึ้นที่ 10.100.1.32 ลง
+     <code class="inl">local-lvm</code> ของเครื่องนั้น” เขียนไว้ล่วงหน้า ไม่ใช่ให้เครื่องเลือกเองตอนตี 3
+     ทุก IP ที่เขียนตรงนี้ต้องมีแถวใน <code class="inl">nodes.tsv</code>
      ไม่งั้น <code class="inl">ketsync doctor</code> จะฟ้อง</p>
+  <p>สี่คอลัมน์ ต้องมีครบทุกอัน <b>ไม่มีค่า default ให้</b> — เคยมีคอลัมน์
+     <code class="inl">tier</code> อยู่ตำแหน่งที่ 2 ซึ่งไม่มี engine ไหนอ่านเลย
+     ตอนนี้ตัดทิ้งแล้ว และคอลัมน์ <code class="inl">dst</code> คือชื่อ storage บนเครื่องปลายทาง
+     สะกดให้ตรงกับที่ <code class="inl">pvesm status</code> ของเครื่องนั้นบอก
+     แถวที่ไม่มีจะถูกปฏิเสธ ไม่ใช่เดาให้</p>
 
   <h3>inventory-migrate.tsv — ใบงานย้ายเข้ามา</h3>
   <div class="code"><pre># old_node    old_ctid  new_ctid  new_node      storage
@@ -316,7 +322,7 @@ $EDITOR engines/tp/ctrep.conf             <span class="c"># BW_TOTAL_MB for THIS
     <tr><td class="m">sync · role · doctor · status</td><td>ได้</td></tr>
     <tr><td class="m">distribute</td><td>ได้ — และนี่คือเหตุผลหลักที่ต้องลงไว้</td></tr>
     <tr><td class="m">replica · failback · migrate</td>
-        <td><b>ไม่ได้ และจะไม่ได้ตลอดไป</b> ทั้งสามตัวทำ ZFS snapshot กับ loop-mount
+        <td><b>ไม่ได้ และจะไม่ได้ตลอดไป</b> ทั้งสามตัวนี้ทำ ZFS snapshot กับ loop-mount
         ไฟล์ image ของจริง ซึ่งอยู่บนเครื่อง storage</td></tr>
   </table>
   <p>เปลี่ยน role ไม่ได้ย้ายดิสก์ตามไปด้วย คำว่า master ในระบบนี้แปลว่า
@@ -433,18 +439,20 @@ $EDITOR fleet.tsv
   <p>ทั้ง 3 engine ใช้ flag ชุดเดียวกัน ตั้งใจให้จำชุดเดียวพอ</p>
   <table>
     <tr><th>flag</th><th>แปลว่า</th><th>ใช้ได้กับ</th></tr>
-    <tr><td class="m">--all</td><td>ทุกแถวใน inventory</td><td>ทั้ง 3 ตัว</td></tr>
-    <tr><td class="m">--ctid &lt;id&gt;</td><td>เฉพาะ CT ตัวเดียว</td><td>ทั้ง 3 ตัว</td></tr>
-    <tr><td class="m">--dry-run</td><td>เดินผ่าน guard ครบ ไม่เขียนอะไร แล้วพิมพ์แผนออกมา</td><td>ทั้ง 3 ตัว</td></tr>
+    <tr><td class="m">--all</td><td>ทุกแถวใน inventory</td><td>ทั้ง 5 ตัว</td></tr>
+    <tr><td class="m">--ctid &lt;id&gt;</td><td>เฉพาะ CT ตัวเดียว</td><td>ทั้ง 5 ตัว</td></tr>
+    <tr><td class="m">--dry-run</td><td>เดินผ่าน guard ครบ ไม่เขียนอะไร แล้วพิมพ์แผนออกมา</td><td>ทั้ง 5 ตัว</td></tr>
     <tr><td class="m">--storage &lt;id&gt;</td><td>ทำเฉพาะ lane นั้น</td><td>migrate, replica</td></tr>
-    <tr><td class="m">--dest hdd|ssd</td><td>เฉพาะ CT ที่ตัวสำรองอยู่ pool นั้น</td><td>failback</td></tr>
+    <tr><td class="m">--dest replica-hdd|replica-ssd</td><td>เฉพาะ CT ที่ตัวสำรองอยู่ pool นั้น</td><td>failback</td></tr>
     <tr><td class="m">--list</td><td>ดูอย่างเดียว ใครอยู่ไหน สถานะอะไร</td><td>failback</td></tr>
     <tr><td class="m">--final</td><td>รอบสุดท้าย ทับ image ตัวจริง</td><td>failback</td></tr>
     <tr><td class="m">--stopped</td><td>ต้นทางถูกปิดอยู่ ไม่ต้องรอ</td><td>migrate</td></tr>
     <tr><td class="m">--to &lt;ip&gt;</td><td>บังคับว่าจะไปลงเครื่องไหน</td><td>distribute</td></tr>
     <tr><td class="m">--dst &lt;id&gt;</td><td>บังคับว่าจะลง storage อะไร</td><td>distribute</td></tr>
+    <tr><td class="m">--final</td><td>รอบสุดท้าย ต้องปิด 9xxx ก่อน</td><td>recall</td></tr>
+    <tr><td class="m">--list</td><td>ดูแผนอย่างเดียว</td><td>distribute, recall</td></tr>
   </table>
-  <p>รหัสออกก็ชุดเดียวกันทั้ง 3 ตัว: <code class="inl">0</code> ปกติ,
+  <p>รหัสออกก็ชุดเดียวกันทั้ง 5 ตัว: <code class="inl">0</code> ปกติ,
      <code class="inl">1</code> มีอย่างน้อยหนึ่ง CT ไม่ผ่านหรือถูกข้าม,
      <code class="inl">2</code> ปฏิเสธตั้งแต่ยังไม่แตะอะไร ตัวกรองที่ไม่ match แถวไหนเลยไม่คืน 0 เด็ดขาด</p>
   <table>
@@ -529,7 +537,7 @@ cp -a /root/tp/state               ./state</pre></div>
     <li>ย้าย cron ทีละ lane ไม่ย้ายพร้อมกัน ดูสักรอบสองรอบว่า log ออกมาปกติก่อนค่อยย้าย lane ถัดไป</li>
     <li>ถอยกลับได้เสมอ — ของเก่ายังอยู่ครบ แค่ชี้ cron กลับไปที่ path เดิม ไม่ต้อง restore อะไร</li>
   </ol>
-  <div class="tip"><p><b>ทำไมต้องเปลี่ยนชื่อ</b> ตอน engine ทั้งสามตัวมาอยู่โฟลเดอร์เดียวกัน
+  <div class="tip"><p><b>ทำไมต้องเปลี่ยนชื่อ</b> ตอน engine หลายตัวมาอยู่โฟลเดอร์เดียวกัน
      ชื่อกลางๆ อย่าง <code class="inl">inventory.tsv</code> กลายเป็นของทุกคนและไม่ใช่ของใครเลย
      ทั้งที่คอลัมน์ข้างในคนละเรื่องกันสิ้นเชิง แยกชื่อแล้วเอาไฟล์ผิดมาใส่ไม่ได้อีก</p></div>
 </section>

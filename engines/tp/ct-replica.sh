@@ -8,9 +8,11 @@
 #  (pct snapshot) and started by hand during DR.
 #
 #  The backup node offers more than one destination pool (e.g. replica-hdd
-#  and replica-ssd); every CT picks its destination in the inventory, or
-#  falls back to DEFAULT_DEST. The dest key maps to a dataset AND a PVE
-#  storage id via BKP_DESTS in ctrep.conf.
+#  and replica-ssd). EVERY row in the inventory names its own, and a row that
+#  does not is refused: there is no default, because a copy landing on a pool
+#  nobody chose is the same guess this tool refuses everywhere else. The dest
+#  name IS the PVE storage id, and BKP_DESTS in ctrep.conf maps it to the
+#  parent dataset.
 #
 #  The copy gets the source's REAL network config - same IP, same MAC, same
 #  everything, including its VLAN tag - moved onto an ISOLATED bridge
@@ -36,7 +38,6 @@
 #                            from ct-migrate.sh's inventory-migrate.tsv on purpose:
 #                            they share a folder and their columns mean
 #                            different things
-#    exclude.tsv      CTIDs to skip when AUTO_DISCOVER=1
 #    PAUSE            create this file to stop all syncing (used during a
 #                     failback, when the copy holds the newer data)
 #    ../../logs/      daily log per lane in ketsync's one tree, auto-pruned
@@ -161,7 +162,6 @@ export PATH
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # folder is relocatable
 INV="$BASE/inventory-replica.tsv"
 CONF="$BASE/ctrep.conf"
-EXC="$BASE/exclude.tsv"
 
 # ---------- defaults (override in ctrep.conf, never here) ----------
 BKP_SSH="root@100.100.100.35"    # backup node, by IP. key auth required
@@ -174,13 +174,15 @@ BKP_NODE=""                      # its pmxcfs name. LEAVE EMPTY: the engine asks
 # `tank-hdd-nas` read like two spellings of one thing when they are opposite
 # ends of a transfer.
 BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
-DEFAULT_DEST="replica-hdd"       # rows without a dest, and auto-discovered CTs
 SRC_STORAGES="tank-hdd-nas tank-ssd-nas"  # storages this tool may read from
 OFFSET=8000                      # default tgt_ctid = src_ctid + OFFSET
 DR_OFFSET=9000                   # src_ctid + this = the temporary DR copy R13
                                  # looks for. Same knob, same ctrep.conf, as
                                  # ct-distribute.sh - they must never disagree
-AUTO_DISCOVER=0                  # 1 = every lxc in the cluster minus exclude.tsv
+AUTO_DISCOVER=0                  # REFUSED if set to 1: replicating a container
+                                 # with no inventory row means guessing which
+                                 # pool its copy belongs on, and there is no
+                                 # default any more. List them, with their dest
 LIVE_FALLBACK=0                  # 1 = allow syncing from LIVE images on non-ZFS
 MOCKNET=1                        # 1 = copy the source's real net* onto the island
 MOCKNET_BRIDGE=vmbr99            # must exist on the backup node, and have NO uplink
@@ -258,18 +260,33 @@ fi
 declare -A DEST_DS=()
 for _kv in $BKP_DESTS; do
   _k="${_kv%%:*}"; _ds="${_kv#*:}"
+  # The old form was key=dataset:storage-id - `hdd=replica-hdd/ct:replica-hdd`.
+  # It still contains a colon, so the shape check below never saw it: the entry
+  # parsed as a key of `hdd=replica-hdd/ct` and the run died three lines later
+  # saying DEFAULT_DEST was not a key, which points at the wrong line entirely.
+  # An `=` is the old file every time - a PVE storage id cannot contain one -
+  # and every fleet upgrading has that line in ctrep.conf today. This engine
+  # shipped one itself for a week.
+  if [[ "$_kv" == *=* ]]; then
+    echo "ctrep.conf: BKP_DESTS entry '$_kv' is the OLD key=dataset:storage-id form" >&2
+    echo "ctrep.conf:   the short key ('hdd', 'ssd') is gone. The key IS the storage id now:" >&2
+    echo "ctrep.conf:   BKP_DESTS=\"replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct\"" >&2
+    echo "ctrep.conf:   every row in inventory-replica.tsv names one of those, and" >&2
+    echo "ctrep.conf:   a row without a dest is refused - there is no default." >&2
+    exit 2
+  fi
   if [[ -z "$_k" || "$_kv" != *:* || -z "$_ds" ]]; then
     echo "ctrep.conf: BKP_DESTS entry '$_kv' is not storage-id:dataset" >&2
-    echo "ctrep.conf:   the old form was key=dataset:storage-id, with a short key" >&2
-    echo "ctrep.conf:   like 'hdd'. Write the storage id itself now:" >&2
     echo "ctrep.conf:   BKP_DESTS=\"replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct\"" >&2
     exit 2
   fi
   DEST_DS[$_k]="$_ds"
 done
-if [[ -z "${DEST_DS[$DEFAULT_DEST]:-}" ]]; then
-  echo "ctrep.conf: DEFAULT_DEST='$DEFAULT_DEST' is not a key in BKP_DESTS ($BKP_DESTS)" >&2; exit 2
-fi
+# There is no DEFAULT_DEST any more, and that is deliberate. It was the last
+# fallback left in this system: a row with no dest column silently landed on
+# whichever pool that variable happened to name, which is a customer's DR copy
+# on a pool nobody chose. Every row says where its copy goes, or the run is
+# refused - the same rule fleet.tsv's dst column already follows.
 
 # Static split, not dynamic: a lane that computed its share while alone would
 # keep it after a second lane starts, and together they would break the
@@ -410,7 +427,7 @@ log "=== $(hostname) lane=$LANE bw=$BWLIMIT (total ${BW_TOTAL_MB}m / $LANES lane
 # ---------- inventory: parse + preflight in one pass ----------
 # columns:  src_ctid  [fields in any order]
 #   a NUMERIC field        -> tgt_ctid (default src_ctid + OFFSET)
-#   a key from BKP_DESTS   -> destination (default DEFAULT_DEST)
+#   a key from BKP_DESTS   -> destination pool. REQUIRED, no default
 #   anything else          -> SOURCE storage assertion, verified later
 # '#' starts a comment, whole-line or inline. The whole file is refused when a
 # field cannot be classified, a field kind repeats, the same src_ctid appears
@@ -470,6 +487,13 @@ if [[ -f "$INV" ]]; then
         stor="$f"
       fi
     done
+    # No dest, no run. This used to fall through to DEFAULT_DEST, which put a
+    # customer's copy on whichever pool that variable named - and the row that
+    # forgot it looked exactly like a row that meant it.
+    if [[ -z "$dest" ]]; then
+      INV_ERRS+=("line $ln: CT $c has no dest column. Every row names its pool: ${!DEST_DS[*]}")
+      continue
+    fi
     [[ -z "$tgt" ]] && tgt=$(( c + OFFSET ))
     if [[ -n "${SEEN_TGT[$tgt]:-}" ]]; then
       INV_ERRS+=("line $ln: target VMID $tgt already produced by line ${SEEN_TGT[$tgt]} - two sources would sync into one copy")
@@ -477,7 +501,7 @@ if [[ -f "$INV" ]]; then
     fi
     SEEN_TGT[$tgt]=$ln
     TGT_MAP[$c]=$tgt
-    [[ -n "$dest" ]] && DEST_MAP[$c]="$dest"
+    DEST_MAP[$c]="$dest"
     [[ -n "$stor" ]] && STOR_ASSERT[$c]="$stor"
     INV_CTS+=("$c")
   done < "$INV"
@@ -569,32 +593,19 @@ if (( MOCKNET )); then
 fi
 
 declare -a CTS=()
+# AUTO_DISCOVER replicates every container in the cluster, including ones with
+# no inventory row - and a container with no row has nothing that says which
+# pool its copy belongs on. That used to be DEFAULT_DEST's job. With no
+# fallback the mode cannot answer the question at all, so it refuses here
+# rather than picking a pool on a customer's behalf.
 if (( AUTO_DISCOVER )); then
-  # No jq: Proxmox ships neither jq nor a guaranteed python3, and this used to
-  # call `jq -r` here - which on a real node means the pipe produces nothing,
-  # CTS comes back empty, and the run exits 0 saying "nothing to do". Under
-  # cron that is indistinguishable from a healthy night.
-  # /cluster/resources returns a flat array of flat objects, so splitting on
-  # '{' puts one resource per line and the type and the vmid of the SAME
-  # resource are then on the same line, whatever order the keys came in.
-  mapfile -t CTS < <(ssh $SSH_OPT "$BKP_SSH" \
-      "pvesh get /cluster/resources --type vm --output-format json" </dev/null 2>>"$LOG" \
-    | tr '{' '\n' \
-    | grep '"type"[[:space:]]*:[[:space:]]*"lxc"' \
-    | sed -n 's/.*"vmid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
-    | grep -vxFf <(grep -v '^#' "$EXC" 2>/dev/null || true) | sort -n)
-  # An empty discover is NOT "nothing to do". Something answered wrong: ssh
-  # failed, pvesh is not there, the cluster returned no lxc at all. Exiting 0
-  # here is what makes a broken cron look green.
-  if [[ ${#CTS[@]} -eq 0 || -z "${CTS[0]:-}" ]]; then
-    log "ERROR: AUTO_DISCOVER=1 but the cluster returned no container - NOTHING was run"
-    log "ERROR:   check: ssh $BKP_SSH 'pvesh get /cluster/resources --type vm --output-format json'"
-    log "ERROR:   if the fleet really has no CT, set AUTO_DISCOVER=0 and use $INV"
-    exit 2
-  fi
-else
-  CTS=("${INV_CTS[@]:-}")
+  log "ERROR: AUTO_DISCOVER=1 is not usable without a default destination - NOTHING was run"
+  log "ERROR:   there is no DEFAULT_DEST any more, on purpose: a copy landing on a"
+  log "ERROR:   pool nobody chose is the guess this tool refuses everywhere else."
+  log "ERROR:   list the containers you replicate in $(basename "$INV"), each with its dest."
+  exit 2
 fi
+CTS=("${INV_CTS[@]:-}")
 if [[ ${#CTS[@]} -eq 0 || -z "${CTS[0]:-}" ]]; then
   # The file exists and parsed, it just names nobody. That is a legitimate
   # state - somebody commented every row out - so it is not an error, but say
@@ -988,7 +999,7 @@ for CT in "${CTS[@]}"; do
   st_reset
   [[ -n "$ONLY_CTID" && "$CT" != "$ONLY_CTID" ]] && continue
   TGT=${TGT_MAP[$CT]:-$(( CT + OFFSET ))}
-  DEST=${DEST_MAP[$CT]:-$DEFAULT_DEST}
+  DEST=${DEST_MAP[$CT]}
   # armed here: from now on failures are recorded. The lane filter below clears
   # it again, so a CT that belongs to the other lane never gets a state file
   # written by this one.

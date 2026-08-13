@@ -53,9 +53,9 @@ Split-brain still happens. It just stops costing anything.
 
 ### What that is, in the engines
 
-Built, and the same code in all four: `ct-replica.sh` R14, `ct-failback.sh`
-B8, `ct-distribute.sh` D8, `ct-recall.sh` C8. This paragraph described a design for months while
-every engine took a *local* `flock` instead — replica's keyed on the copy id,
+Built, and the same code in all four: `ct-replica.sh` R14, `ct-failback.sh` B8,
+`ct-distribute.sh` D8, `ct-recall.sh` C8. This paragraph described a design for
+months while every engine took a *local* `flock` instead — replica's keyed on the copy id,
 failback's on the production id, distribute's on nothing but the run — which
 between two machines settles nothing at all, and on one machine still let
 failback read a copy that replica was writing.
@@ -91,6 +91,33 @@ then delete a lock a live transfer is relying on.
 compute node, then 8xxx on the backup node, in that order. A fixed order is
 what keeps it from deadlocking against the other three, each of which takes
 exactly one - a cycle needs two engines that each take two.
+
+### The last fallback, and why it is gone
+
+`ctrep.conf` had `DEFAULT_DEST`, and a row in `inventory-replica.tsv` with no
+dest column landed on whichever pool it named. That is the same shape as
+`fleet.tsv`'s old fallback storage, and it was removed for the same reason: the
+row that FORGOT to say where its copy goes looked exactly like the row that
+meant it, and what arrives on the wrong pool is a customer's only DR copy.
+
+Every row now names its pool and a row that does not refuses the whole file,
+naming the line. Three things followed from that, and all three are
+improvements the fallback had been hiding:
+
+`AUTO_DISCOVER` is gone. It replicated every container in the cluster,
+including ones with no row, and `DEFAULT_DEST` was the only thing that could
+say where those copies went. Without it the mode cannot answer the question at
+all, so it refuses rather than choosing.
+
+`ct-failback.sh --ctid` on a container with no row is refused. It used to
+derive both numbers - the target from `OFFSET`, the pool from `DEFAULT_DEST` -
+and the first is arithmetic while the second was a guess. A container that had
+been on the other pool was then looked for on the wrong one, where "not found"
+reads as "no copy" rather than "wrong pool".
+
+An unknown word in the dest column stopped being reachable. A field is only
+classified as a dest when it IS a key in `BKP_DESTS`, so with no default the
+"unknown dest" branch in `ct-recall.sh` could never fire, and it is gone too.
 
 ## 3. One writer for the fleet map, ordered by a generation number
 
@@ -275,7 +302,7 @@ There is deliberately no PAUSE requirement, unlike `ct-failback`'s `--final`.
 R13 keys on the `9300` config existing rather than on it running, so it holds
 through the shutdown, through `--final`, and until a human destroys it.
 
-48 scenarios, 41 mutations.
+51 scenarios, 46 mutations.
 
 ## 7. `status` — designed, not built
 
@@ -352,8 +379,8 @@ doctor` says so on the next good day.
     ketsync failback     tp's
     ketsync distribute   tp's - engines/tp/ct-distribute.sh, 46 scenarios,
                          50 mutations. See section 5
-    ketsync recall       tp's - engines/tp/ct-recall.sh, 48 scenarios,
-                         41 mutations. See section 6
+    ketsync recall       tp's - engines/tp/ct-recall.sh, 51 scenarios,
+                         46 mutations. See section 6
     ketsync status       tp's
 
 Nothing here is a stub any more. ketsync's own `tests/` covers `sync` and not

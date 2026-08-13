@@ -62,8 +62,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 305 tp scenarios + 21 for ketsync sync
-    make mutation # 279 known bugs put back. None may survive
+    make test     # both layers: 309 tp scenarios + 21 for ketsync sync
+    make mutation # 286 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -82,10 +82,9 @@ being separate when they stopped being empty.
                          has a way to check it worked, and every refusal in the
                          engines has a row in its troubleshooting table
     docs/disaster-recovery.html
-                         the storage node is dead. Drives ketsync distribute,
-                         says plainly that recall is still hand-work, and
-                         carries the PAUSE-before-cron step that is the
-                         difference between a recovery and a data loss
+                         the storage node is dead. Six stages, each with its
+                         own command, and it says where the point of no return
+                         is - nothing before stage 5 is irreversible
     docs/start-here.html the operator's front door. If you change what an
                          operator types, change it here too. Section 4 is the
                          master/slave sync setup - the part people got wrong

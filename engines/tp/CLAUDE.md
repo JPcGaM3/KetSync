@@ -35,9 +35,9 @@ halves, do not touch the engine — say so instead.
 
     ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
     ct-replica.sh    tests/mutation/run-mutation-replica.sh     57 mutations
-    ct-failback.sh   tests/mutation/run-mutation-failback.sh    58 mutations
-    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  50 mutations
-    ct-recall.sh     tests/mutation/run-mutation-recall.sh      41 mutations
+    ct-failback.sh   tests/mutation/run-mutation-failback.sh    59 mutations
+    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  51 mutations
+    ct-recall.sh     tests/mutation/run-mutation-recall.sh      46 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
@@ -81,10 +81,13 @@ copies of one host must never be reachable at once. R9 verifies the bridge has
 no uplink before every run, and R11 warns when a promoted copy was never put
 back. Do not weaken either.
 
-**5. `new_node` and `storage` have no defaults, and neither does a dest.**
-A row missing one is an ERROR and is skipped. Never guess, never fall back to a
-"sensible" value. Guessing puts a container on the wrong node or a DR copy on
-the wrong pool.
+**5. Nothing has a default. Not `new_node`, not `storage`, not a dest.**
+A row missing one is an ERROR - the inventory ones refuse the whole file,
+naming the line. There is no `DEFAULT_DEST` any more and there must not be a
+next one: it was the last fallback here, and what it did was make the row that
+FORGOT its pool look exactly like the row that meant it. `AUTO_DISCOVER` went
+with it - replicating a container that has no row means guessing where its
+copy goes, and there is nothing left to guess with.
 
 **6. No `jq`, no guaranteed `python3` in the engines.**
 Proxmox ships neither. The engines depend on neither and their state files stay
@@ -119,8 +122,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 76 + 69 + 46 + 48 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 57 + 58 + 50 + 41 engine + 9 dispatcher bugs, all caught
+    make test       # 66 + 75 + 70 + 47 + 51 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 57 + 59 + 51 + 46 engine + 9 dispatcher bugs, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did
@@ -303,10 +306,14 @@ and a dry run may mount only `ro`.
         cutting over" are different intentions. No PAUSE requirement, because
         R13 keys on the config existing rather than on it running
     C5  the destination dataset must report mounted=yes. R3, restated
-    C6  a verified mountpoint before rsync, read-only with noload - a live
-        container is writing to that filesystem and replaying its journal from
-        the outside corrupts it. A zfspool volume is the storage's own mount:
-        never mounted by this engine and never unmounted by it
+    C6  a real, already-mounted filesystem before rsync, and WHOSE mount it is
+        depends on the container's state. RUNNING and block-backed: the
+        container's own, at /proc/<pid>/root, because LXC already has that
+        device mounted rw and ext4 refuses to add a ro mount of it - which is
+        how this failed on the fleet, on the first real presync round.
+        STOPPED: the device is nobody's, so mount it ro,noload. zfspool: the
+        storage's own mount, never mounted or unmounted by this engine.
+        rsync carries -x, because the running path is a mount namespace
     C7  nothing is started, stopped or destroyed. `pct destroy 9<id>` is what
         releases R13, and releasing that on unchecked data cannot be undone
     C8  BOTH ends locked where they live, 9<id> first then 8<id>. The only

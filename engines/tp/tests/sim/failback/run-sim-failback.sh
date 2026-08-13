@@ -107,7 +107,7 @@ new_world(){
   ln -s "$ENGINE" "$WORK/ct-failback.sh"
   write_conf
   write_nodemap
-  inventory "105" "113	replica-ssd" "121	9121	replica-ssd"
+  inventory "105	replica-hdd" "113	replica-ssd" "121	9121	replica-ssd"
 }
 
 # ---------- this node ----------
@@ -216,7 +216,6 @@ write_conf(){
   cat > "$WORK/ctrep.conf" <<EOF
 BKP_SSH="root@100.100.100.35"
 BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
-DEFAULT_DEST="replica-hdd"
 OFFSET=8000
 BW_TOTAL_MB=230
 LANES=1
@@ -436,17 +435,18 @@ if scenario "6: --ctid does one CT and leaves the other two alone"; then
   done_scenario
 fi
 
-if scenario "7: --ctid works for a CT that is no longer in the inventory"; then
-  # a CT pulled out of replication still has to be failed back by hand, so the
-  # engine derives tgt and dest rather than refusing - and the derived dest is
-  # DEFAULT_DEST, which is why a CT that was on the other tier fails loudly at
-  # the mountpoint lookup instead of quietly restoring the wrong data
+if scenario "7: --ctid for a CT with no row is refused, not derived"; then
+  # This used to work: the engine derived tgt from OFFSET and dest from
+  # DEFAULT_DEST. The first is arithmetic, the second was a guess - and a CT
+  # that had been on the other pool then got looked for on the wrong one,
+  # where "not found" reads as "no copy" rather than "wrong pool".
   inventory "113	replica-ssd"
   run_engine --ctid 105
-  rc_is 0; clean
-  has "[105] RESTORE <= root@100.100.100.35:/replica-hdd/ct/subvol-8105-disk-0/"
-  has "ok=1 skipped=0 failed=0"
-  image_has 105 "generation 7"
+  rc_is 2
+  has "CT 105 has no row in inventory-replica.tsv"
+  has "the row is what says which pool its copy is on"
+  untraced "rsync"
+  image_hasnt 105 "generation 7"
   done_scenario
 fi
 
@@ -461,7 +461,7 @@ fi
 
 if scenario "9: a --dest that matches no row is loud, not a quiet success"; then
   # under cron, exit 0 with no work done during a disaster reads as "all back"
-  inventory "105"
+  inventory "105	replica-hdd"
   run_engine --all --dest replica-ssd
   rc_is 1
   has "ERROR: no CT in"; has "has dest 'replica-ssd' - nothing was failed back"
@@ -478,6 +478,7 @@ if scenario "10: a --dest key that is not in BKP_DESTS refuses before anything r
 fi
 
 if scenario "11: a --ctid that is nowhere in the cluster is loud too"; then
+  inventory "105	replica-hdd" "999	replica-hdd"
   run_engine --ctid 999
   rc_is 1; clean
   has "[999] ERROR: cannot resolve this CT in the cluster"
@@ -520,14 +521,18 @@ if scenario "13b: a MISSING inventory says so, and says which file it wanted"; t
   done_scenario
 fi
 
-if scenario "13c: a missing inventory does not block an explicit --ctid"; then
-  # during a disaster the CT being recovered may already have been taken out of
-  # replication; refusing it because a list file is absent helps nobody
+if scenario "13c: a missing inventory blocks an explicit --ctid, and says why"; then
+  # This used to be allowed, on the grounds that during a disaster the CT being
+  # recovered may already have been taken out of replication. It worked only
+  # because DEFAULT_DEST answered which pool the copy was on. Without a default
+  # the file is the only thing that knows, so its absence is a refusal - and
+  # restoring a customer from a pool nobody chose is the worse outcome.
   rm -f "$WORK/inventory-replica.tsv"
   run_engine --ctid 105
-  rc_is 0; clean
-  has "[105] OK <= 8105"
-  image_has 105 "generation 7"
+  rc_is 2
+  has "CT 105 has no row in inventory-replica.tsv"
+  untraced "rsync"
+  image_hasnt 105 "generation 7"
   done_scenario
 fi
 
@@ -666,7 +671,7 @@ fi
 if scenario "24: B3 a storage id this node does not have is an error, not a guess"; then
   add_prod_ct pve01 131 tank-nvme-nas 10G
   add_copy 8131 replica-hdd running 131
-  inventory "131"
+  inventory "131	replica-hdd"
   run_engine --all
   rc_is 1; clean
   has "[131] ERROR: storage 'tank-nvme-nas' unknown on THIS node"
@@ -1054,7 +1059,7 @@ if scenario "55: a copy id typed instead of a source id is told which one to use
   # 9110 is the number on the screen during a DR, so it is the number that gets
   # typed. The tool is driven by the SOURCE id.
   run_engine --ctid 8105
-  rc_is 1
+  rc_is 2
   has "8105 is the COPY of CT 105"
   has "--ctid 105"
   untraced "rsync"
@@ -1235,6 +1240,19 @@ if scenario "69: B2 a backup node that cannot answer does not become a reason to
   bkp_down
   run_engine --ctid 105
   rc_is 2
+  untraced "rsync"
+  done_scenario
+fi
+
+if scenario "70: the OLD BKP_DESTS format is named, not read as a working map"; then
+  # This engine had no validation on that map at all: an old entry parsed as a
+  # key of `hdd=replica-hdd/ct`, every row fell through to DEFAULT_DEST, and
+  # the run failed somewhere else entirely.
+  conf_set BKP_DESTS '"hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"'
+  run_engine --ctid 105
+  rc_is 2
+  has "is the OLD key=dataset:storage-id form"
+  has 'BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"'
   untraced "rsync"
   done_scenario
 fi

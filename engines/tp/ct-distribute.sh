@@ -158,7 +158,6 @@ BKP_NODE=""                      # pmxcfs name, discovered - see ct-replica.sh
 # short alias any more. "hdd" and "ssd" meant nothing to anybody who had not
 # read this file.
 BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
-DEFAULT_DEST="replica-hdd"
 OFFSET=8000                      # production id -> DR copy id
 DR_OFFSET=9000                   # production id -> temporary compute-node id
 DR_HEADROOM_PCT=25               # refuse if the target would be left tighter
@@ -324,6 +323,21 @@ MODE=distribute; (( DRY )) && MODE="distribute/dry-run"; (( LIST )) && MODE=list
 declare -A DEST_DS=()
 for _e in $BKP_DESTS; do
   _k="${_e%%:*}"; DEST_DS[$_k]="${_e#*:}"
+  # The old form was key=dataset:storage-id - `hdd=replica-hdd/ct:replica-hdd`.
+  # It still contains a colon, so nothing here noticed: the entry parsed as a
+  # key of `hdd=replica-hdd/ct`, every row then fell through to DEFAULT_DEST,
+  # and the run failed somewhere else entirely. An `=` is the old file every
+  # time - a PVE storage id cannot contain one - and every fleet upgrading has
+  # that line in ctrep.conf today. Refused here rather than three engines
+  # deep, and worded identically in all four: it is one file.
+  if [[ "$_e" == *=* ]]; then
+    echo "ctrep.conf: BKP_DESTS entry '$_e' is the OLD key=dataset:storage-id form" >&2
+    echo "ctrep.conf:   the short key ('hdd', 'ssd') is gone. The key IS the storage id now:" >&2
+    echo "ctrep.conf:   BKP_DESTS=\"replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct\"" >&2
+    echo "ctrep.conf:   every row in inventory-replica.tsv names one of those, and" >&2
+    echo "ctrep.conf:   a row without a dest is refused - there is no default." >&2
+    exit 2
+  fi
 done
 
 # ---------- the CT list, from ct-replica's inventory ----------
@@ -334,7 +348,9 @@ if [[ ! -f "$INV" ]]; then
   log "ERROR:   start from the sample:  cp $BASE/inventory-replica.sample.tsv $INV"
   exit 2
 fi
+declare -a INV_ERRS=(); ln=0
 while IFS= read -r line || [[ -n "${line:-}" ]]; do
+  ln=$(( ln + 1 ))
   line="${line%%#*}"; read -r c rest <<<"$line" || true
   [[ "${c:-}" =~ ^[0-9]+$ ]] || continue
   t=""; dd=""
@@ -343,10 +359,23 @@ while IFS= read -r line || [[ -n "${line:-}" ]]; do
     elif [[ -n "${DEST_DS[$f]:-}" ]]; then dd="$f"
     fi
   done
+  # No dest, no run. This used to fall through to DEFAULT_DEST, which pointed
+  # this engine at whichever pool that variable named - and a copy that is not
+  # there reads as "no copy", not as "wrong pool".
+  if [[ -z "$dd" ]]; then
+    INV_ERRS+=("line $ln: CT $c has no dest column. Every row names its pool: ${!DEST_DS[*]}")
+    continue
+  fi
   SRC_MAP[$c]=${t:-$(( c + OFFSET ))}
-  DEST_MAP[$c]=${dd:-$DEFAULT_DEST}
+  DEST_MAP[$c]="$dd"
   CTS+=("$c")
 done < "$INV"
+if (( ${#INV_ERRS[@]} )); then
+  log "ERROR: inventory is broken - NOTHING was run"
+  for _e in "${INV_ERRS[@]}"; do log "ERROR:   $_e"; done
+  log "ERROR: fix $INV, then run again"
+  exit 2
+fi
 
 if [[ -n "$ONLY_CTID" ]]; then
   _keep=()

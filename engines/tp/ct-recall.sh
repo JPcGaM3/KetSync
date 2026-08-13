@@ -121,9 +121,19 @@
 #       into one fills the backup node's root filesystem. Identical to
 #       ct-replica R3, for the identical reason.
 #
-#   C6  the source volume must be a verified mountpoint before rsync runs, by
-#       shape. rsync out of a path that was never mounted copies an empty
-#       directory, and --delete on the far end then empties the DR copy.
+#   C6  the source must be a real, already-mounted filesystem before rsync
+#       runs - and WHOSE mount it is depends on the state, not just the shape:
+#         zfspool          the storage's own mount. The container bind-mounts
+#                          it, so there is one mount and both read it
+#         running, block   the CONTAINER'S mount, reached through its mount
+#         or image         namespace at /proc/<pid>/root. A second mount of a
+#                          device LXC already has is not possible and must not
+#                          be: ext4 refuses ro against its rw mount outright,
+#                          and rw would be two kernels writing one journal
+#         stopped          the device is nobody's, so mount it ro,noload
+#       rsync out of a path nothing mounted copies an empty directory, and
+#       --delete on the far end then empties the DR copy - which is why this
+#       verifies rather than assumes, in all three cases.
 #
 #   C7  nothing is started, stopped or destroyed, ever. When the last round is
 #       done this prints the `pct destroy 9<id>` and the `pct set <id>
@@ -161,7 +171,6 @@ fi
 BKP_SSH="root@100.100.100.35"
 BKP_NODE=""                      # pmxcfs name, discovered - see ct-replica.sh
 BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
-DEFAULT_DEST="replica-hdd"
 OFFSET=8000                      # production id -> DR copy id
 DR_OFFSET=9000                   # production id -> temporary compute-node id
 BW_TOTAL_MB=230
@@ -298,6 +307,21 @@ MODE=presync; (( FINAL )) && MODE=final
 declare -A DEST_DS=()
 for _e in $BKP_DESTS; do
   _k="${_e%%:*}"; DEST_DS[$_k]="${_e#*:}"
+  # The old form was key=dataset:storage-id - `hdd=replica-hdd/ct:replica-hdd`.
+  # It still contains a colon, so nothing here noticed: the entry parsed as a
+  # key of `hdd=replica-hdd/ct`, every row then fell through to DEFAULT_DEST,
+  # and the run failed somewhere else entirely. An `=` is the old file every
+  # time - a PVE storage id cannot contain one - and every fleet upgrading has
+  # that line in ctrep.conf today. Refused here rather than three engines
+  # deep, and worded identically in all four: it is one file.
+  if [[ "$_e" == *=* ]]; then
+    echo "ctrep.conf: BKP_DESTS entry '$_e' is the OLD key=dataset:storage-id form" >&2
+    echo "ctrep.conf:   the short key ('hdd', 'ssd') is gone. The key IS the storage id now:" >&2
+    echo "ctrep.conf:   BKP_DESTS=\"replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct\"" >&2
+    echo "ctrep.conf:   every row in inventory-replica.tsv names one of those, and" >&2
+    echo "ctrep.conf:   a row without a dest is refused - there is no default." >&2
+    exit 2
+  fi
 done
 
 # ---------- the CT list, from ct-replica's inventory ----------
@@ -311,7 +335,9 @@ if [[ ! -f "$INV" ]]; then
   log "ERROR:   start from the sample:  cp $BASE/inventory-replica.sample.tsv $INV"
   exit 2
 fi
+declare -a INV_ERRS=(); ln=0
 while IFS= read -r line || [[ -n "${line:-}" ]]; do
+  ln=$(( ln + 1 ))
   line="${line%%#*}"; read -r c rest <<<"$line" || true
   [[ "${c:-}" =~ ^[0-9]+$ ]] || continue
   t=""; dd=""
@@ -320,10 +346,23 @@ while IFS= read -r line || [[ -n "${line:-}" ]]; do
     elif [[ -n "${DEST_DS[$f]:-}" ]]; then dd="$f"
     fi
   done
+  # No dest, no run. This used to fall through to DEFAULT_DEST, which pointed
+  # this engine at whichever pool that variable named - and a copy that is not
+  # there reads as "no copy", not as "wrong pool".
+  if [[ -z "$dd" ]]; then
+    INV_ERRS+=("line $ln: CT $c has no dest column. Every row names its pool: ${!DEST_DS[*]}")
+    continue
+  fi
   TGT_MAP[$c]=${t:-$(( c + OFFSET ))}
-  DEST_MAP[$c]=${dd:-$DEFAULT_DEST}
+  DEST_MAP[$c]="$dd"
   CTS+=("$c")
 done < "$INV"
+if (( ${#INV_ERRS[@]} )); then
+  log "ERROR: inventory is broken - NOTHING was run"
+  for _e in "${INV_ERRS[@]}"; do log "ERROR:   $_e"; done
+  log "ERROR: fix $INV, then run again"
+  exit 2
+fi
 
 if [[ -n "$ONLY_CTID" ]]; then
   _keep=()
@@ -613,11 +652,11 @@ do_ct(){   # $1 = production ctid
   # ---- where the bytes are going, on the backup node ----------------------
   local dest="${DEST_MAP[$ct]}"
   CT_DSTDS="${DEST_DS[$dest]:-}/subvol-$CT_TGT-disk-0"
-  if [[ -z "${DEST_DS[$dest]:-}" ]]; then
-    log "[$ct] ERROR: dest '$dest' is not in BKP_DESTS - NOTHING was transferred"
-    log "[$ct] ERROR:   known dests: ${!DEST_DS[*]}"
-    st_fail "$ct" dest_unknown; return 1
-  fi
+  # No check that $dest is a known key: it cannot be anything else. A field is
+  # only classified as a dest when it IS a key, and a row with no dest is
+  # refused when the inventory is read. The check that used to live here was
+  # unreachable the moment DEFAULT_DEST - the one way an unknown value could
+  # get this far - was removed.
 
   # ---- GUARD C5: that dataset must be MOUNTED ----------------------------
   # An unmounted dataset is an ordinary empty directory. rsync --delete into
@@ -756,6 +795,9 @@ do_ct(){   # $1 = production ctid
     st_fail "$ct" no_path; return 1
   fi
   if [[ "$shape" == dataset ]]; then
+    # The storage's own mount, and the container reaches it by bind-mount, so
+    # there is one mount and both of us read it. We never mounted it and we
+    # never unmount it: doing so would take a live container's rootfs away.
     mnt="$vpath"
     if ! rsh "$CT_FROM" "mountpoint -q '$mnt'"; then
       log "[$ct] GUARD C6: $mnt on $CT_FROMNODE is not a mountpoint - NOTHING was transferred"
@@ -763,11 +805,44 @@ do_ct(){   # $1 = production ctid
       log "[$ct] GUARD C6:   far end would empty copy $CT_TGT to match it."
       st_fail "$ct" src_not_mounted; return 1
     fi
+  elif [[ "$drstat" == running ]]; then
+    # A block device or a loop-backed raw file is ALREADY mounted, by the
+    # container, read-write. Mounting it a second time read-only does not work
+    # and must not: ext4 refuses it outright -
+    #
+    #     mount warning: * dm-6: Can't mount, would change RO state
+    #
+    # and the only way to make it succeed would be to mount it rw a second
+    # time, which is two kernels writing one journal. This engine did exactly
+    # that on the first live presync round and C6 caught it - the guard held,
+    # but it was refusing every running container, which is every presync round
+    # there is.
+    #
+    # So the mount is not made at all: the container's own is reused, through
+    # its mount namespace. That is what a presync round should read anyway - a
+    # live filesystem, slightly torn, superseded by the --final round below
+    # when the container is stopped and the device is free.
+    local _pid
+    _pid=$(rsh "$CT_FROM" "lxc-info -n $CT_DR -pH 2>/dev/null" | tr -cd '0-9')
+    if [[ -z "$_pid" || "$_pid" == 0 ]]; then
+      log "[$ct] GUARD C6: CT $CT_DR reports running but $CT_FROMNODE gave no pid for it"
+      log "[$ct] GUARD C6:   its rootfs is reached through that process, so there is nothing"
+      log "[$ct] GUARD C6:   to read. NOTHING was transferred."
+      log "[$ct] GUARD C6:   check: ssh root@$CT_FROM lxc-info -n $CT_DR -pH"
+      st_fail "$ct" no_dr_pid; return 1
+    fi
+    mnt="/proc/$_pid/root"
+    if ! rsh "$CT_FROM" "test -d '$mnt/etc'"; then
+      log "[$ct] GUARD C6: $mnt on $CT_FROMNODE does not look like a root filesystem"
+      log "[$ct] GUARD C6:   NOTHING was transferred - reading the wrong path and then"
+      log "[$ct] GUARD C6:   running --delete on the far end would empty copy $CT_TGT."
+      st_fail "$ct" src_not_mounted; return 1
+    fi
   else
-    # A raw file needs a loop device; a block device does not. That is the only
-    # difference between the two read shapes, and it is one word. Read-only,
-    # with noload: a live container is writing to this filesystem right now and
-    # replaying its journal from the outside is how it gets corrupted.
+    # Stopped, so the device is nobody's. A raw file needs a loop device; a
+    # block device does not, and that is the only difference between the two
+    # read shapes. Read-only with noload, because replaying a journal that was
+    # not cleanly closed is a write into the one copy of the customer's data.
     local mopt="-o ro,noload"; [[ "$shape" == image ]] && mopt="-o loop,ro,noload"
     mnt="/var/tmp/ctrec-$CT_DR"
     if ! rsh "$CT_FROM" "mkdir -p '$mnt' && mount $mopt '$vpath' '$mnt' && mountpoint -q '$mnt'"; then
@@ -790,7 +865,11 @@ do_ct(){   # $1 = production ctid
   # a mistake in it would be invisible.
   local t0 t1 out
   t0=$(date +%s)
-  out=$(rsh "$CT_FROM" "rsync -aHAX --numeric-ids --sparse --delete --bwlimit=${bw}m --stats \
+  # -x, one file system, and it is doing real work in the running case: the
+  # path is the container's own root, so everything it has mounted is under it
+  # - /proc, /sys, /dev, and any mp0 the operator added. A copy is the rootfs
+  # and nothing else, which is the same rule ct-replica follows.
+  out=$(rsh "$CT_FROM" "rsync -aHAX -x --numeric-ids --sparse --delete --bwlimit=${bw}m --stats \
       -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
       '$mnt/' '$BKP_SSH:$CT_DSTMNT/' 2>/dev/null; echo rc=\$?")
   t1=$(date +%s); RS_SECS=$(( t1 - t0 ))

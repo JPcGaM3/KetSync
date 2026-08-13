@@ -111,7 +111,7 @@ new_world(){
   ln -s "$ENGINE" "$WORK/ct-recall.sh"
   write_conf
   write_nodemap
-  inventory "300" "113" "121	replica-ssd"
+  inventory "300	replica-hdd" "113	replica-hdd" "121	replica-ssd"
 }
 
 # ---------- the compute nodes ----------
@@ -166,6 +166,16 @@ place(){ # src_ctid ip node storage status [marker-ctid] [marker-copy]
   # and must never unmount it, so the world declares it mounted from the start.
   [[ "$(cat "$SIMROOT/srcs/$ip/storage/$sid.type")" == zfspool ]] \
     && add_mount "$SIMROOT/srcs/$ip/vols/$sid/$vol" "$ip" "$SIMROOT/srcs/$ip/vols/$sid/$vol" own
+  # A RUNNING container has its rootfs mounted already, by LXC, and the host
+  # reaches that mount through the container's mount namespace. That mount is
+  # the only one there will ever be for this device - which is the whole point
+  # of the running branch of C6 - so the world holds it the same way, with the
+  # volume's directory standing in for what is behind /proc/<pid>/root.
+  if [[ "$st" == running ]]; then
+    printf '%s\n' "$(( 4000 + dr % 1000 ))" > "$SIMROOT/srcs/$ip/ct/$dr.pid"
+    mkdir -p "$SIMROOT/srcs/$ip/vols/$sid/$vol/etc"
+    add_mount "/proc/$(( 4000 + dr % 1000 ))/root" "$ip" "$SIMROOT/srcs/$ip/vols/$sid/$vol" own
+  fi
   return 0; }
 # The marker line is the only thing that says which side is newer. A scenario
 # can strip it, or make it name a different container, and the engine has to
@@ -220,7 +230,6 @@ write_conf(){
   cat > "$WORK/ctrep.conf" <<EOF
 BKP_SSH="root@$BKP_HOST"
 BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
-DEFAULT_DEST="replica-hdd"
 OFFSET=8000
 DR_OFFSET=9000
 BW_TOTAL_MB=230
@@ -335,12 +344,31 @@ if scenario "3: --all does every container that has a live 9<id>"; then
   done_scenario
 fi
 
-if scenario "4: the block volume is mounted read-only with noload, and unmounted after"; then
-  # A live container is writing to this filesystem. rw would corrupt it and ro
-  # without noload replays its journal, which corrupts it more quietly.
+if scenario "4: a RUNNING container's device is never mounted a second time"; then
+  # LXC already has it mounted read-write. ext4 refuses to add a read-only
+  # mount of the same device - "Can't mount, would change RO state" - and the
+  # only way to make it succeed is a second rw mount, which is two kernels
+  # writing one journal. So this engine reads the container's own mount, and
+  # the fake records a violation for anything else.
   run_engine --ctid 300
   rc_is 0; clean
+  untraced "mount -o"
+  traced "lxc-info -n 9300"
+  has "[300] OK -> 8300 (rc=0)"
+  copy_has 8300 replica-hdd "generation 9"
+  nothing_mounted
+  done_scenario
+fi
+
+if scenario "4b: a STOPPED container's device IS mounted, read-only with noload"; then
+  # Nobody has it now, so the device is this engine's to mount - and replaying
+  # a journal that was not cleanly closed is a write into the one copy of the
+  # customer's data, so noload is not optional.
+  dr_state 300 "$S1" stopped
+  run_engine --ctid 300 --final
+  rc_is 0; clean
   traced "mount -o ro,noload"
+  untraced "lxc-info"
   nothing_mounted
   done_scenario
 fi
@@ -498,16 +526,15 @@ if scenario "17: C5 an unmounted destination dataset refuses before anything mov
   done_scenario
 fi
 
-if scenario "18: C5 a DEFAULT_DEST that is not in BKP_DESTS is named, never guessed"; then
-  # An unknown word in the inventory's dest column is simply not a dest, so the
-  # row falls back to DEFAULT_DEST. That makes DEFAULT_DEST the one place a
-  # typo reaches this far, and it must be refused by name rather than turned
-  # into a dataset path with an empty prefix - which is the backup node's root.
-  conf_set DEFAULT_DEST replica-nowhere
+if scenario "18: a row with no dest refuses the whole run, and names the line"; then
+  # There is no DEFAULT_DEST any more. A row that does not say which pool its
+  # copy is on used to land on whichever pool that variable named, and the row
+  # that forgot looked exactly like the row that meant it.
+  inventory "300" "113	replica-hdd"
   run_engine --ctid 300
-  rc_is 1; clean
-  has "dest 'replica-nowhere' is not in BKP_DESTS"
-  has "known dests:"
+  rc_is 2
+  has "line 1: CT 300 has no dest column"
+  has "Every row names its pool"
   untraced "rsync"
   done_scenario
 fi
@@ -526,8 +553,10 @@ if scenario "19: C6 a dataset that is not really mounted refuses before rsync"; 
 fi
 
 if scenario "20: C6 a mount that fails refuses, and nothing is transferred"; then
+  # Only the stopped path mounts anything, so this is the stopped path.
+  dr_state 300 "$S1" stopped
   mount_fails "$S1"
-  run_engine --ctid 300
+  run_engine --ctid 300 --final
   rc_is 1; clean
   has "GUARD C6: could not mount"
   untraced "rsync"
@@ -536,9 +565,12 @@ if scenario "20: C6 a mount that fails refuses, and nothing is transferred"; the
 fi
 
 if scenario "21: C6 a dir-backed volume is loop-mounted, a block one is not"; then
+  # The one word of difference between the two read shapes, and it only comes
+  # up on the stopped path - a running container's file is already loop-mounted
+  # by LXC and this engine reads that mount instead.
   unplace 300 pve01
-  place 300 "$S2" pve02 local-dir running
-  run_engine --ctid 300
+  place 300 "$S2" pve02 local-dir stopped
+  run_engine --ctid 300 --final
   rc_is 0; clean
   traced "mount -o loop,ro,noload"
   nothing_mounted
@@ -816,6 +848,30 @@ if scenario "48: vendored under a ketsync, its nodes.map wins over the copy besi
   ENGINE_PATH="$REPO/engines/tp/ct-recall.sh" run_engine --ctid 300 --list
   clean
   hasnt "10.100.9.99"
+  done_scenario
+fi
+
+if scenario "49: the OLD BKP_DESTS format is named, not read as a working map"; then
+  conf_set BKP_DESTS '"hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"'
+  run_engine --ctid 300
+  rc_is 2
+  has "is the OLD key=dataset:storage-id form"
+  has 'BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"'
+  untraced "rsync"
+  done_scenario
+fi
+
+if scenario "51: C6 a container root that is not one refuses before rsync"; then
+  # The pid answered, the path exists, and there is nothing behind it - a
+  # container that died between the status check and this one, or a pid that
+  # was reused. Reading it and then running --delete on the far end empties
+  # the copy to match an empty directory.
+  del_mount "/proc/4300/root" "$S1"
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "GUARD C6"
+  has "does not look like a root filesystem"
+  untraced "rsync"
   done_scenario
 fi
 

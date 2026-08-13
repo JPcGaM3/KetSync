@@ -358,6 +358,11 @@ mutant "--list takes the lock for real on every target it reads" \
   's!\Q    peek_dst_lock "\E\$CT_TO\Q" "\E\$CT_DR\Q"; _dl=\E\$\?!    take_dst_lock "\$CT_TO" "\$CT_DR"; _dl=\$?!' \
   43
 
+# ---------- the dest map's own format ----------------------------------------
+mutant "the OLD key=dataset:storage-id map is read as though it worked" \
+  's{\Q  if [[ "\E\$_e\Q" == *=* ]]; then\E}{  if false; then}' \
+  45
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

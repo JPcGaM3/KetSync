@@ -1,4 +1,4 @@
-# generation: 1
+# generation: 2
 # inventory-replica.tsv - whitespace/tab separated; '#' starts a comment (inline too)
 # Read by ct-replica.sh AND ct-failback.sh. NOT ct-migrate.sh - see
 # inventory-migrate.sample.tsv, whose columns mean entirely different things.
@@ -8,21 +8,23 @@
 #              engine finds its node and its SOURCE storage from /etc/pve.
 #   then each extra field is classified by what it IS:
 #     a NUMBER              -> tgt_ctid  (default: src_ctid + OFFSET)
-#     a key from BKP_DESTS  -> dest      (default: DEFAULT_DEST). That key IS
-#                              the PVE storage id on the backup node, spelled in
-#                              full: replica-hdd, replica-ssd. There used to be
-#                              short aliases - hdd, ssd - and a row saying `hdd`
-#                              next to a source assertion saying `tank-hdd-nas`
-#                              read like two spellings of one thing when they
-#                              are opposite ends of a transfer
+#     a key from BKP_DESTS  -> dest. REQUIRED on every row - there is no
+#                              default, and a row without one refuses the whole
+#                              file. The key IS the PVE storage id on the
+#                              backup node, spelled in full: replica-hdd,
+#                              replica-ssd. There used to be short aliases -
+#                              hdd, ssd - and a row saying `hdd` next to a
+#                              source assertion saying `tank-hdd-nas` read like
+#                              two spellings of one thing when they are
+#                              opposite ends of a transfer
 #     anything else         -> SOURCE storage assertion: the engine derives
 #                              the real storage from the CT's own rootfs
 #                              line; if the assertion differs, the row FAILS
 #                              LOUDLY instead of silently syncing a CT that
 #                              someone moved.
-#   an unclassifiable field, a repeated field kind, a duplicate src_ctid, or
-#   two rows resolving to the same target VMID refuse the WHOLE file - the
-#   engine runs nothing (exit 2) until the inventory is fixed.
+#   a MISSING dest, an unclassifiable field, a repeated field kind, a duplicate
+#   src_ctid, or two rows resolving to the same target VMID refuse the WHOLE
+#   file - the engine runs nothing (exit 2) until the inventory is fixed.
 #
 #   What you never write here: node names, paths, sizes - all derived live
 #   from PVE, so there is nothing to keep in sync by hand.
@@ -40,8 +42,8 @@
 #   ct-replica.sh --storage tank-ssd-nas
 #
 # examples:
-# src_ctid  [tgt_ctid]  [storage-assert]  [dest]      (extras in ANY order)
+# src_ctid  [tgt_ctid]  [storage-assert]  dest        (extras in ANY order)
 105                                       replica-ssd
-112         9112
+112         9112                          replica-hdd
 113         8113        tank-ssd-nas      replica-ssd
-114                                       # -> tgt 8114, dest DEFAULT_DEST
+114                                       replica-hdd  # -> tgt 8114

@@ -112,7 +112,7 @@ new_world(){
   # sandbox, because ${BASH_SOURCE[0]} is not symlink-resolved
   ln -s "$ENGINE" "$WORK/ct-replica.sh"
   write_conf
-  inventory "105" "113	replica-ssd"
+  inventory "105	replica-hdd" "113	replica-ssd"
 }
 
 # ---------- this node ----------
@@ -187,7 +187,6 @@ write_conf(){
   cat > "$WORK/ctrep.conf" <<EOF
 BKP_SSH="root@100.100.100.35"
 BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
-DEFAULT_DEST="replica-hdd"
 SRC_STORAGES="tank-hdd-nas tank-ssd-nas"
 LIVE_FALLBACK=0
 MOCKNET=1
@@ -872,21 +871,10 @@ if scenario "31c: an inventory that exists but names nobody is a warning, not an
   done_scenario
 fi
 
-if scenario "31d: AUTO_DISCOVER=1 needs no inventory file at all"; then
-  conf_set AUTO_DISCOVER 1
-  rm -f "$WORK/inventory-replica.tsv"
-  cluster_resources 105:lxc
-  run_engine
-  rc_is 0; clean
-  hasnt "no inventory at"
-  has "ok=1 skipped=0 failed=0"
-  done_scenario
-fi
-
 if scenario "32: a duplicate src_ctid refuses the whole file, naming both lines"; then
   # the comment and the blank line are here so the reported line numbers have to
   # be real file lines; an off-by-one makes the message worse than useless
-  inventory "# src_ctid  [tgt] [dest] [storage]" "" "105" "113	replica-ssd" "105	9105"
+  inventory "# src_ctid  [tgt] [dest] [storage]" "" "105	replica-hdd" "113	replica-ssd" "105	9105	replica-hdd"
   run_engine
   rc_is 2; clean
   has "ERROR: inventory is broken - NOTHING was run"
@@ -899,7 +887,7 @@ fi
 if scenario "33: two rows resolving to one target VMID refuse the whole file"; then
   # 105 defaults to 8105 and 113 is pointed at it by hand: two live CTs would
   # take turns overwriting one copy, and neither would ever be complete
-  inventory "105" "113	8105"
+  inventory "105	replica-hdd" "113	8105	replica-hdd"
   run_engine
   rc_is 2; clean
   has "line 2: target VMID 8105 already produced by line 1 - two sources would sync into one copy"
@@ -910,7 +898,7 @@ fi
 if scenario "34: a --storage or --ctid that matches nothing is loud, not a quiet success"; then
   # under cron, exit 0 with no work done is indistinguishable from a healthy
   # run: a lane can look fine for weeks while nothing at all is being copied
-  inventory "105"
+  inventory "105	replica-hdd"
   run_engine --storage tank-ssd-nas
   rc_is 1
   has "ERROR: no CT matched --storage tank-ssd-nas - nothing was replicated"
@@ -933,7 +921,7 @@ if scenario "35: --storage runs one lane only, and the lane is the CT's real sto
 fi
 
 if scenario "36: an inventory storage assertion that no longer holds refuses the row"; then
-  inventory "105	tank-ssd-nas"
+  inventory "105	tank-ssd-nas	replica-hdd"
   run_engine
   rc_is 1; clean
   has "ERROR: inventory asserts 'tank-ssd-nas' but the CT really lives on 'tank-hdd-nas'"
@@ -942,40 +930,24 @@ if scenario "36: an inventory storage assertion that no longer holds refuses the
   done_scenario
 fi
 
-if scenario "37: AUTO_DISCOVER=1 that finds nothing is an ERROR, never a quiet exit 0"; then
+if scenario "37: AUTO_DISCOVER=1 is refused - it has no way to choose a pool"; then
+  # The mode replicated every container in the cluster, including ones with no
+  # inventory row, and DEFAULT_DEST answered "which pool does this copy go on"
+  # for all of them. With no default there is no answer, so the mode refuses
+  # rather than picking a pool on a customer's behalf. Three scenarios about
+  # how it discovered containers went with it: what it discovered stopped
+  # mattering the moment it could not say where to put them.
   conf_set AUTO_DISCOVER 1
-  cluster_resources 100:qemu 101:qemu
   run_engine
   rc_is 2; clean
-  has "ERROR: AUTO_DISCOVER=1 but the cluster returned no container - NOTHING was run"
+  has "AUTO_DISCOVER=1 is not usable without a default destination"
+  has "there is no DEFAULT_DEST any more, on purpose"
   untraced "rsync"
   done_scenario
 fi
 
-if scenario "38: AUTO_DISCOVER=1 skips the copies and the storages it may not read"; then
-  conf_set AUTO_DISCOVER 1
-  cluster_resources 105:lxc 113:lxc 900:lxc 8105:lxc 100:qemu
-  add_src_ct pve01 900 local-lvm 8G
-  bkp_cfg bkp02 8105 <<'EOF'
-arch: amd64
-hostname: ct105.example
-rootfs: replica-hdd:subvol-8105-disk-0,size=20G
-onboot: 0
-EOF
-  exclude "113"
-  run_engine
-  rc_is 0; clean
-  has "candidates: 105 900 8105"
-  has "[8105] NOTE: lives on bkp02 (a copy?) - auto-discover skips it"
-  has "[900] NOTE: rootfs on 'local-lvm' (not in SRC_STORAGES) - auto-discover skips it"
-  has "ok=1 skipped=0 failed=0"
-  cfg_absent 8113                       # excluded, so never even a candidate
-  st_absent 900; st_absent 8105         # a NOTE is not a verdict about a CT
-  done_scenario
-fi
-
 if scenario "39: one broken row does not stop the rest of the run"; then
-  inventory "105" "113	replica-ssd" "150"
+  inventory "105	replica-hdd" "113	replica-ssd" "150	replica-hdd"
   run_engine
   rc_is 1; clean
   has "[150] ERROR: no config for CT 150 anywhere in the cluster - skip"
@@ -1375,7 +1347,7 @@ if scenario "64: the old short dest name is named as such, not read as a storage
   # the row fails saying the CT does not live on a storage called 'hdd' - true,
   # unhelpful, and nowhere near the mistake. Every fleet upgrading has this in
   # its inventory today.
-  inventory "105	hdd"
+  inventory "105	hdd	replica-hdd"
   run_engine
   rc_is 2; clean
   has "'hdd' is the OLD short dest name"
@@ -1483,6 +1455,22 @@ if scenario "75: R14 one lock per copy, so a lane blocked on one CT still does t
   hasnt "GUARD R14: copy 8113 is locked"
   cfg_exists 8113; cfg_absent 8105
   lock_free 8113
+  done_scenario
+fi
+
+if scenario "78: the OLD BKP_DESTS format is named, not read as a working map"; then
+  # `hdd=replica-hdd/ct:replica-hdd` still contains a colon, so the shape check
+  # never saw it: the entry parsed as a key of `hdd=replica-hdd/ct` and the run
+  # died one check later saying DEFAULT_DEST was not a key - which points at
+  # the wrong line entirely. This engine SHIPPED that line in ctrep.conf, so
+  # every fleet that pulled has it.
+  conf_set BKP_DESTS '"hdd=replica-hdd/ct:replica-hdd ssd=replica-ssd/ct:replica-ssd"'
+  run_engine --ctid 105
+  rc_is 2
+  has "is the OLD key=dataset:storage-id form"
+  has 'BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"'
+  has "a row without a dest is refused - there is no default"
+  untraced "rsync"
   done_scenario
 fi
 

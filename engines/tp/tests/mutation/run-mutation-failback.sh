@@ -476,6 +476,14 @@ mutant "B2 reads any stopped copy, holder or not" \
   's!\Q        st_write "\E\$ct\Q" skipped b2_copy_not_running -1\E\n\Q        return 2\E!        :!' \
   67
 
+# ---------- the dest map's own format ----------------------------------------
+# This engine had no validation on that map at all, so an old entry parsed as a
+# key of `hdd=replica-hdd/ct` and every row silently fell through to
+# DEFAULT_DEST. One file, four engines, one refusal - worded identically.
+mutant "the OLD key=dataset:storage-id map is read as though it worked" \
+  's{\Q  if [[ "\E\$_kv\Q" == *=* ]]; then\E}{  if false; then}' \
+  70
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

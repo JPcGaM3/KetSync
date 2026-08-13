@@ -166,8 +166,8 @@ mutant "C5 writes into a dataset that is not mounted" \
   's{\Q  if [[ "\E\$dsmounted\Q" != yes || -z "\E\$CT_DSTMNT\Q" || "\E\$CT_DSTMNT\Q" == none ]]; then\E}{  if false; then}' \
   17
 
-mutant "C5 accepts a dest that is not in BKP_DESTS, so the path has no prefix" \
-  's{\Q  if [[ -z "\E\$\{DEST_DS\[\$dest\]:-\}\Q" ]]; then\E}{  if false; then}' \
+mutant "a row with no dest is read as a row that meant the first pool" \
+  's{\Q  if [[ -z "\E\$dd\Q" ]]; then\E}{  if false; then}' \
   18
 
 # ---------- C6: rsync out of a real mountpoint, read-only --------------------
@@ -178,17 +178,34 @@ mutant "C6 trusts a dataset without checking it is really mounted" \
   's|    if ! rsh "\$CT_FROM" "mountpoint -q .*then|    if false; then|' \
   19
 
-mutant "C6 mounts the DR volume read-write while its container is live" \
+mutant "C6 mounts the DR volume read-write, with nobody holding it" \
   's{\Q    local mopt="-o ro,noload"; [[ "\E\$shape\Q" == image ]] && mopt="-o loop,ro,noload"\E}{    local mopt="-o rw"; [[ "\$shape" == image ]] && mopt="-o loop,rw"}' \
-  1
+  4b
 
-mutant "C6 replays the journal of a filesystem a live container is writing" \
+mutant "C6 replays a journal that was never cleanly closed" \
   's{\Qlocal mopt="-o ro,noload"; [[ "\E\$shape\Q" == image ]] && mopt="-o loop,ro,noload"\E}{local mopt="-o ro"; [[ "\$shape" == image ]] && mopt="-o loop,ro"}' \
-  1
+  4b
 
 mutant "C6 loop-mounts a block device and mounts a raw file without one" \
   's{\Q[[ "\E\$shape\Q" == image ]] && mopt="-o loop,ro,noload"\E}{[[ "\$shape" == block ]] \&\& mopt="-o loop,ro,noload"}' \
-  1 21
+  4b 21
+
+# ---------- C6, the running case: the mount that cannot be made --------------
+# This is the bug the fleet found. The engine mounted the 9<id> volume
+# read-only on every presync round, and LXC already had it mounted read-write
+# for the container that was running on it - so ext4 refused, C6 fired, and
+# every presync round failed. The guard held; what it was guarding was wrong.
+mutant "C6 mounts a RUNNING container\'s device instead of reading its mount" \
+  's|  elif \[\[ "\$drstat" == running \]\]; then|  elif false; then|' \
+  1 4
+
+mutant "C6 reads a path derived from a pid it never asked for" \
+  's|    _pid=\$\(rsh "\$CT_FROM" "lxc-info.*|    _pid=1|' \
+  1
+
+mutant "C6 does not check the container root is one before reading it" \
+  's|    if ! rsh "\$CT_FROM" "test -d .*then|    if false; then|' \
+  51
 
 mutant "C6 carries on when the mount failed" \
   's|    if ! rsh "\$CT_FROM" "mkdir -p .*then|    if false; then|' \
@@ -200,11 +217,15 @@ mutant "C6 carries on when the mount failed" \
 # loop device and a mountpoint on a compute node in the middle of a DR.
 mutant "nothing ever comes down: the read-only mount is left on the compute node" \
   's!\Qcleanup_ct(){\E\n\Q  [[ -n "\E\$CUR_MNT\Q" && -n "\E\$CUR_HOST\Q" ]] || return 0\E!cleanup_ct(){\n  return 0!' \
-  1 27
+  4b
 
 # ---------- the transfer itself ----------------------------------------------
+mutant "rsync crosses into /proc, /sys, /dev and every extra mountpoint" \
+  's{\Qrsync -aHAX -x --numeric-ids\E}{rsync -aHAX --numeric-ids}' \
+  1
+
 mutant "rsync loses --delete, so the copy keeps what the DR container deleted" \
-  's{\Qrsync -aHAX --numeric-ids --sparse --delete --bwlimit=\E}{rsync -aHAX --numeric-ids --sparse --bwlimit=}' \
+  's{\Qrsync -aHAX -x --numeric-ids --sparse --delete --bwlimit=\E}{rsync -aHAX -x --numeric-ids --sparse --bwlimit=}' \
   1 5
 
 mutant "the direction is inverted: the stale copy is written over the DR data" \
@@ -300,6 +321,11 @@ mutant "the log is written two directories up whether ketsync is there or not" \
 mutant "the engine reads the node map beside itself instead of ketsync's own" \
   's{\Qif [[ -f "\E\$BASE\Q/../../ketsync" && -f "\E\$BASE\Q/../../lib/common.sh" && -f "\E\$BASE\Q/../../nodes.map" ]]; then\E}{if false; then}' \
   48
+
+# ---------- the dest map's own format ----------------------------------------
+mutant "the OLD key=dataset:storage-id map is read as though it worked" \
+  's{\Q  if [[ "\E\$_e\Q" == *=* ]]; then\E}{  if false; then}' \
+  49
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
