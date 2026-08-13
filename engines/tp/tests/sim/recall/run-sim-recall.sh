@@ -162,6 +162,12 @@ place(){ # src_ctid ip node storage status [marker-ctid] [marker-copy]
     printf 'net0: name=eth0,bridge=vmbr0,hwaddr=BC:24:11:00:00:%02d\n' "$(( ct % 100 ))"
     printf '# ct-distribute: temporary DR copy of CT %s, from %s on bkp02\n' "$mct" "$mcopy"
   } > "$PVE/nodes/$node/lxc/$dr.conf"
+  # A `#` line in a guest config is the DESCRIPTION field, and PVE re-emits it
+  # URL-encoded every time it writes that config - `:` becomes %3A. A file
+  # written directly stays raw until the first pct command touches the
+  # container, so BOTH forms are real and a world can be built either way.
+  [[ -n "${SIM_PVE_ENCODED:-}" ]] && \
+    sed -i 's/^#\(.*\)$/#\1/; s/^\(#.*\):/\1%3A/' "$PVE/nodes/$node/lxc/$dr.conf"
   # A zfspool volume is the storage's own mount - the engine never mounts it
   # and must never unmount it, so the world declares it mounted from the start.
   [[ "$(cat "$SIMROOT/srcs/$ip/storage/$sid.type")" == zfspool ]] \
@@ -183,6 +189,11 @@ place(){ # src_ctid ip node storage status [marker-ctid] [marker-copy]
 no_marker(){ # src_ctid node
   local f="$PVE/nodes/$2/lxc/$(( $1 + 9000 )).conf"
   grep -v '^# ct-distribute:' "$f" > "$f.n" && mv -f "$f.n" "$f"; }
+# What every container's config looks like after anybody has started or stopped
+# it - which during a DR is all of them, because starting them is the point.
+pve_rewrote_config(){ # src_ctid node
+  local f="$PVE/nodes/$2/lxc/$(( $1 + 9000 )).conf"
+  sed -i 's/^\(#.*\):/\1%3A/' "$f"; }
 dr_state(){ # src_ctid ip status
   printf '%s\n' "$3" > "$SIMROOT/srcs/$2/ct/$(( $1 + 9000 )).status"; }
 unplace(){ # src_ctid node - distribute never ran for this one
@@ -871,6 +882,36 @@ if scenario "51: C6 a container root that is not one refuses before rsync"; then
   rc_is 1; clean
   has "GUARD C6"
   has "does not look like a root filesystem"
+  untraced "rsync"
+  done_scenario
+fi
+
+if scenario "52: C3 reads the marker after PVE has rewritten the config"; then
+  # The one that reached the fleet. A `#` line in a guest config is the guest's
+  # DESCRIPTION, PVE owns it, and PVE re-emits it URL-encoded whenever it
+  # writes the config - so the colon in the marker becomes %3A the first time
+  # anybody starts or stops the container. ct-distribute writes the file
+  # directly, so a fresh placement matched and every round after a lifecycle
+  # change did not. Two containers presynced cleanly, were shut down for the
+  # cutover, and --final refused both.
+  pve_rewrote_config 300 pve01
+  run_engine --ctid 300
+  rc_is 0; clean
+  hasnt "GUARD C3"
+  has "[300] OK -> 8300"
+  copy_has 8300 replica-hdd "generation 9"
+  done_scenario
+fi
+
+if scenario "53: C3 still refuses an encoded config that names another container"; then
+  # Decoding must not turn the check into "close enough": the marker still has
+  # to name THIS container and THIS copy, whatever form PVE left it in.
+  unplace 300 pve01
+  place 300 "$S1" pve01 local-lvm running 999 8999
+  pve_rewrote_config 300 pve01
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "GUARD C3"
   untraced "rsync"
   done_scenario
 fi

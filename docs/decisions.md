@@ -302,7 +302,15 @@ There is deliberately no PAUSE requirement, unlike `ct-failback`'s `--final`.
 R13 keys on the `9300` config existing rather than on it running, so it holds
 through the shutdown, through `--final`, and until a human destroys it.
 
-51 scenarios, 46 mutations.
+A `#` line in a guest config is not a comment - it is the guest's description
+field, PVE owns it, and PVE re-emits it URL-encoded every time it writes that
+config. `ct-distribute` writes the file directly, so a fresh placement matched
+and every round after anybody started or stopped the container did not. The
+fleet met that at the cutover, with both containers already shut down. The
+config is decoded before the marker is compared; the marker itself is
+unchanged, so containers already placed keep working.
+
+53 scenarios, 47 mutations.
 
 ## 7. `status` — designed, not built
 
@@ -379,8 +387,8 @@ doctor` says so on the next good day.
     ketsync failback     tp's
     ketsync distribute   tp's - engines/tp/ct-distribute.sh, 46 scenarios,
                          50 mutations. See section 5
-    ketsync recall       tp's - engines/tp/ct-recall.sh, 51 scenarios,
-                         46 mutations. See section 6
+    ketsync recall       tp's - engines/tp/ct-recall.sh, 53 scenarios,
+                         47 mutations. See section 6
     ketsync status       tp's
 
 Nothing here is a stub any more. ketsync's own `tests/` covers `sync` and not

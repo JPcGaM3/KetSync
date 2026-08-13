@@ -484,6 +484,21 @@ trap cleanup EXIT INT TERM
 # ---------- remote helpers, all against ONE machine at a time ---------------
 rsh(){ ssh $SSH_OPT "root@$1" "${@:2}" </dev/null 2>/dev/null; }
 
+# A `#` line in a PVE guest config is not a comment. It is the guest's
+# DESCRIPTION field, PVE owns it, and PVE re-emits it URL-encoded every time it
+# writes that config - `:` becomes %3A, and anything outside printable ASCII
+# goes the same way. A file written directly, the way ct-distribute writes it,
+# stays raw until the first `pct` command touches the container; after that it
+# is encoded forever.
+#
+# So anything reading provenance out of a config decodes first. Backslashes are
+# doubled before the substitution because printf %b would otherwise interpret
+# whatever the description happened to contain.
+pve_decode(){
+  local s="${1//\\/\\\\}"
+  printf '%b' "${s//%/\\x}"
+}
+
 # ---------- who the backup node actually is ---------------------------------
 # Nobody types a pmxcfs name. /etc/pve/local is a symlink to nodes/<this node>,
 # which is the authoritative identity - safer than hostname, which can drift
@@ -599,8 +614,21 @@ do_ct(){   # $1 = production ctid
   # production id and the copy it came out of. That is the only fact available
   # that says which side is newer: mtimes cannot, because rsync preserves them
   # and the copy's files can be newer on disk while holding older data.
+  #
+  # The config is read through pve_decode() because a `#` line in a guest
+  # config is NOT a comment - it is the guest's description field, and PVE owns
+  # it. Every time PVE writes that config it re-emits the description
+  # URL-encoded (PVE::Tools::encode_text escapes control characters and `:`),
+  # so the colon in this marker becomes %3A the first time anybody starts or
+  # stops the container. ct-distribute writes the file raw, so a fresh
+  # placement matches and every one after a lifecycle change does not.
+  #
+  # That is not hypothetical: it is what the fleet hit. Two containers
+  # presynced cleanly, were shut down for the cutover, and --final then refused
+  # both with "does not say it came from copy 8110" - at the exact moment there
+  # was nowhere else for the data to go.
   marker="# ct-distribute: temporary DR copy of CT $ct, from $CT_TGT on $BKP_NODE"
-  if ! printf '%s\n' "$cfg" | grep -qxF "$marker"; then
+  if ! printf '%s\n' "$(pve_decode "$cfg")" | grep -qxF "$marker"; then
     log "[$ct] GUARD C3: CT $CT_DR on $CT_FROMNODE does not say it came from copy $CT_TGT"
     log "[$ct] GUARD C3:   expected this line in its config, written by ct-distribute.sh:"
     log "[$ct] GUARD C3:     $marker"

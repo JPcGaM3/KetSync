@@ -27,9 +27,12 @@ argument is in `docs/decisions.md` section 2.
 **3. Nothing starts a container.** `distribute` moves data and writes a config,
 then prints the `pct start`. Same rule as every engine in `tp`.
 
-**4. No defaults, no guessing.** A node with no row in `nodes.tsv` is a hard
-stop, never a guessed address. Placement comes from the inventory's `dr`
-column, not from free RAM. Guessing puts a customer on the wrong machine.
+**4. No defaults, no guessing, anywhere.** A node with no row in `nodes.tsv`
+is a hard stop, never a guessed address. Placement comes from `fleet.tsv`'s
+`dr` column, not from free RAM. There is no fallback storage and no default
+destination pool - both were removed rather than tuned, because the row that
+FORGOT a value looks exactly like the row that meant it, and what lands
+somewhere nobody chose is a customer's only copy.
 
 **5. Everything a human types is an IP.** PVE forces node *names* on us because
 it stores configs under `/etc/pve/nodes/<name>/` — but nobody types one.
@@ -47,7 +50,7 @@ held", and the run exits 0 having done nothing.
 
 **7. A stub says it is a stub.** Do not make one half work. There are none
 left: `distribute` stopped being one when `engines/tp/ct-distribute.sh` was
-written, and `recall` when `engines/tp/ct-recall.sh` was, with 46/50 and 48/41
+written, and `recall` when `engines/tp/ct-recall.sh` was, with 47/51 and 53/47
 scenarios and mutations behind them - which is the bar for the next one. The
 helper that printed "designed but not built" is gone with the last stub; bring
 it back with the next one rather than keeping it warm.
@@ -62,8 +65,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 309 tp scenarios + 21 for ketsync sync
-    make mutation # 286 known bugs put back. None may survive
+    make test     # both layers: 311 tp scenarios + 21 for ketsync sync
+    make mutation # 287 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

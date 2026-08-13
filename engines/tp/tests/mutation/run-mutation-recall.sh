@@ -129,8 +129,17 @@ mutant "C1 falls back to the pmxcfs name when nothing maps it to an address" \
 # The one mistake here that cannot be undone. rsync preserves mtimes, so the
 # copy's files can be NEWER on disk than the DR container's while holding older
 # data - which is why the marker ct-distribute wrote is the only usable fact.
+# A `#` line in a guest config is the DESCRIPTION field, PVE owns it, and PVE
+# re-emits it URL-encoded every time it writes the config. ct-distribute writes
+# the file directly, so a fresh placement matches and every round after anybody
+# starts or stops the container does not. The fleet met this at the cutover,
+# with both containers already shut down and nowhere else for the data to go.
+mutant "C3 reads the config raw, so PVE's own encoding defeats it" \
+  's|\$\(pve_decode "\$cfg"\)|\$cfg|' \
+  52
+
 mutant "C3 stops checking where the 9<id> came from" \
-  's{\Q  if ! printf \E.%s\\n.\Q "\E\$cfg\Q" | grep -qxF "\E\$marker\Q"; then\E}{  if false; then}' \
+  's|  if ! printf .*grep -qxF "\$marker"; then|  if false; then|' \
   9 10
 
 mutant "C3 builds the marker from the DR id instead of the copy it came from" \

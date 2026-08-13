@@ -37,7 +37,7 @@ halves, do not touch the engine — say so instead.
     ct-replica.sh    tests/mutation/run-mutation-replica.sh     57 mutations
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    59 mutations
     ct-distribute.sh tests/mutation/run-mutation-distribute.sh  51 mutations
-    ct-recall.sh     tests/mutation/run-mutation-recall.sh      46 mutations
+    ct-recall.sh     tests/mutation/run-mutation-recall.sh      47 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
@@ -122,8 +122,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 75 + 70 + 47 + 51 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 57 + 59 + 51 + 46 engine + 9 dispatcher bugs, all caught
+    make test       # 66 + 75 + 70 + 47 + 53 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 57 + 59 + 51 + 47 engine + 9 dispatcher bugs, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did
@@ -300,7 +300,11 @@ and a dry run may mount only `ro`.
     C3  direction comes from PROVENANCE, not timestamps. ct-distribute wrote a
         marker naming the container and the copy this 9<id> came out of; rsync
         preserves mtimes, so the copy's files can be newer on disk while
-        holding older data. No marker, no run - see docs/decisions.md section 6
+        holding older data. No marker, no run - see docs/decisions.md section 6.
+        The config is DECODED first: a `#` line in a guest config is the
+        description field, PVE owns it, and PVE re-emits it URL-encoded on
+        every write - `:` becomes %3A the first time anybody starts or stops
+        the container
     C4  presync needs the 9<id> RUNNING, --final needs it STOPPED. A stopped
         one without --final is refused: "it is down right now" and "we are
         cutting over" are different intentions. No PAUSE requirement, because
