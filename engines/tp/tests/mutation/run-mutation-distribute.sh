@@ -294,7 +294,7 @@ mutant "D1 treats a node that did not answer as one that said stopped" \
   5b
 
 mutant "D1 stops caring whether production comes back on its own" \
-  's{\Q    if [[ "\E\$\{ponboot:-0\}\Q" == 1 ]]; then\E}{    if false; then}' \
+  's{\Q      if [[ "\E\$\{ponboot:-0\}\Q" == 1 ]]; then\E}{      if false; then}' \
   5c
 
 mutant "D1 reads onboot from the wrong container" \
@@ -362,6 +362,38 @@ mutant "--list takes the lock for real on every target it reads" \
 mutant "the OLD key=dataset:storage-id map is read as though it worked" \
   's{\Q  if [[ "\E\$_e\Q" == *=* ]]; then\E}{  if false; then}' \
   45
+
+# ---------- D1's one exception: running, but unable to answer ----------------
+# The guard defends ONE ADDRESS, not one process, so a container every one of
+# whose interfaces is enslaved to a bridge with no uplink is not a collision -
+# and moving it there is the only remedy that works when its rootfs has
+# vanished and `pct shutdown` can no longer return. Everything that narrows
+# that exception is below. What none of these can reach is the text of the
+# remote snippet itself: the fake reproduces what it DOES, so the two have to
+# be kept in step by hand.
+mutant "D1 accepts a running CT whatever bridge its interfaces are on" \
+  's{\Q                  [[ "\E\$_br\Q" == "\E\$MOCKNET_BRIDGE\Q" ]] || _wired\E}{                  true || _wired}' \
+  4 4c
+
+mutant "D1 stops at the first interface, the way somebody reads net0 and stops" \
+  's{\Q        while read -r _k _if _br; do\E}{        while read -r _k _if _br; do (( _nveth )) \&\& continue;}' \
+  4c
+
+mutant "D1 stops asking whether the isolated bridge reaches a wire" \
+  's{\Q && "\E\$_iso\Q" != *UPLINK*\E}{}' \
+  4d
+
+mutant "D1 believes the interfaces it found are all the container has" \
+  's{\Q        (( _nveth < _nets )) && _unsure=\E}{        false && _unsure=}' \
+  4f
+
+mutant "a probe D1 could not read counts as one that said isolated" \
+  's{\Q        _unsure="could not read its interfaces"\E}{        _unsure=""}' \
+  4d 4e
+
+mutant "the onboot check is asked of a container that is already running" \
+  's{\Q    if [[ "\E\$pstat\Q" != running ]]; then\E}{    if true; then}' \
+  4g
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

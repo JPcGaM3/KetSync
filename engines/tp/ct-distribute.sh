@@ -70,23 +70,44 @@
 #  THE GUARDS (D1..D8). This engine runs during the worst hour this fleet will
 #  have, so every one of them refuses rather than warns.
 #
-#   D1  the PRODUCTION container must be verifiably down, and must STAY down.
-#       The copy carries the production IP and MAC on purpose, so a 9xxx placed
-#       while 300 can still answer puts two machines on one address. Three
-#       things are checked on the node itself, and each of them refuses:
-#         running        the obvious one
+#   D1  the PRODUCTION container must not be able to ANSWER, and must not be
+#       able to start answering later. The copy carries the production IP and
+#       MAC on purpose, so a 9xxx placed while 300 can still answer puts two
+#       machines on one address. What is checked on the node itself:
 #         unreachable    not-verified is not stopped. This used to log a reason
 #                        and carry on, which is the guess every other guard here
 #                        refuses to make
-#         onboot: 1      stopped today, and it starts ITSELF the moment the
-#                        storage node comes back or the node reboots. Nobody
-#                        types a command for that, PAUSE cannot help because the
-#                        machine holding it is the machine that died, and the
-#                        result is production and the 9xxx both live on one IP,
-#                        each writing a rootfs that can never be merged
+#         running        refused - UNLESS every interface it has is enslaved to
+#                        MOCKNET_BRIDGE and that bridge has no uplink on that
+#                        node. Then it cannot answer, which is the whole thing
+#                        the guard is protecting, and it is the one remedy that
+#                        works when the container cannot be stopped at all: a CT
+#                        whose NFS rootfs vanished has its processes in
+#                        uninterruptible sleep, so `pct shutdown` hangs and
+#                        SIGKILL does not reach them, while `pct set --netN
+#                        bridge=vmbr99` writes to /etc/pve, hotplugs live, and
+#                        needs nothing from the dead storage. Read from the
+#                        KERNEL - the master of each veth, the ports of the
+#                        bridge - never from the config, which can record a
+#                        change that was never applied. Fewer veths than the
+#                        config's net lines is unverified, and unverified
+#                        refuses. Accepting it says out loud that the container
+#                        is still a PENDING WRITER: its I/O is blocked now and
+#                        resumes the instant the storage returns, so it still
+#                        has to be stopped before then, and failback's B1
+#                        refuses to write into the image until it is
+#         onboot: 1      asked only of a container that is DOWN. Stopped today,
+#                        and it starts ITSELF the moment the storage node comes
+#                        back or the node reboots. Nobody types a command for
+#                        that, PAUSE cannot help because the machine holding it
+#                        is the machine that died, and the result is production
+#                        and the 9xxx both live on one IP, each writing a rootfs
+#                        that can never be merged. Not asked of the isolated
+#                        running container above, which was already accepted as
+#                        a pending writer - onboot cannot make it more of one
 #       This is B1, restated for the other direction, plus the half B1 does not
 #       need: failback runs when the storage node is back, so nothing re-arms
-#       behind it.
+#       behind it. B1 has no isolated-and-running case for the same reason.
 #
 #   D2  the source copy must exist on the backup node and be STOPPED. Copying
 #       out of a rootfs that something is writing to is a torn copy, and the
@@ -161,6 +182,11 @@ BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
 OFFSET=8000                      # production id -> DR copy id
 DR_OFFSET=9000                   # production id -> temporary compute-node id
 DR_HEADROOM_PCT=25               # refuse if the target would be left tighter
+MOCKNET_BRIDGE=vmbr99            # the isolated bridge with NO uplink. Same knob,
+                                 # same ctrep.conf, as ct-replica R9/R11 - D1 asks
+                                 # whether a running production CT has been moved
+                                 # onto it, which is the one way it stops being a
+                                 # second machine on the customer's address
 BW_TOTAL_MB=230
 LANES=1
 BW_MIN_MB=20
@@ -659,22 +685,103 @@ do_ct(){   # $1 = production ctid
     pip="$(node_ip "$pnode")"; pip="${pip:-$pnode}"
     pstat=$(rsh "$pip" "pct status $ct 2>/dev/null" | awk '{print $2}')
     if [[ "$pstat" == running ]]; then
-      log "[$ct] GUARD D1: production CT $ct is RUNNING on $pnode ($pip) - NOT placing a second copy"
-      log "[$ct] GUARD D1:   the copy carries the same IP and MAC on purpose. Two of them"
-      log "[$ct] GUARD D1:   answering at once is worse than the outage you are fixing."
-      log "[$ct] GUARD D1:   stop it first:  ssh root@$pip pct shutdown $ct"
-      # The case this refusal is FOR is also the case where that command hangs.
-      # A container whose NFS rootfs vanished has its processes stuck in
-      # uninterruptible sleep, and SIGKILL does not reach a task in D state, so
-      # `pct shutdown` waits and `pct stop` waits behind it. It is still
-      # RUNNING for the purpose of this guard: its network is up and anything
-      # already in memory can still answer. The way out is to make the dead
-      # mount return errors instead of blocking, which frees the processes.
-      log "[$ct] GUARD D1:   if its storage is the one that died, that command will HANG -"
-      log "[$ct] GUARD D1:   the processes are stuck on I/O that will never return. Force the"
-      log "[$ct] GUARD D1:   dead mount to fail instead, on that node, and the stop completes:"
-      log "[$ct] GUARD D1:     umount -f /mnt/pve/<the dead storage>   (then pct stop $ct)"
-      st_skip "$ct" prod_running; return 1
+      # RUNNING is not automatically dangerous. What makes it dangerous is that
+      # the copy about to be placed carries the same IP and MAC, so two
+      # machines answer on one address. A container that has been moved onto
+      # the isolated bridge cannot answer at all - which is the same mechanism
+      # that makes an 8<id> copy harmless on the backup node, and R9 already
+      # trusts it there.
+      #
+      # This matters operationally, not theoretically. The container this guard
+      # refuses is usually one whose rootfs just vanished, and its processes
+      # are stuck in uninterruptible sleep waiting on I/O that will never
+      # return - so `pct shutdown` hangs and `pct stop` queues behind it. One
+      # `pct set --net0 ...,bridge=vmbr99` writes to /etc/pve, applies live by
+      # hotplug, needs nothing from the dead storage, and removes the hazard in
+      # a second.
+      #
+      # Every check below reads the KERNEL, not the config. A config can record
+      # a change PVE has not applied to the running container; the bridge a
+      # veth is actually enslaved to cannot.
+      local _iso
+      _iso=$(rsh "$pip" "
+        echo \"NETS \$(pct config $ct 2>/dev/null | grep -c '^net[0-9]')\"
+        for i in /sys/class/net/veth${ct}i*; do
+          [ -e \"\$i\" ] || continue
+          m=\$(readlink -f \"\$i/master\" 2>/dev/null)
+          echo \"VETH \$(basename \$i) \${m##*/}\"
+        done
+        ip -br link show $MOCKNET_BRIDGE >/dev/null 2>&1 || { echo BRMISSING; exit 0; }
+        ports=\$(ovs-vsctl list-ports $MOCKNET_BRIDGE 2>/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2>/dev/null)
+        for p in \$ports; do
+          if [ -e /sys/class/net/\$p/device ] || [ -d /sys/class/net/\$p/bonding ]; then echo \"UPLINK \$p\"; fi
+        done
+        echo OK
+      ")
+      local _wired="" _unsure="" _nets=0 _nveth=0
+      if [[ "$_iso" == *OK* && "$_iso" != *BRMISSING* && "$_iso" != *UPLINK* ]]; then
+        # Every interface the container has, or it does not count. A CT with
+        # net0 moved and net1 forgotten is still on the wire, and it is the
+        # forgotten one that answers.
+        while read -r _k _if _br; do
+          case "$_k" in
+            NETS) [[ "$_if" =~ ^[0-9]+$ ]] && _nets="$_if";;
+            VETH) _nveth=$(( _nveth + 1 ))
+                  [[ "$_br" == "$MOCKNET_BRIDGE" ]] || _wired="$_wired $_if(${_br:-none})";;
+          esac
+        done <<< "$_iso"
+        # The config says how many interfaces it has; the kernel says where each
+        # one ended up. Fewer veths than net lines means one of them is
+        # somewhere this probe did not look - a name it did not expect, another
+        # namespace, a hotplug that half happened - and the interface nobody
+        # found is the one that answers.
+        (( _nveth < _nets )) && _unsure="found $_nveth of the $_nets interfaces its config declares"
+      else
+        _unsure="could not read its interfaces"
+      fi
+
+      if [[ -z "$_wired" && -z "$_unsure" ]]; then
+        log "[$ct] D1: production CT $ct is RUNNING on $pnode ($pip), but every interface"
+        log "[$ct] D1:   it has is on $MOCKNET_BRIDGE, which has no uplink there. It cannot"
+        log "[$ct] D1:   answer, so the copy carrying its IP and MAC is not a collision."
+        log "[$ct] D1:   IT IS STILL A PENDING WRITER. Its I/O is blocked now because the"
+        log "[$ct] D1:   storage is gone; the moment that storage comes back it resumes"
+        log "[$ct] D1:   writing into CT $ct's image. Stop it before then - that is easy"
+        log "[$ct] D1:   once the storage is back - and ct-failback's B1 will refuse to"
+        log "[$ct] D1:   write into the image until you have."
+        log "[$ct] D1:   clear onboot when you do:  ssh root@$pip pct set $ct --onboot 0"
+        log "[$ct] D1:   or that node's next reboot starts it writing again by itself."
+      else
+        log "[$ct] GUARD D1: production CT $ct is RUNNING on $pnode ($pip) - NOT placing a second copy"
+        log "[$ct] GUARD D1:   the copy carries the same IP and MAC on purpose. Two of them"
+        log "[$ct] GUARD D1:   answering at once is worse than the outage you are fixing."
+        case "$_iso" in
+          *BRMISSING*) log "[$ct] GUARD D1:   ($MOCKNET_BRIDGE does not exist on $pnode)";;
+          *UPLINK*)    printf '%s\n' "$_iso" | grep UPLINK | while read -r _ p; do
+                         log "[$ct] GUARD D1:   ($MOCKNET_BRIDGE on $pnode HAS AN UPLINK: port '$p')"
+                       done;;
+          *OK*)        if [[ -n "$_wired" ]]; then
+                         log "[$ct] GUARD D1:   still on the wire:$_wired"
+                       else
+                         log "[$ct] GUARD D1:   $_unsure - and unverified is not isolated"
+                       fi;;
+          *)           log "[$ct] GUARD D1:   could not inspect its interfaces on $pnode";;
+        esac
+        log "[$ct] GUARD D1:   two ways out. Stop it:  ssh root@$pip pct shutdown $ct"
+        # The case this refusal is FOR is also the case where that command
+        # hangs. A container whose NFS rootfs vanished has its processes stuck
+        # in uninterruptible sleep, and SIGKILL does not reach a task in D
+        # state, so the shutdown waits and the stop waits behind it.
+        log "[$ct] GUARD D1:   if its storage is the one that died, that will HANG - the"
+        log "[$ct] GUARD D1:   processes are stuck on I/O that never returns. Either force"
+        log "[$ct] GUARD D1:   the dead mount to fail instead:"
+        log "[$ct] GUARD D1:     ssh root@$pip umount -f /mnt/pve/<the dead storage>"
+        log "[$ct] GUARD D1:   or take it off the wire, which needs nothing from that storage:"
+        log "[$ct] GUARD D1:     ssh root@$pip pct set $ct --net0 <its net0>,bridge=$MOCKNET_BRIDGE"
+        log "[$ct] GUARD D1:   every net line, not just net0. It still has to be stopped before"
+        log "[$ct] GUARD D1:   the storage node comes back."
+        st_skip "$ct" prod_running; return 1
+      fi
     fi
     # Unreachable is NOT stopped. This used to log "taking the storage outage as
     # the reason" and carry on, which is the guess every other guard in this repo
@@ -697,16 +804,25 @@ do_ct(){   # $1 = production ctid
     # command for that to happen. Then production and the 9xxx are both live,
     # on one IP and one MAC, writing into two rootfs that can never be merged.
     # PAUSE cannot help - the machine that holds it is the machine that died.
+    #
+    # Asked only of a container that is DOWN. One that is running on the
+    # isolated bridge was accepted above, out loud, as a container that is
+    # already writing the moment its storage returns; onboot cannot make it more
+    # of one, so refusing here would refuse a strictly smaller hazard than the
+    # one this guard just allowed - and would do it in a message that calls a
+    # running container stopped.
     local ponboot
-    ponboot=$(rsh "$pip" "pct config $ct 2>/dev/null" | sed -n 's/^onboot:[[:space:]]*//p' | head -1)
-    if [[ "${ponboot:-0}" == 1 ]]; then
-      log "[$ct] GUARD D1: production CT $ct is stopped but has onboot: 1 on $pnode ($pip)"
-      log "[$ct] GUARD D1:   it will start ITSELF the moment the storage node comes back, or"
-      log "[$ct] GUARD D1:   the next time that node reboots. Two containers on one IP, each"
-      log "[$ct] GUARD D1:   writing its own rootfs, and no way to merge them afterwards."
-      log "[$ct] GUARD D1:   make it stay down first:  ssh root@$pip pct set $ct --onboot 0"
-      log "[$ct] GUARD D1:   put it back to 1 after the recall - the DR guide says where."
-      st_skip "$ct" prod_onboot; return 1
+    if [[ "$pstat" != running ]]; then
+      ponboot=$(rsh "$pip" "pct config $ct 2>/dev/null" | sed -n 's/^onboot:[[:space:]]*//p' | head -1)
+      if [[ "${ponboot:-0}" == 1 ]]; then
+        log "[$ct] GUARD D1: production CT $ct is stopped but has onboot: 1 on $pnode ($pip)"
+        log "[$ct] GUARD D1:   it will start ITSELF the moment the storage node comes back, or"
+        log "[$ct] GUARD D1:   the next time that node reboots. Two containers on one IP, each"
+        log "[$ct] GUARD D1:   writing its own rootfs, and no way to merge them afterwards."
+        log "[$ct] GUARD D1:   make it stay down first:  ssh root@$pip pct set $ct --onboot 0"
+        log "[$ct] GUARD D1:   put it back to 1 after the recall - the DR guide says where."
+        st_skip "$ct" prod_onboot; return 1
+      fi
     fi
   fi
 

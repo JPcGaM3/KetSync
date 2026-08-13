@@ -90,7 +90,18 @@ new_world(){
 }
 
 # ---------- the cluster ----------
-add_prod_node(){ mkdir -p "$SIMROOT/nodes/$1/ct"; }
+# Every production node has the two bridges a real one has: a customer bridge
+# with a physical port on it, and the isolated bridge with nothing on it. D1
+# reads both - which bridge each veth is on, and whether that bridge reaches a
+# wire - so a node without them cannot answer the question the guard asks.
+add_prod_node(){ mkdir -p "$SIMROOT/nodes/$1/ct" "$SIMROOT/nodes/$1/bridges"
+                 node_bridge "$1" vmbr0 eno1,nic
+                 node_bridge "$1" vmbr99; }
+node_bridge(){ # node bridge [port,kind]...   kind nic or bond is an UPLINK
+  local n="$1" b="$2" p; shift 2
+  mkdir -p "$SIMROOT/nodes/$n/bridges"; : > "$SIMROOT/nodes/$n/bridges/$b"
+  for p in "$@"; do printf '%s %s\n' "${p%%,*}" "${p##*,}" >> "$SIMROOT/nodes/$n/bridges/$b"; done; }
+node_nobridge(){ rm -f "$SIMROOT/nodes/$1/bridges/$2"; }
 node_down(){ : > "$SIMROOT/nodes/$1/.down"; }
 node_up(){   rm -f "$SIMROOT/nodes/$1/.down"; }
 prod_ct(){   # ctid node status - a production CT that exists in pmxcfs
@@ -98,7 +109,33 @@ prod_ct(){   # ctid node status - a production CT that exists in pmxcfs
   printf 'arch: amd64\nhostname: ct%s\nrootfs: tank-hdd-nas:%s/vm-%s-disk-0.raw,size=20G\n' "$1" "$1" "$1" \
     > "$PVE/nodes/$2/lxc/$1.conf"
   printf '%s\n' "$3" > "$SIMROOT/nodes/$2/ct/$1.status"
-  printf '%s\n' "${4:-0}" > "$SIMROOT/nodes/$2/ct/$1.onboot"; }
+  printf '%s\n' "${4:-0}" > "$SIMROOT/nodes/$2/ct/$1.onboot"
+  # One customer interface, and - if it is running - the veth that interface
+  # actually has in the kernel. A stopped container has no veth at all, which
+  # is why D1 never asks this of one.
+  ct_nets "$1" "$2" vmbr0
+  if [[ "$3" == running ]]; then ct_veths "$1" "$2" vmbr0; else ct_veths "$1" "$2"; fi; }
+# What the CONFIG declares. Kept separate from the kernel on purpose: a config
+# can record a bridge change that the running container never received, and D1
+# exists because only one of those two sources can be trusted.
+ct_nets(){   # ctid node bridge...   one net line per bridge named
+  local id="$1" n="$2" i=0 b; shift 2
+  : > "$SIMROOT/nodes/$n/ct/$id.nets"
+  for b in "$@"; do
+    printf 'net%s: name=eth%s,bridge=%s,hwaddr=BC:24:11:00:00:%02d,ip=10.100.2.%s/24\n' \
+      "$i" "$i" "$b" "$(( id % 100 ))" "$(( id % 250 ))" >> "$SIMROOT/nodes/$n/ct/$id.nets"
+    i=$(( i + 1 ))
+  done; }
+# What the KERNEL shows: one veth per line and the bridge it is enslaved to. No
+# arguments means the container is running and none of its interfaces can be
+# found, which is not the same as "it has none".
+ct_veths(){  # ctid node bridge...
+  local id="$1" n="$2" i=0 b; shift 2
+  : > "$SIMROOT/nodes/$n/ct/$id.veth"
+  for b in "$@"; do
+    printf 'veth%si%s %s\n' "$id" "$i" "$b" >> "$SIMROOT/nodes/$n/ct/$id.veth"
+    i=$(( i + 1 ))
+  done; }
 
 add_target(){ # ip nodename
   local d="$SIMROOT/targets/$1"
@@ -294,9 +331,118 @@ if scenario "4: GUARD D1 - a production CT that is still RUNNING refuses the pla
   rc_is 1; clean
   has "GUARD D1: production CT 300 is RUNNING on pve01"
   has "worse than the outage you are fixing"
+  has "still on the wire: veth300i0(vmbr0)"
   untraced "pvesm alloc"
   no_vol "$T1" local-lvm vm-9300-disk-0
   no_cfg pve01 9300
+  done_scenario
+fi
+
+if scenario "4b: D1 accepts a RUNNING production CT once it is on the isolated bridge"; then
+  # The shape the fleet actually produced. The NFS storage vanished, CT 300's
+  # processes went into uninterruptible sleep waiting on I/O that will never
+  # return, and SIGKILL does not reach a task in D state - so `pct shutdown`
+  # hangs and `pct stop` queues behind it. There is no way to stop it until the
+  # storage comes back, and the DR cannot wait for that.
+  #
+  # Moving every interface onto the bridge with no uplink needs nothing from
+  # the dead storage: it is a write to /etc/pve that hotplugs live. It also
+  # removes the only thing that made "running" dangerous, because what D1 is
+  # actually defending is one address, not one process.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets  300 pve01 vmbr99
+  ct_veths 300 pve01 vmbr99
+  run_engine --ctid 300
+  rc_is 0; clean
+  has "D1: production CT 300 is RUNNING on pve01"
+  has "IT IS STILL A PENDING WRITER"
+  has "pct set 300 --onboot 0"
+  hasnt "GUARD D1"
+  cfg_exists pve01 9300
+  vol_exists "$T1" local-lvm vm-9300-disk-0
+  done_scenario
+fi
+
+if scenario "4c: D1 counts EVERY interface, not just the one somebody remembered"; then
+  # net0 moved, net1 forgotten. The container is still on the customer's
+  # network through the interface nobody thought about, and it is precisely
+  # the forgotten one that answers when the copy comes up on the same IP.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets  300 pve01 vmbr99 vmbr0
+  ct_veths 300 pve01 vmbr99 vmbr0
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "GUARD D1: production CT 300 is RUNNING on pve01"
+  has "still on the wire: veth300i1(vmbr0)"
+  untraced "pvesm alloc"
+  no_cfg pve01 9300
+  done_scenario
+fi
+
+if scenario "4d: D1 refuses the isolated bridge if that bridge reaches a wire"; then
+  # vmbr99 with a physical port on it is not an isolated bridge, it is a second
+  # customer bridge with a confusing name. R9 asks the backup node the same
+  # question about the same bridge, and for the same reason.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets  300 pve01 vmbr99
+  ct_veths 300 pve01 vmbr99
+  node_bridge pve01 vmbr99 eno2,nic
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "vmbr99 on pve01 HAS AN UPLINK: port 'eno2'"
+  untraced "pvesm alloc"
+  no_cfg pve01 9300
+  done_scenario
+fi
+
+if scenario "4e: D1 refuses when the isolated bridge does not exist on that node"; then
+  # The config was edited to name a bridge the node does not have, so the veth
+  # is enslaved to nothing and the operator believes the container is off the
+  # network. It is off THIS node's network; whether it is off the customer's
+  # is not something the config can answer.
+  prod_ct 300 pve01 running; node_up pve01
+  node_nobridge pve01 vmbr99
+  ct_nets  300 pve01 vmbr99
+  ct_veths 300 pve01 ""
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "(vmbr99 does not exist on pve01)"
+  untraced "pvesm alloc"
+  no_cfg pve01 9300
+  done_scenario
+fi
+
+if scenario "4f: D1 refuses when it finds fewer interfaces than the config declares"; then
+  # Two net lines, one veth. The other one is somewhere this probe did not
+  # look, and an interface nobody found is an interface nobody has ruled out.
+  # Unverified is not isolated - the same rule as unreachable is not stopped.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets  300 pve01 vmbr99 vmbr99
+  ct_veths 300 pve01 vmbr99
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "found 1 of the 2 interfaces its config declares"
+  has "unverified is not isolated"
+  untraced "pvesm alloc"
+  no_cfg pve01 9300
+  done_scenario
+fi
+
+if scenario "4g: an accepted isolated CT is not then refused for onboot"; then
+  # onboot: 1 is the normal state of a production container, so getting this
+  # wrong would have refused every real use of 4b - and refused it by calling a
+  # running container stopped. The check below it is about a container that is
+  # DOWN and would come back by itself; this one is already up and was already
+  # accepted, out loud, as something that resumes writing when the storage
+  # returns. onboot cannot make it more of that.
+  prod_ct 300 pve01 running 1; node_up pve01
+  ct_nets  300 pve01 vmbr99
+  ct_veths 300 pve01 vmbr99
+  run_engine --ctid 300
+  rc_is 0; clean
+  hasnt "is stopped but has onboot: 1"
+  has "IT IS STILL A PENDING WRITER"
+  cfg_exists pve01 9300
   done_scenario
 fi
 

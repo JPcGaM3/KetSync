@@ -32,6 +32,45 @@ dry_forbids(){
 
 tgt_dir(){ printf '%s/targets/%s' "$SIMROOT" "$1"; }
 
+# ---- D1's isolation probe -------------------------------------------------
+# Reproduces what the engine's remote snippet does on a real node, including
+# the part that matters: a missing bridge exits BEFORE it can echo OK, so
+# "unverified" stays distinguishable from "isolated".
+#
+# It reads TWO sources on purpose, because the engine's whole argument is that
+# they can disagree. <id>.nets is what pct config says the container has;
+# <id>.veth is which bridge the kernel has each veth actually enslaved to. A
+# config records a change that a running container never received; the master
+# of a veth cannot.
+#
+# A compute node is both a production node and a placement target, so both
+# branches of the fake call this one function - if they could answer
+# differently, a scenario would be proving something about the fake.
+#
+# The honest limit: this reproduces what the snippet DOES, not what it says. No
+# scenario and no mutation can notice the snippet's own text changing, so the
+# two are kept in step by hand - if the engine starts asking a different
+# question, this has to be taught to answer it.
+d1_probe(){ # $1 = the node's dir under nodes/, $2 = the command string
+  local n="$1" flat id br f ifn master port kind
+  flat="$(printf '%s' "$2" | tr '\n' ' ')"
+  id="$(sed -n 's|.*/sys/class/net/veth\([0-9][0-9]*\)i\*.*|\1|p' <<<"$flat")"
+  br="$(sed -n 's|.*ip -br link show \([^ ]*\).*|\1|p' <<<"$flat")"
+  printf 'NETS %s\n' "$(grep -c . "$n/ct/$id.nets" 2>/dev/null || echo 0)"
+  f="$n/ct/$id.veth"
+  if [[ -f "$f" ]]; then
+    while read -r ifn master; do
+      [[ -n "${ifn:-}" ]] && printf 'VETH %s %s\n' "$ifn" "$master"
+    done < "$f"
+  fi
+  [[ -f "$n/bridges/$br" ]] || { echo BRMISSING; return 0; }
+  while read -r port kind _; do
+    [[ -z "${port:-}" ]] && continue
+    case "$kind" in nic|bond) printf 'UPLINK %s\n' "$port";; esac
+  done < "$n/bridges/$br"
+  echo OK; return 0
+}
+
 # mounted is one line per mountpoint: <path><TAB><backing dir>. A path with no
 # line is not a mountpoint, and rsync into one is the disaster this fake exists
 # to catch - on a real node it fills the root filesystem instead of the volume.

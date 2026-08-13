@@ -263,6 +263,37 @@ pct unlock 300          <span class="c"># only if PVE left a lock behind</span><
      ไม่มีใครทันพิมพ์ <code class="inl">touch PAUSE</code> และไฟล์นั้นก็อยู่บนเครื่องที่ตายไปแล้วด้วย
      ด่าน D1 จึงไปอ่าน <code class="inl">onboot</code> จากเครื่อง compute โดยตรง
      และปฏิเสธจนกว่าจะเป็น 0</p></div>
+
+  <h3>ถ้ายังปิดไม่ได้จริงๆ — ย้ายมันไปอยู่บน bridge ที่ไม่มีทางออก</h3>
+  <p>สิ่งที่ด่าน D1 กลัวไม่ใช่ "container ยังรันอยู่" แต่คือ "มีสองเครื่องตอบบน IP เดียวกัน"
+     เพราะสำเนาที่กำลังจะวางถือ IP และ MAC ของตัวจริงไว้ทั้งคู่ ถ้าย้ายตัวจริงไปอยู่บน
+     bridge ที่ไม่มีสายออกไปไหน มันก็ตอบใครไม่ได้ อันตรายข้อนั้นหมดไปทันที
+     — กลไกเดียวกับที่ทำให้สำเนา 8xxx บนเครื่อง backup อยู่ร่วมโลกกับตัวจริงได้มาตลอด</p>
+  <p>ข้อดีของทางนี้คือมันไม่ต้องใช้อะไรจาก storage ที่ตายไปเลย config ของ container
+     อยู่ใน <code class="inl">/etc/pve</code> และ PVE จะ hotplug ให้ทันที
+     เป็นทางเดียวที่ยังทำงานได้ตอนที่ <span class="m">pct shutdown</span> ค้างอยู่</p>
+  <div class="code"><pre><span class="c"># on the COMPUTE node - look at EVERY net line first, not just net0</span>
+pct config 300 | grep '^net'
+
+<span class="c"># move each one, keeping name, hwaddr and ip exactly as they were</span>
+pct set 300 --net0 name=eth0,bridge=vmbr99,hwaddr=BC:24:11:00:00:01,ip=10.100.2.10/24
+
+<span class="c"># then check the KERNEL, which is what D1 reads - a config can say one</span>
+<span class="c"># thing while the running container never received the change</span>
+ls -l /sys/class/net/veth300i*/master
+ls /sys/class/net/vmbr99/brif/</pre></div>
+  <p>ต้องย้าย<b>ทุกเส้น</b> ไม่ใช่แค่ net0 — เส้นที่ลืมคือเส้นที่ตอบ และ
+     <span class="m">vmbr99</span> บนเครื่องนั้นต้องไม่มี port จริงเสียบอยู่
+     ถ้าเห็นว่า veth ทุกเส้นชี้ไป <span class="m">vmbr99</span> และใน
+     <span class="m">brif</span> ไม่มีการ์ดจริงเลย D1 จะยอมวาง 9xxx ให้
+     ทั้งที่ตัวจริงยังรันอยู่ ถ้ามันหา veth ได้ไม่ครบตามจำนวน net ที่ config บอก
+     มันจะไม่ยอม — ตรวจไม่ครบไม่นับว่าตัดขาดแล้ว</p>
+  <div class="warn"><p><b>ยังต้องปิดมันอยู่ดี</b> CT ตัวจริงยังเป็น pending writer
+     คือ I/O ของมันค้างอยู่ตอนนี้เพราะ storage หายไป แต่วินาทีที่ storage กลับมา
+     มันจะเขียนลง image ของ 300 ต่อทันทีโดยไม่มีใครสั่ง ต้องปิดให้ได้ก่อนถึงตอนนั้น
+     ซึ่งตอนนั้นปิดง่ายแล้ว และตอนปิดให้สั่ง <span class="m">pct set 300 --onboot 0</span>
+     ไปด้วย ไม่งั้นรีบูตรอบหน้ามันขึ้นมาเขียนเองอีก ด่าน B1 ของ
+     <span class="m">failback</span> จะไม่ยอมเขียนกลับลง image จนกว่าตัวจริงจะปิดสนิท</p></div>
 </section>
 
 <section id="s3">
@@ -311,8 +342,15 @@ pct unlock 300          <span class="c"># only if PVE left a lock behind</span><
   <h3>ด่านที่จะเจอบ่อยที่สุด</h3>
   <table>
     <tr><th>ขึ้นว่า</th><th>แปลว่า</th><th>ทำยังไง</th></tr>
-    <tr><td class="m">GUARD D1 ... is RUNNING</td><td>CT ตัวจริงยังรันอยู่</td>
-        <td>ปิดก่อน สำเนาถือ IP กับ MAC เดียวกัน</td></tr>
+    <tr><td class="m">GUARD D1 ... is RUNNING</td><td>CT ตัวจริงยังรันอยู่ และยังต่อกับเน็ตลูกค้าอยู่</td>
+        <td>ปิดก่อน สำเนาถือ IP กับ MAC เดียวกัน ถ้าปิดไม่ได้ ย้ายไป
+            <span class="m">vmbr99</span> ทุกเส้น</td></tr>
+    <tr><td class="m">still on the wire: ...</td><td>ย้ายไม่ครบ มันบอกชื่อเส้นที่ยังค้างอยู่กับ bridge เดิม</td>
+        <td>ย้ายเส้นที่มันพิมพ์ออกมา แล้วสั่งใหม่</td></tr>
+    <tr><td class="m">HAS AN UPLINK: port</td><td><span class="m">vmbr99</span> บนเครื่องนั้นมีการ์ดจริงเสียบอยู่ ไม่ใช่ bridge ปิด</td>
+        <td>เอา port นั้นออก หรือใช้ bridge อื่นที่ปิดจริง</td></tr>
+    <tr><td class="m">found 1 of the 2 interfaces</td><td>เห็น veth ไม่ครบตามที่ config บอก</td>
+        <td>ตรวจไม่ครบไม่นับว่าตัดขาด ดูที่ <span class="m">/sys/class/net</span> เองก่อน</td></tr>
     <tr><td class="m">GUARD D1 ... UNVERIFIED</td><td>ติดต่อเครื่อง compute ไม่ได้</td>
         <td>ติดต่อไม่ได้ ≠ ปิดอยู่ ต้องแก้ ssh ก่อน</td></tr>
     <tr><td class="m">GUARD D1 ... onboot: 1</td><td>ปิดอยู่ แต่จะบูตเองเมื่อ storage กลับมา</td>

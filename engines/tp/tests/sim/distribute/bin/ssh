@@ -95,6 +95,9 @@ if [[ ! -d "$T" ]]; then
   [[ -d "$N" && ! -f "$N/.down" ]] \
     || { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
   case "$c" in
+    # D1's isolation probe. First, because the snippet mentions pct config in
+    # passing and would otherwise be answered by the wrong branch.
+    *"/sys/class/net/veth"*) d1_probe "$N" "$c"; exit 0;;
     "pct status "*)
       id="$(awk '{print $3}' <<<"$c")"; f="$N/ct/$id.status"
       [[ -f "$f" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
@@ -105,6 +108,7 @@ if [[ ! -d "$T" ]]; then
       id="$(awk '{print $3}' <<<"$c")"
       [[ -f "$N/ct/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
       printf 'arch: amd64\nhostname: ct%s\nonboot: %s\n' "$id" "$(cat "$N/ct/$id.onboot" 2>/dev/null || echo 0)"
+      cat "$N/ct/$id.nets" 2>/dev/null
       exit 0;;
     true) exit 0;;
   esac
@@ -136,7 +140,13 @@ case "$c" in
     id="$(awk '{print $3}' <<<"$c")"; d="$SIMROOT/nodes/$(cat "$T/node")/ct"
     [[ -f "$d/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
     printf 'arch: amd64\nhostname: ct%s\nonboot: %s\n' "$id" "$(cat "$d/$id.onboot" 2>/dev/null || echo 0)"
+    cat "$d/$id.nets" 2>/dev/null
     exit 0;;
+
+  # The same probe as the production branch, answered by the same function.
+  # This IS the common case: the node that runs CT 300 is usually one of the
+  # compute nodes the copy is being placed on.
+  *"/sys/class/net/veth"*) d1_probe "$SIMROOT/nodes/$(cat "$T/node")" "$c"; exit 0;;
 
   # The engine checks this BEFORE allocating anything, because the transfer is
   # issued here and pulls from the backup node. A scenario can take that path

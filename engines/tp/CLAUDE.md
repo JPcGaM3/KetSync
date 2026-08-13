@@ -36,7 +36,7 @@ halves, do not touch the engine — say so instead.
     ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
     ct-replica.sh    tests/mutation/run-mutation-replica.sh     57 mutations
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    59 mutations
-    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  51 mutations
+    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  57 mutations
     ct-recall.sh     tests/mutation/run-mutation-recall.sh      47 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
@@ -122,8 +122,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 75 + 70 + 47 + 53 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 57 + 59 + 51 + 47 engine + 9 dispatcher bugs, all caught
+    make test       # 66 + 75 + 70 + 53 + 53 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 57 + 59 + 57 + 47 engine + 9 dispatcher bugs, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did
@@ -270,11 +270,23 @@ and a dry run may mount only `ro`.
 
 `ct-distribute.sh` — D1..D8:
 
-    D1  the production container must be verifiably down and must STAY down:
-        running refuses, unreachable refuses (unverified is not stopped), and
-        `onboot: 1` refuses - a container that is stopped today and boots
-        itself when the storage node returns puts two machines on one IP,
-        each writing a rootfs that can never be merged with the other
+    D1  the production container must not be able to ANSWER, and must not be
+        able to start answering later. Unreachable refuses (unverified is not
+        stopped). `onboot: 1` refuses - a container that is stopped today and
+        boots itself when the storage node returns puts two machines on one
+        IP, each writing a rootfs that can never be merged with the other -
+        and that question is asked only of a container that is DOWN.
+        Running refuses too, with one exception: every veth it has is
+        enslaved to MOCKNET_BRIDGE and that bridge has no uplink on that
+        node, all of it read from the KERNEL rather than from a config that
+        can record a change nothing applied. Fewer veths than the config's
+        net lines is unverified, and unverified refuses. The exception exists
+        because the container this guard refuses is usually one whose NFS
+        rootfs vanished: its processes are in uninterruptible sleep, SIGKILL
+        does not reach them, `pct shutdown` hangs, and the one remedy left
+        needs nothing from the dead storage. Accepting says out loud that it
+        is still a PENDING WRITER - blocked now, writing again the instant
+        the storage returns - and B1 refuses the failback until it is down
     D2  the source copy must exist on the backup node and be STOPPED
     D3  9<id> must be free everywhere: no config anywhere in the cluster and
         no volume already allocated. G7/R4 again

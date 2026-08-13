@@ -227,9 +227,9 @@ resolves the target from `fleet.tsv`'s `dr` column (`--to` overrides, and a
 container with neither is refused rather than placed somewhere reasonable),
 checks `9<id>` is free across the whole cluster, allocates on the target's own
 storage, transfers, writes the config carrying the production network, and then
-prints the `pct start` for a human. 46 scenarios, 50 mutations.
+prints the `pct start` for a human. 53 scenarios, 57 mutations.
 
-Two things about it are new to this repo.
+Three things about it are new to this repo.
 
 **It runs on neither end of its own transfer.** Every other engine here is one
 of the two machines involved. This one is a third, and rsync cannot do
@@ -248,6 +248,44 @@ block device. That is the storage abstraction this design has needed since the
 beginning, arriving in the one place where getting it wrong is cheapest to
 catch: a new engine with its own simulator, rather than a refactor of three
 that the fleet has been running for months.
+
+**D1 is the one guard here that accepts a running production container.** Every
+other lifecycle check in this repo refuses one, so this needs saying properly.
+
+What D1 defends is not "one process" but "one address". The copy carries the
+production container's IP and MAC deliberately - that is what makes it a
+replacement rather than a new machine - so what must never happen is two of
+them answering at once. A container whose every interface is enslaved to
+`MOCKNET_BRIDGE`, on a node where that bridge has no uplink, cannot answer. It
+is the same mechanism that has always made the `8<id>` copy harmless on the
+backup node, and R9 already trusts it there.
+
+The reason to allow it is not tidiness. The container D1 refuses is, in this
+fleet's actual disaster, one whose NFS rootfs has vanished: its processes are
+in uninterruptible sleep waiting on I/O that will never return, `SIGKILL` does
+not reach a task in D state, so `pct shutdown` hangs and `pct stop` queues
+behind it. Until the storage node comes back there is no way to stop it, and
+waiting for that is exactly what the DR exists to avoid. Moving each interface
+onto the isolated bridge is a write to `/etc/pve` that hotplugs live and needs
+nothing from the dead storage - it is the only remedy that still works.
+
+Three things make it safe enough to accept. It reads the KERNEL - the `master`
+of each veth, the ports of the bridge - never the config, because a config can
+record a bridge change that the running container never received. It counts
+every interface, not `net0`, because the one somebody forgot is the one that
+answers; and if it finds fewer veths than the config declares net lines, that
+is unverified, and unverified refuses, the same rule as "unreachable is not
+stopped". And it says out loud what it has accepted: the container is still a
+PENDING WRITER, blocked now and writing again the instant the storage returns,
+so it still has to be stopped before then - and failback's B1 refuses to write
+into the production image until it is.
+
+The `onboot: 1` check below it is therefore asked only of a container that is
+DOWN. Refusing a running-and-isolated container for `onboot` would be refusing
+a strictly smaller hazard than the one just accepted, and would do it in a
+message that calls a running container stopped. `onboot: 1` is the normal state
+of a production container, so getting that wrong would have refused every real
+use of this path.
 
 `fleet.tsv` grew an optional fifth column, the storage on the dr node, for the
 same reason: a fleet is not homogeneous, one compute node's local storage is
@@ -385,8 +423,8 @@ doctor` says so on the next good day.
     ketsync migrate      tp's, passed through untouched
     ketsync replica      tp's
     ketsync failback     tp's
-    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 46 scenarios,
-                         50 mutations. See section 5
+    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 53 scenarios,
+                         57 mutations. See section 5
     ketsync recall       tp's - engines/tp/ct-recall.sh, 53 scenarios,
                          47 mutations. See section 6
     ketsync status       tp's
