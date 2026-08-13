@@ -663,6 +663,17 @@ do_ct(){   # $1 = production ctid
       log "[$ct] GUARD D1:   the copy carries the same IP and MAC on purpose. Two of them"
       log "[$ct] GUARD D1:   answering at once is worse than the outage you are fixing."
       log "[$ct] GUARD D1:   stop it first:  ssh root@$pip pct shutdown $ct"
+      # The case this refusal is FOR is also the case where that command hangs.
+      # A container whose NFS rootfs vanished has its processes stuck in
+      # uninterruptible sleep, and SIGKILL does not reach a task in D state, so
+      # `pct shutdown` waits and `pct stop` waits behind it. It is still
+      # RUNNING for the purpose of this guard: its network is up and anything
+      # already in memory can still answer. The way out is to make the dead
+      # mount return errors instead of blocking, which frees the processes.
+      log "[$ct] GUARD D1:   if its storage is the one that died, that command will HANG -"
+      log "[$ct] GUARD D1:   the processes are stuck on I/O that will never return. Force the"
+      log "[$ct] GUARD D1:   dead mount to fail instead, on that node, and the stop completes:"
+      log "[$ct] GUARD D1:     umount -f /mnt/pve/<the dead storage>   (then pct stop $ct)"
       st_skip "$ct" prod_running; return 1
     fi
     # Unreachable is NOT stopped. This used to log "taking the storage outage as

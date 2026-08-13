@@ -221,6 +221,44 @@ touch /root/ketsync/engines/tp/PAUSE</pre></div></li>
      ต่างคนต่างเขียน rootfs ของตัวเอง แล้วรวมกันไม่ได้อีกเลย</p>
   <div class="code"><pre><span class="c"># on each COMPUTE node, for each CT you are about to move</span>
 pct set 300 --onboot 0</pre></div>
+  <p>คำสั่งนี้ใช้ได้ถึงแม้ storage จะตายไปแล้ว เพราะ config ของ container อยู่ใน
+     <code class="inl">/etc/pve</code> ซึ่งเป็นของ cluster ไม่ได้อยู่บน NFS ที่ตายไป
+     ทำอันนี้<b>ก่อน</b>ไปยุ่งกับ mount เสมอ ถ้าระหว่างแก้เรื่อง mount แล้วเครื่อง compute
+     รีบูตขึ้นมา อันนี้คือสิ่งเดียวที่กัน container ไม่ให้ขึ้นเอง</p>
+
+  <h3>แล้วจะพบว่า pct shutdown ค้าง</h3>
+  <p>นี่คือจุดที่คนติดจริง container ที่ rootfs หายไป จะมี process ค้างอยู่ใน
+     <b>uninterruptible sleep (D state)</b> รอ I/O ที่ไม่มีวันกลับมา และ
+     <code class="inl">SIGKILL</code> ฆ่า process ที่อยู่ใน D ไม่ได้ —
+     <code class="inl">pct shutdown</code> เลยรอจนหมดเวลา แล้ว
+     <code class="inl">pct stop</code> ก็ไปรอต่อคิวอยู่ข้างหลัง</p>
+  <p>ทางออกไม่ใช่การฆ่าแรงขึ้น แต่คือ<b>บังคับให้ mount ที่ตายแล้วตอบ error แทนที่จะค้าง</b>
+     พอ I/O เด้ง error ออกมา process ก็หลุดจาก D แล้วตายได้ตามปกติ</p>
+  <div class="code"><pre><span class="c"># on the COMPUTE node - what is actually stuck</span>
+ps -eo pid,stat,wchan:32,cmd | awk '$2 ~ /D/'
+
+<span class="c"># make the dead NFS mount return errors instead of blocking</span>
+umount -f /mnt/pve/&lt;the dead storage&gt;
+
+<span class="c"># if -f alone is not enough, detach the tree as well</span>
+umount -f -l /mnt/pve/&lt;the dead storage&gt;
+
+<span class="c"># now this finishes</span>
+pct stop 300
+pct unlock 300          <span class="c"># only if PVE left a lock behind</span></pre></div>
+  <table>
+    <tr><th>คำสั่ง</th><th>ทำอะไร</th></tr>
+    <tr><td class="m">umount -f</td><td>บอก NFS ให้ทิ้ง request ที่ค้างอยู่ ตอบ EIO ออกมา — อันนี้คือตัวที่ปลด D state</td></tr>
+    <tr><td class="m">umount -l</td><td>ถอด tree ออกจาก namespace การเข้าถึงใหม่จะพัง แต่ของที่ค้างอยู่แล้วอาจยังค้าง</td></tr>
+    <tr><td class="m">umount เฉยๆ</td><td>ไม่ผ่าน ตราบใดที่ยังมีคนใช้อยู่ (target is busy)</td></tr>
+  </table>
+  <div class="tip"><p><b>ถ้า GUI เทาไปทั้งหน้า</b> เพราะ PVE poll storage ที่ตายอยู่เรื่อยๆ
+     ปิด storage นั้นที่ Datacenter &rarr; Storage &rarr; เอา checkbox Enable ออก
+     (หรือ <span class="m">pvesm set &lt;id&gt; --disable 1</span>) แล้วหน้าจอจะกลับมาตอบสนอง
+     อย่าลืมเปิดกลับตอน storage ฟื้น</p></div>
+  <div class="warn"><p><b>ทางลัดที่ได้ผลแน่นอนแต่ราคาแพง</b> รีบูตเครื่อง compute
+     ถ้าจะทำ <b>ทำก่อนสั่ง distribute</b> — เพราะหลังจากนั้นเครื่องนั้นจะมี 9xxx
+     ที่กำลังให้บริการลูกค้าอยู่ การรีบูตตอนนั้นคือการล้มของที่เพิ่งกู้มา</p></div>
   <div class="stop"><p><b>PAUSE ช่วยเรื่องนี้ไม่ได้</b> เครื่อง storage ตายโดยไม่บอกล่วงหน้า
      ไม่มีใครทันพิมพ์ <code class="inl">touch PAUSE</code> และไฟล์นั้นก็อยู่บนเครื่องที่ตายไปแล้วด้วย
      ด่าน D1 จึงไปอ่าน <code class="inl">onboot</code> จากเครื่อง compute โดยตรง
