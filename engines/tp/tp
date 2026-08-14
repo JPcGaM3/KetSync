@@ -2,7 +2,7 @@
 # =============================================================================
 #  tp — teleport. One command for every way a container moves in this fleet.
 # -----------------------------------------------------------------------------
-#  Three engines, one repo, one config directory, one state directory:
+#  Six engines, one repo, one config directory, one state directory:
 #
 #    tp migrate    old standalone node  ->  raw image on the storage node
 #                  (one-way, ends when the CT goes live and you mark it done)
@@ -17,6 +17,10 @@
 #                  (while the storage node is STILL gone: whatever the customer
 #                   has done since the outage lives on one local disk until it
 #                   has been somewhere else too)
+#    tp isolate    take a production CT off the wire so its copy can answer
+#    tp restore    put its bridges and its onboot back, from what isolate
+#                  wrote down. Both are ct-prepare.sh, which moves no data and
+#                  refuses unless the container's storage is provably dead
 #
 #  Read-only helpers:
 #    tp status     what every CT's last run did, both engines, one table
@@ -40,7 +44,11 @@ export PATH
 TP_HOME="${TP_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 export TP_HOME
 
-usage(){ sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\} \{0,1\}//'; }
+# Printed by walking the header until the first line that is not a comment,
+# rather than by a line range. A range is a number that has to be edited every
+# time somebody adds a line above it, and the failure is silent: the usage just
+# stops mid-sentence, which is exactly what happened when `isolate` was added.
+usage(){ awk 'NR>1{ if (/^#/) { sub(/^#[ ]?/,""); print } else exit }' "${BASH_SOURCE[0]}"; }
 
 # The same rule the engines print between operations, and it frames the status
 # TABLE - two rules, top and bottom, around columns that would otherwise run
@@ -203,6 +211,12 @@ case "${1:-}" in
   failback) shift; engine ct-failback.sh "$@";;
   distribute) shift; engine ct-distribute.sh "$@";;
   recall)   shift; engine ct-recall.sh   "$@";;
+  prepare)  shift; engine ct-prepare.sh  "$@";;
+  # isolate and restore are ct-prepare.sh's two directions, reachable by the
+  # word an operator would actually type. Same engine, same guards: nobody
+  # should have to know which file a verb lives in.
+  isolate)  shift; engine ct-prepare.sh --isolate "$@";;
+  restore)  shift; engine ct-prepare.sh --restore "$@";;
   status)   shift; cmd_status "$@";;
   doctor)   shift; cmd_doctor "$@";;
   version)  echo "tp $(cd "$TP_HOME" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;

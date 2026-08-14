@@ -15,6 +15,9 @@
 #    ketsync distribute DR: a copy on the backup node -> a compute node's own
 #                       storage, so it can run while the storage node is gone
 #    ketsync recall       a 9<id> on a compute node -> back into its DR copy
+#    ketsync isolate      take a production CT off the wire so its copy can
+#                         answer for it, recording which bridge it came from
+#    ketsync restore      put that bridge, and onboot, back afterwards
 #
 #    ketsync tp <anything>   pass straight through to the engines, for a flag
 #                            this dispatcher has not been taught
@@ -68,7 +71,7 @@ run_tp(){
 
 case "${1:-}" in
   # --- tp's, passed through untouched ---
-  migrate|replica|failback|status|distribute|recall)
+  migrate|replica|failback|status|distribute|recall|prepare|isolate|restore)
               run_tp "$@";;
   tp)         shift; run_tp "$@";;
 

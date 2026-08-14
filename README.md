@@ -309,8 +309,8 @@ chose.
 
 ```bash
 make lint       # bash -n, shellcheck, the language rule, the separator rule
-make test       # 322 simulator scenarios + 21 for ketsync sync, plus c2v
-make mutation   # 298 known bugs put back one at a time; none may survive
+make test       # 359 simulator scenarios + 21 for ketsync sync, plus c2v
+make mutation   # 332 known bugs put back one at a time; none may survive
 ```
 
 Every engine runs against a **simulator**: the real script, in a sandbox, with

@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# fake ssh — the whole cluster, one shell command at a time.
+#
+# ct-prepare.sh orchestrates and touches nothing itself, so every read and
+# every write in the run arrives here. Two kinds of machine answer:
+#
+#   $SIM_BKP_HOST      the backup node, asked one question: which node holds
+#                      the config for this container
+#   anything else      a production node: its containers, its bridges, its
+#                      storages, and the record in pmxcfs
+#
+# Four answers refuse to pretend rather than simulate, because each one has a
+# consequence on a real machine that no amount of correct-looking log output
+# would undo:
+#
+#   - pct set on a container whose storage ANSWERED  (P2: cuts a live customer
+#     off their own network)
+#   - pct start / stop / shutdown / destroy, anywhere, ever
+#   - moving a bridge before the record exists       (the record is the only
+#     copy of the bridge being overwritten)
+#   - any write at all while --dry-run is in force
+# shellcheck source=tests/sim/prepare/lib.sh
+. "$SIMLIB"
+
+host=""; ctl=""; declare -a cmd=()
+while (( $# )); do
+  case "$1" in
+    -o) shift 2;;
+    -O) ctl="${2:-}"; shift 2;;
+    -c) shift 2;;
+    -*) shift;;
+    *)  if [[ -z "$host" ]]; then host="${1#*@}"; else cmd+=("$1"); fi; shift;;
+  esac
+done
+[[ -n "$ctl" ]] && exit 0
+c="${cmd[*]:-}"
+trace "ssh $host :: $(printf '%s' "$c" | tr '\n' ' ')"
+
+PVE="$SIMROOT/pve"
+
+# Nothing here may touch container lifecycle, on any machine, ever. This engine
+# writes a config and nothing else - `--evacuate` is where stopping lives, and
+# it is a separate mode precisely so this one can be proven never to.
+case "$c" in
+  *"pct start"*|*"pct stop"*|*"pct shutdown"*|*"pct destroy"*|*"pct create"*)
+    violation "touched container lifecycle: $c"; exit 1;;
+esac
+
+# ---------------------------------------------------------------- backup node
+if [[ "$host" == "${SIM_BKP_HOST:-}" ]]; then
+  [[ -f "$SIMROOT/bkp.down" ]] && { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+  case "$c" in
+    "ls /etc/pve/"*)
+      a="${c#ls }"; a="${a%%2>*}"
+      set -f; read -r -a pats <<<"$a"; set +f
+      found=0
+      for pat in "${pats[@]}"; do
+        [[ "$pat" == -* ]] && continue
+        # shellcheck disable=SC2206  # the glob is the point: /etc/pve/nodes/*/lxc
+        hits=( "$PVE"${pat#/etc/pve} )
+        for f in "${hits[@]}"; do
+          [[ -e "$f" ]] || continue
+          printf '/etc/pve%s\n' "${f#"$PVE"}"; found=1
+        done
+      done
+      (( found )) || { echo "ls: cannot access: No such file or directory" >&2; exit 2; }
+      exit 0;;
+    true) exit 0;;
+  esac
+  violation "remote command the simulator does not model on the backup node: $c"
+  exit 1
+fi
+
+# ---------------------------------------------------------------- production
+N="$(node_dir "$host")"
+if [[ ! -d "$N" && -f "$SIMWORK/nodes.map" ]]; then
+  _n="$(awk -v i="$host" '$1!~/^#/ && $1==i{print $2; exit}' "$SIMWORK/nodes.map")"
+  [[ -n "$_n" ]] && N="$(node_dir "$_n")"
+fi
+[[ -d "$N" && ! -f "$N/.down" ]] \
+  || { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+NODE="$(basename "$N")"
+D="$N/ct"
+
+case "$c" in
+  true) exit 0;;
+
+  # ---- the probe. One round trip, reproduced as the engine's snippet behaves,
+  # including the part that matters: a missing bridge exits BEFORE it can echo
+  # OK, so "could not finish reading" stays apart from "there is no uplink".
+  *"/sys/class/net/veth"*)
+    id="$(printf '%s' "$c" | tr '\n' ' ' | sed -n 's|.*/sys/class/net/veth\([0-9][0-9]*\)i\*.*|\1|p')"
+    br="$(printf '%s' "$c" | tr '\n' ' ' | sed -n 's|.*ip -br link show \([^ ]*\).*|\1|p')"
+    [[ -f "$D/$id.status" ]] || { echo NOCONFIG; exit 0; }
+    printf 'STATUS %s\n' "$(cat "$D/$id.status")"
+    printf 'ONBOOT %s\n' "$(cat "$D/$id.onboot" 2>/dev/null || echo 0)"
+    printf 'NETS %s\n'   "$(grep -c . "$D/$id.nets" 2>/dev/null || echo 0)"
+    if [[ -f "$D/$id.nets" ]]; then
+      while IFS= read -r l; do
+        [[ -n "$l" ]] || continue
+        printf 'NETLINE %s %s\n' "${l%%:*}" "${l#*: }"
+      done < "$D/$id.nets"
+    fi
+    sid="$(cat "$D/$id.rootsid" 2>/dev/null)"
+    printf 'ROOTSID %s\n' "$sid"
+    printf 'ROOTPATH %s\n' "$(cat "$N/storage/$sid.path" 2>/dev/null || echo "/mnt/pve/$sid")"
+    printf 'STATRC %s\n' "$(stat_rc_of "$NODE" "$sid")"
+    printf 'DSTATE %s\n' "$(cat "$N/dstate" 2>/dev/null || echo 0)"
+    # The KERNEL's view, kept separate from the config's on purpose: a config
+    # can record a bridge change PVE never applied to a running container, and
+    # P6 is the guard that exists because of it.
+    if [[ -f "$D/$id.veth" ]]; then
+      while read -r ifn master; do
+        [[ -n "${ifn:-}" ]] && printf 'VETH %s %s\n' "$ifn" "$master"
+      done < "$D/$id.veth"
+    fi
+    [[ -f "$N/bridges/$br" ]] || { echo BRMISSING; exit 0; }
+    while read -r port kind _; do
+      [[ -z "${port:-}" ]] && continue
+      case "$kind" in nic|bond) printf 'UPLINK %s\n' "$port";; esac
+    done < "$N/bridges/$br"
+    echo OK; exit 0;;
+
+  # ---- the record, in pmxcfs so one copy serves the whole cluster
+  "mkdir -p /etc/pve/ketsync && cat > "*)
+    dry_forbids "wrote the isolate record" || exit 1
+    f="${c#*cat > }"; f="${f//\'/}"
+    id="${f##*isolate-}"; id="${id%.tsv}"
+    [[ -f "$N/.rowo" ]] && { echo "mkdir: cannot create directory '/etc/pve/ketsync': Read-only file system" >&2; exit 1; }
+    sid="$(cat "$D/$id.rootsid" 2>/dev/null)"
+    if [[ "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
+      violation "wrote an isolate record for CT $id whose storage '$sid' is ALIVE"
+      exit 1
+    fi
+    mkdir -p "$PVE/ketsync"
+    if [[ -f "$N/.rectrunc" ]]; then
+      # pmxcfs is a filesystem with a size limit and a network under it. A
+      # write that returns 0 and lands as nothing is the case the read-back
+      # exists for, and it is the one a scenario cannot reach by making the
+      # write fail.
+      cat >/dev/null; : > "$(rec_file "$id")"
+    else
+      cat > "$(rec_file "$id")"
+    fi
+    exit 0;;
+
+  "cat /etc/pve/ketsync/isolate-"*|"cat '/etc/pve/ketsync/isolate-"*)
+    f="${c#cat }"; f="${f%% *}"; f="${f//\'/}"
+    id="${f##*isolate-}"; id="${id%.tsv}"
+    [[ -f "$(rec_file "$id")" ]] || exit 1
+    cat "$(rec_file "$id")"; exit 0;;
+
+  "rm -f /etc/pve/ketsync/isolate-"*|"rm -f '/etc/pve/ketsync/isolate-"*)
+    dry_forbids "removed the isolate record" || exit 1
+    f="${c#rm -f }"; f="${f//\'/}"
+    id="${f##*isolate-}"; id="${id%.tsv}"
+    [[ -f "$N/.recstuck" ]] && { echo "rm: cannot remove: Read-only file system" >&2; exit 1; }
+    rm -f "$(rec_file "$id")"; exit 0;;
+
+  # ---- the one write this engine makes to a container
+  "pct set "*--net*)
+    dry_forbids "changed a container's network" || exit 1
+    id="$(awk '{print $3}' <<<"$c")"
+    nid="$(sed -n 's/.*--\(net[0-9][0-9]*\) .*/\1/p' <<<"$c")"
+    line="${c#*--"$nid" }"; line="${line#\'}"; line="${line%\'}"
+    [[ -f "$D/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+    sid="$(cat "$D/$id.rootsid" 2>/dev/null)"
+    # The refusal this whole engine is built around. A storage that answered is
+    # a container that is very likely serving somebody, and taking its network
+    # away is an outage caused by the tool meant to prevent one.
+    if [[ "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
+      violation "changed CT $id's network while its storage '$sid' was ALIVE"
+      exit 1
+    fi
+    # The record is the only copy of the bridge about to be overwritten. Moving
+    # first and writing it down afterwards loses it for good if the run dies in
+    # between - so the order is an invariant, not a preference.
+    newbr="$(printf '%s' "$line" | tr ',' '\n' | sed -n 's/^bridge=//p' | head -1)"
+    oldbr="$(sed -n "s/^$nid: .*/&/p" "$D/$id.nets" 2>/dev/null | tr ',' '\n' | sed -n 's/^bridge=//p' | head -1)"
+    if [[ "$newbr" != "$oldbr" ]] && ! rec_exists "$id"; then
+      violation "moved CT $id's $nid from '$oldbr' to '$newbr' with no record written first"
+      exit 1
+    fi
+    # config always; kernel only when this node hotplugs. A node that writes
+    # the config and does not apply it is exactly what P6 is for.
+    awk -v n="$nid" -v l="$nid: $line" '$0 ~ "^"n": " {print l; next} {print}' \
+        "$D/$id.nets" > "$D/.nets.$$" && mv -f "$D/.nets.$$" "$D/$id.nets"
+    # net0 in the config is veth<id>i0 in the kernel. Keeping the two named
+    # differently is not pedantry: the engine reads one from `pct config` and
+    # the other from /sys/class/net, and P6 exists because they can disagree.
+    if [[ ! -f "$N/.nohotplug" ]]; then
+      ifn="veth${id}i${nid#net}"
+      awk -v n="$ifn" -v b="$newbr" '$1==n {print n" "b; next} {print}' \
+          "$D/$id.veth" > "$D/.veth.$$" 2>/dev/null && mv -f "$D/.veth.$$" "$D/$id.veth"
+    fi
+    exit 0;;
+
+  "pct set "*--onboot*)
+    dry_forbids "changed onboot" || exit 1
+    id="$(awk '{print $3}' <<<"$c")"
+    v="$(sed -n 's/.*--onboot \([0-9]*\).*/\1/p' <<<"$c")"
+    [[ -f "$D/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+    printf '%s\n' "$v" > "$D/$id.onboot"; exit 0;;
+esac
+
+violation "command the simulator does not model on production node $host: $c"
+exit 1

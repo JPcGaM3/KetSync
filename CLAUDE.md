@@ -51,9 +51,13 @@ held", and the run exits 0 having done nothing.
 **7. A stub says it is a stub.** Do not make one half work. There are none
 left: `distribute` stopped being one when `engines/tp/ct-distribute.sh` was
 written, and `recall` when `engines/tp/ct-recall.sh` was, with 58/62 and 53/47
-scenarios and mutations behind them - which is the bar for the next one. The
-helper that printed "designed but not built" is gone with the last stub; bring
-it back with the next one rather than keeping it warm.
+scenarios and mutations behind them - which is the bar for the next one.
+`isolate`/`restore` arrived at 37/34, deliberately smaller because
+`ct-prepare.sh` moves no customer data: there is no transfer to tear, no
+mountpoint to fill and no direction to invert, so the surface really is
+smaller. Do not read it as the new bar. The helper that printed "designed but
+not built" is gone with the last stub; bring it back with the next one rather
+than keeping it warm.
 
 **8. Nothing that writes to a real machine ships without a simulator.** Read
 `tests/README.md`. `sync` has one - 21 scenarios and 19 mutations - and writing
@@ -65,8 +69,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 322 tp scenarios + 21 for ketsync sync
-    make mutation # 298 known bugs put back. None may survive
+    make test     # both layers: 359 tp scenarios + 21 for ketsync sync
+    make mutation # 332 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

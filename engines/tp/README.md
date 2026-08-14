@@ -102,7 +102,7 @@ from a healthy run.
 
 ```bash
 make lint        # bash -n + shellcheck + the language and separator rules
-make test        # 322 simulator + 16 dispatcher scenarios, 125 c2v
+make test        # 359 simulator + 16 dispatcher scenarios, 125 c2v
 make mutation    # 268 known bugs reintroduced: 259 in the engines, 9 in the dispatcher, all must be caught
 ```
 

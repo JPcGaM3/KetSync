@@ -5,7 +5,7 @@ is here because getting it wrong has a cost that is not obvious from the code.
 
 ## What this is
 
-`tp` — teleport. Five engines that move **running production LXC containers**
+`tp` — teleport. Six engines that move **running production LXC containers**
 around a real fleet, on a real schedule. There is no staging copy of the fleet.
 A bug here does not fail a test — it corrupts somebody's container at 2am.
 
@@ -14,6 +14,8 @@ A bug here does not fail a test — it corrupts somebody's container at 2am.
     tp failback   promoted copy        ->  back into the production image
     tp distribute DR copy on the backup ->  a compute node's OWN storage
     tp recall     a compute node's 9<id> ->  back into its copy on the backup
+    tp isolate    a production CT off the wire, and tp restore puts it back.
+                  The only engine that moves no bytes: it writes a network
 
 Every engine runs on the **storage node**. The machines around it:
 
@@ -38,6 +40,7 @@ halves, do not touch the engine — say so instead.
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    59 mutations
     ct-distribute.sh tests/mutation/run-mutation-distribute.sh  62 mutations
     ct-recall.sh     tests/mutation/run-mutation-recall.sh      47 mutations
+    ct-prepare.sh    tests/mutation/run-mutation-prepare.sh     34 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
@@ -66,11 +69,26 @@ guides are Thai because the operator is Thai — that is the only exception, and
 inside them Thai belongs in the prose, never inside `<pre>` or `<code>`.
 Commands are copied and pasted at 2am; they have to survive that.
 
-**3. Nothing here touches container lifecycle.**
-No shutdown, no start, no IP remap, no rollback state machine. Cutover, DR
-promotion and the return trip are done by hand, on purpose, by a human who is
-looking at the machine. The engines refuse to run when the lifecycle is wrong
-(`--stopped`, B1, B2, R2) — they never fix it themselves.
+**3. Nothing here starts, stops or destroys a container.**
+No rollback state machine either. Cutover, DR promotion and the return trip are
+decisions made by hand, on purpose, by somebody looking at the machine. The
+engines refuse to run when the lifecycle is wrong (`--stopped`, B1, B2, R2,
+D1) — they never fix it themselves.
+
+This rule used to say "no IP remap" as well, and `ct-prepare.sh --isolate`
+broke that half deliberately: it moves every net line of a RUNNING production
+container onto `MOCKNET_BRIDGE`. The reason it is allowed and stopping is not
+is that it is reversible and it is the only remedy that still works when the
+container's rootfs has gone — `pct shutdown` hangs on processes in
+uninterruptible sleep, while a bridge change is a write to `/etc/pve` that
+hotplugs live and needs nothing from the dead storage.
+
+What makes it safe is not that it is reversible in principle but that P2
+refuses unless the container's rootfs storage is PROVABLY dead — a `stat` on
+its mountpoint that blocked until a timeout killed it — and that P5 refuses to
+overwrite the record of where each interface came from. Run against a healthy
+fleet it does nothing at all. Do not extend the carve-out to a second verb
+without the same kind of proof.
 
 **4. A copy never reaches the wire by accident.**
 `migrate` writes the target config with no network and `onboot: 0`; the operator
@@ -132,8 +150,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 75 + 70 + 58 + 53 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 57 + 59 + 62 + 47 engine + 9 dispatcher bugs, all caught
+    make test       # 66 + 75 + 70 + 58 + 53 + 37 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 57 + 59 + 62 + 47 + 34 engine + 9 dispatcher, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did
