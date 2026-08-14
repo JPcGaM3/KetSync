@@ -31,6 +31,15 @@
 #                gets isolated instead. `--restore --node` switches the
 #                storages back on afterwards, from what this wrote down.
 #
+#      cleanup   the OTHER end of the disaster, and the only mode that runs
+#                after it is over. The failback has put the newest data back
+#                into the production image; this puts the production network
+#                back if nobody has yet, stops the 9<id> that was serving in
+#                its place, and moves that one onto MOCKNET_BRIDGE so a
+#                compute node rebooting cannot put the address back on the
+#                wire. `--destroy` also removes it, which is what releases
+#                ct-replica's R13.
+#
 #  usage:
 #    ct-prepare.sh --list                    what each container's state is
 #    ct-prepare.sh --isolate --all           every container in the inventory
@@ -40,6 +49,8 @@
 #    ct-prepare.sh --evacuate --node 10.0.0.1  one node: disable, unmount, stop
 #    ct-prepare.sh --evacuate --all            every node holding an inventory CT
 #    ct-prepare.sh --restore --node 10.0.0.1   switch those storages back on
+#    ct-prepare.sh --cleanup --ctid 300        after the failback: put 9300 away
+#    ct-prepare.sh --cleanup --all --destroy   and remove them, releasing R13
 #
 #  exit code: 0 = all ok, 1 = at least one container failed or was skipped,
 #             2 = refused before touching anything.
@@ -113,12 +124,20 @@
 #       moved. On an Open vSwitch node the master is the datapath and not the
 #       bridge, so the probe asks ovsdb too - see veth_bridge().
 #
-#  Nothing here starts, creates or destroys a container, ever. `--evacuate` is
-#  the one mode that stops one, and it is separate for a reason: everything
-#  else here is safe to point at a container that is serving customers, in the
-#  sense that it will refuse. That one changes a whole machine.
+#  Nothing here starts a container, ever. Two modes stop one - `--evacuate`,
+#  which does a whole machine, and `--cleanup`, which puts away the stand-in
+#  after the disaster is over - and they are separate from the rest for that
+#  reason: everything else here is safe to point at a container that is
+#  serving customers, in the sense that it will refuse.
 #
-#  The evacuate guards are E1..E5 and they are documented where they run.
+#  ONE mode destroys, and only with `--destroy`, and only a 9<id>: the
+#  temporary container this fleet's own DR created, whose data has been carried
+#  back and verified. A production id can never reach that command - the number
+#  is worked out from DR_OFFSET rather than typed - and destroying it is what
+#  releases ct-replica's R13, which is why it is a flag and not the default.
+#
+#  The evacuate guards are E1..E5 and the cleanup guards K1..K4; both are
+#  documented where they run.
 # -----------------------------------------------------------------------------
 #  WHERE THE RECORD LIVES, AND WHY NOT IN THE CONFIG
 #
@@ -172,10 +191,17 @@ STAT_TIMEOUT=5                   # seconds to wait for a storage to answer. A
                                  # not a tuning knob, it is the difference
                                  # between "answered" and "blocked forever"
 LOG_KEEP_DAYS=14                 # same knob, same ctrep.conf, as ct-replica.sh
+DR_OFFSET=9000                   # production id -> the temporary container on a
+                                 # compute node's own storage. Same knob, same
+                                 # file, as ct-distribute and ct-recall: --cleanup
+                                 # is the only mode here that touches a 9<id>,
+                                 # and it works the number out rather than being
+                                 # told it
 SSH_CIPHERS=aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr
 # -------------------------------------------------------------------------
 
 ONLY_CTID=""; ONLY_NODE=""; ALL=0; LIST=0; DRY=0; ISOLATE=0; RESTORE=0; EVACUATE=0
+CLEANUP=0; DESTROY=0
 while (( $# )); do
   case "$1" in
     --ctid)    [[ $# -ge 2 ]] || { echo "--ctid needs a value" >&2; exit 2; }
@@ -187,6 +213,8 @@ while (( $# )); do
     --isolate) ISOLATE=1; shift;;
     --restore) RESTORE=1; shift;;
     --evacuate) EVACUATE=1; shift;;
+    --cleanup) CLEANUP=1; shift;;
+    --destroy) DESTROY=1; shift;;
     --dry-run) DRY=1; shift;;
     -h|--help) awk 'NR>1{ if (/^#/) { sub(/^#[ ]?/,""); print } else exit }' "${BASH_SOURCE[0]}"; exit 0;;
     *) echo "unknown argument: $1" >&2; exit 2;;
@@ -198,9 +226,28 @@ fi
 if (( EVACUATE && (ISOLATE || RESTORE) )); then
   echo "--evacuate already isolates what it cannot stop - do not ask for both" >&2; exit 2
 fi
-if (( ! LIST && ! ISOLATE && ! RESTORE && ! EVACUATE )); then
-  echo "usage: ct-prepare.sh --list | --isolate | --restore | --evacuate" >&2
+# --cleanup is the end of the disaster and every other mode is the middle of
+# one. Asking for both in one command is asking to put a container away and
+# take it out again, and there is no order that makes that mean something.
+if (( CLEANUP && (ISOLATE || RESTORE || EVACUATE) )); then
+  echo "--cleanup is the end of a disaster; --isolate/--restore/--evacuate are the middle" >&2
+  echo "       of one. Pick one. --cleanup restores the production network itself." >&2
+  exit 2
+fi
+if (( DESTROY && ! CLEANUP )); then
+  echo "--destroy is a flag of --cleanup, not a mode: it decides what happens to the" >&2
+  echo "       9<id> once its data is home. Nothing else here destroys anything." >&2
+  exit 2
+fi
+if (( ! LIST && ! ISOLATE && ! RESTORE && ! EVACUATE && ! CLEANUP )); then
+  echo "usage: ct-prepare.sh --list | --isolate | --restore | --evacuate | --cleanup" >&2
   echo "       [--all | --ctid <production_ctid> | --node <ip>] [--dry-run]" >&2
+  exit 2
+fi
+if (( CLEANUP )) && (( ! ALL )) && [[ ! "$ONLY_CTID" =~ ^[0-9]+$ ]]; then
+  echo "usage: ct-prepare.sh --cleanup --all | --ctid <production_ctid> [--destroy]" >&2
+  echo "       the id is the PRODUCTION one. The 9<id> is worked out from it -" >&2
+  echo "       nobody types the number of the container that gets stopped." >&2
   exit 2
 fi
 if (( EVACUATE )) && (( ! ALL )) && [[ -z "$ONLY_NODE" ]]; then
@@ -212,7 +259,7 @@ fi
 # A container verb needs a container scope. --node is a scope too, and it is
 # the only one --evacuate takes, so naming a machine counts as having said
 # which work to do.
-if (( ! LIST )) && (( ! ALL )) && [[ ! "$ONLY_CTID" =~ ^[0-9]+$ ]] && [[ -z "$ONLY_NODE" ]]; then
+if (( ! LIST )) && (( ! CLEANUP )) && (( ! ALL )) && [[ ! "$ONLY_CTID" =~ ^[0-9]+$ ]] && [[ -z "$ONLY_NODE" ]]; then
   echo "usage: ct-prepare.sh --isolate|--restore --all | --ctid <production_ctid>" >&2
   echo "       ct-prepare.sh --evacuate|--restore --node <ip>" >&2
   exit 2
@@ -222,7 +269,7 @@ if [[ -f "$CONF" ]]; then
   # shellcheck source=/dev/null
   . "$CONF" || { echo "failed to read $CONF" >&2; exit 2; }
 fi
-for _v in STAT_TIMEOUT SHUTDOWN_TIMEOUT LOG_KEEP_DAYS; do
+for _v in STAT_TIMEOUT SHUTDOWN_TIMEOUT LOG_KEEP_DAYS DR_OFFSET; do
   [[ "${!_v}" =~ ^[0-9]+$ ]] || { echo "$CONF: $_v must be a plain integer, got '${!_v}'" >&2; exit 2; }
 done
 (( STAT_TIMEOUT >= 1 )) || { echo "$CONF: STAT_TIMEOUT must be at least 1 second" >&2; exit 2; }
@@ -270,6 +317,8 @@ MODE=list
 (( ISOLATE ))  && MODE=isolate
 (( RESTORE ))  && MODE=restore
 (( EVACUATE )) && MODE=evacuate
+(( CLEANUP ))  && MODE=cleanup
+(( CLEANUP && DESTROY )) && MODE=cleanup/destroy
 (( DRY ))     && MODE="$MODE/dry-run"
 
 SSH_COMMON="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=15 -c $SSH_CIPHERS"
@@ -474,8 +523,15 @@ storage_verdict(){   # $1 = STATRC -> dead | alive | gone
   esac
 }
 
+# What do_isolate found out on its way, for the caller that has to decide what
+# to do next. Set on every path that gets as far as reading the node, because
+# the answer "why can this container not be stopped" is the probe's answer and
+# re-asking would be a second round trip for a fact already in hand.
+ISO_PIP=""; ISO_PN=""; ISO_VERDICT=""
+
 do_isolate(){   # $1 = ctid
   local ct="$1" pn pip out st nets rec _k _if _br _n _line _iso_bad="" _moved=""
+  ISO_PIP=""; ISO_PN=""; ISO_VERDICT=""
   pn="$(prod_node "$ct")"
   if [[ -z "$pn" ]]; then
     log "[$ct] GUARD P1: CT $ct has no config anywhere in the cluster - nothing to isolate"
@@ -503,6 +559,7 @@ do_isolate(){   # $1 = ctid
   statrc="$(awk '$1=="STATRC"{print $2; exit}' <<<"$out")"
   dstate="$(awk '$1=="DSTATE"{print $2; exit}' <<<"$out")"
   verdict="$(storage_verdict "$statrc")"
+  ISO_PIP="$pip"; ISO_PN="$pn"; ISO_VERDICT="$verdict"
 
   # ---- GUARD P2: the storage must be provably dead ------------------------
   if [[ "$verdict" == alive ]]; then
@@ -661,11 +718,64 @@ do_isolate(){   # $1 = ctid
     st_fail "$ct"; return 1
   fi
   log "[$ct] ISOLATED:$_moved now on $MOCKNET_BRIDGE, verified from /sys/class/net"
-  log "[$ct]   it is STILL RUNNING and still a pending writer: its I/O is blocked now"
-  log "[$ct]   because the storage is gone, and it resumes the moment that storage is"
-  log "[$ct]   back. Stop it before then. ct-failback's B1 refuses until you have."
   log "[$ct]   put it back with:  ct-prepare.sh --restore --ctid $ct"
   st_ok "$ct"; return 0
+}
+
+# ---------- stopping the container that was just isolated -------------------
+# Off the wire is not the end of it. An isolated container is still a PENDING
+# WRITER: its I/O is blocked only because the storage is gone, and it resumes
+# the instant that storage comes back, into an image the fleet has moved on
+# from. ct-failback's B1 refuses the failback until it is down, so this debt
+# cannot be forgotten silently - but somebody still has to pay it, and at two
+# hundred containers that somebody is this.
+#
+# WHETHER IT CAN BE STOPPED AT ALL is decided by one thing, and the probe
+# already knows it. A container whose dead mount is still there has processes
+# in uninterruptible sleep: `pct shutdown` waits for a guest that cannot
+# answer, SIGKILL does not reach a task in D state, and the command hangs until
+# the timeout kills it having achieved nothing. Once the mount is gone - which
+# is what `--evacuate` does with `umount -f -l` - the same pending I/O returns
+# EIO, the processes are free, and the shutdown returns in seconds.
+#
+# So this asks only when the verdict is `gone`, and when it is `dead` it names
+# the command that makes it gone. That command is per NODE and this one named a
+# container: the dead mount is shared by everything on that storage, so freeing
+# it is not something a --ctid run may do to a machine behind the operator's
+# back.
+#
+# It never forces. There is no rung above asking, and being off the wire is
+# already the thing the DR needs.
+stop_after_isolate(){   # $1 = ctid. Uses what do_isolate just found out.
+  local ct="$1" rc out st
+  [[ -n "$ISO_PIP" ]] || return 0
+  # A dry run reaches here with everything else pretended, and stopping a
+  # customer's container is not something to pretend at.
+  (( DRY )) && { log "[$ct] DRY: would ask it to stop if its dead mount were gone"; return 0; }
+  if [[ "$ISO_VERDICT" != gone ]]; then
+    log "[$ct]   it is STILL RUNNING, and stopping it needs its blocked I/O freed first."
+    log "[$ct]   That is a NODE operation - the dead mount is shared by every container"
+    log "[$ct]   on that storage - so this run, which named one container, will not do"
+    log "[$ct]   it on its own:"
+    log "[$ct]     ketsync evacuate --node $ISO_PIP"
+    log "[$ct]   that disables the dead storage, unmounts it, restarts pvestatd and then"
+    log "[$ct]   stops every container that was on it. Until then CT $ct is a pending"
+    log "[$ct]   writer and ct-failback's B1 refuses to write into its image."
+    return 0
+  fi
+  log "[$ct] its dead mount is already gone, so a shutdown can return: asking CT $ct to stop"
+  rsh "$ISO_PIP" "timeout $SHUTDOWN_TIMEOUT pct shutdown $ct"; rc=$?
+  out="$(probe "$ISO_PIP" "$ct")"
+  st="$(awk '$1=="STATUS"{print $2; exit}' <<<"$out")"
+  if [[ "$st" != running ]]; then
+    log "[$ct] STOPPED on $ISO_PN - off the wire and no longer writing"
+    return 0
+  fi
+  log "[$ct] did not come down within ${SHUTDOWN_TIMEOUT}s (rc=$rc) - it stays isolated"
+  log "[$ct]   nothing here forces a stop. A container that will not go is one whose"
+  log "[$ct]   processes are still waiting on something, and off the wire is what the"
+  log "[$ct]   DR actually needs. B1 will refuse the failback until it is down."
+  return 0
 }
 
 do_restore(){   # $1 = ctid
@@ -741,6 +851,185 @@ do_restore(){   # $1 = ctid
     st_fail "$ct"; return 1
   fi
   log "[$ct] RESTORED:$_put, onboot ${rob:-0}, record removed"
+  st_ok "$ct"; return 0
+}
+
+# ---------- --cleanup: the end of the disaster ------------------------------
+# Everything else here happens while the storage node is dead. This one happens
+# after it is back and `ct-failback --final` has put the newest data into the
+# production image, and it deals with what the disaster left standing: a
+# production container still on the isolated bridge, and a 9<id> on a compute
+# node still holding the address it was placed to answer with.
+#
+# What it does, in this order:
+#
+#   1. puts the production network and onboot back, out of the isolate record
+#      (skipped when there is no record - somebody already ran --restore)
+#   2. stops the 9<id>, if it is still running
+#   3. moves the 9<id>'s interfaces onto MOCKNET_BRIDGE, so a compute node
+#      rebooting can never put that address back on the wire
+#   4. with --destroy, destroys it
+#
+# THE GUARDS (K1..K4):
+#
+#   K1  the 9<id> must exist somewhere in the cluster. Asked of the cluster,
+#       never of an argument - the same rule as ct-recall's C1
+#
+#   K2  `ct-failback --final` must have finished OK for this container, read
+#       from the failback state file. That is the proof the production image
+#       holds the newest data; without it, putting the 9<id> away is putting
+#       away the only copy of everything the customer did during the outage.
+#       The file is written by the machine that ran the failback, so this mode
+#       is run there too, and says so when the file is missing rather than
+#       assuming the worst or the best
+#
+#   K3  a RUNNING 9<id> is only stopped when the production container is
+#       running. Stopping it otherwise means nothing answers that address at
+#       all, which is an outage caused by the tidy-up. An already-stopped one
+#       is a different question and is not asked: there is nothing left to take
+#       away. `pct start` is a human's, always, so this refuses rather than
+#       starting production itself
+#
+#   K4  --destroy is refused while the 9<id> is running, whatever K3 decided
+#
+# WHY STOPPING IS THE DEFAULT AND DESTROYING IS A FLAG. Stopping is reversible
+# by one `pct start`; destroying is not reversible at all. But ct-replica's R13
+# keys on the 9<id>'s CONFIG existing, not on it running, so a stopped one
+# still holds replication for that container - deliberately, because that is
+# what protects the pre-outage copy. Both facts are printed every run: the
+# operator decides when the fallback has stopped being worth a paused nightly.
+do_cleanup(){   # $1 = production ctid
+  local ct="$1" dr=$(( $1 + DR_OFFSET ))
+  local dn="" dip="" pn="" pip="" out="" st="" pst="" rec=""
+  local _k _n _line _moved="" _fb
+
+  # ---- K2 first: it is the cheapest, and it decides the whole run ---------
+  _fb="$BASE/state/failback-$ct.json"
+  if [[ ! -f "$_fb" ]]; then
+    log "[$ct] GUARD K2: no failback state for CT $ct on this machine ($_fb)"
+    log "[$ct] GUARD K2:   this mode puts away the container that has been serving customers,"
+    log "[$ct] GUARD K2:   so it asks for proof the data is home first, and that proof is the"
+    log "[$ct] GUARD K2:   failback's own record of its last run. Run this on the machine that"
+    log "[$ct] GUARD K2:   ran ct-failback - the one that holds the production images."
+    st_skip "$ct"; return 1
+  fi
+  local _fbmode _fbstatus
+  _fbmode="$(sed -n 's/.*"mode":"\([^"]*\)".*/\1/p'     "$_fb" | tail -1)"
+  _fbstatus="$(sed -n 's/.*"status":"\([^"]*\)".*/\1/p' "$_fb" | tail -1)"
+  if [[ "$_fbmode" != final || "$_fbstatus" != ok ]]; then
+    log "[$ct] GUARD K2: the last failback for CT $ct was mode='${_fbmode:-?}' status='${_fbstatus:-?}'"
+    log "[$ct] GUARD K2:   only a FINAL round that ended ok says the production image holds"
+    log "[$ct] GUARD K2:   everything the 9<id> served during the outage. A presync does not:"
+    log "[$ct] GUARD K2:   it is a rehearsal that leaves the newest data where it was."
+    log "[$ct] GUARD K2:     ct-failback.sh --ctid $ct --final"
+    st_skip "$ct"; return 1
+  fi
+  log "[$ct] K2: failback --final finished ok - the production image is the newest data"
+
+  # ---- step 1: the production network, out of the record ------------------
+  pn="$(prod_node "$ct")"
+  pip="${pn#*	}"; pn="${pn%%	*}"
+  if [[ -n "$pn" ]]; then
+    rec="$(rec_read "$pip" "$ct")"
+    if [[ -n "$(rec_field "$rec" ctid)" ]]; then
+      log "[$ct] cleanup: CT $ct still has an isolate record - putting its network back first"
+      do_restore "$ct" || { log "[$ct] cleanup: the restore did not finish - stopping here"; return 1; }
+    fi
+    pst="$(awk '$1=="STATUS"{print $2; exit}' <<<"$(probe "$pip" "$ct")")"
+  fi
+
+  # ---- K1: where the 9<id> is, asked of the cluster -----------------------
+  dn="$(prod_node "$dr")"
+  if [[ -z "$dn" ]]; then
+    log "[$ct] K1: no CT $dr anywhere in the cluster - nothing was left behind"
+    log "[$ct]   ct-replica is free to replicate CT $ct again (R13 keys on that config)"
+    st_ok "$ct"; return 0
+  fi
+  dip="${dn#*	}"; dn="${dn%%	*}"
+  out="$(probe "$dip" "$dr")"
+  if [[ -z "$out" || "$out" == *NOCONFIG* ]]; then
+    log "[$ct] GUARD K1: $dn ($dip) did not answer about CT $dr - nothing was changed"
+    log "[$ct] GUARD K1:   a node that cannot be asked is a node whose container cannot be"
+    log "[$ct] GUARD K1:   put away safely. Same rule as P1."
+    st_fail "$ct"; return 1
+  fi
+  st="$(awk '$1=="STATUS"{print $2; exit}' <<<"$out")"
+  log "[$ct] cleanup: CT $dr is on $dn ($dip), ${st:-?}; production CT $ct is ${pst:-unknown}"
+
+  if (( DRY )); then
+    log "[$ct] DRY: would stop CT $dr if it were running, move its net lines onto"
+    log "[$ct] DRY:   $MOCKNET_BRIDGE and set onboot 0"
+    (( DESTROY )) && log "[$ct] DRY: would then destroy CT $dr on $dn"
+    st_ok "$ct"; return 0
+  fi
+
+  # ---- K3: stopping the one thing that is answering right now -------------
+  if [[ "$st" == running ]]; then
+    if [[ "$pst" != running ]]; then
+      log "[$ct] GUARD K3: CT $dr is RUNNING and production CT $ct is ${pst:-not running}"
+      log "[$ct] GUARD K3:   CT $dr is what answers that address at this moment. Stopping it"
+      log "[$ct] GUARD K3:   now takes the service down until somebody starts production, and"
+      log "[$ct] GUARD K3:   nothing here starts a container - that is a decision with a"
+      log "[$ct] GUARD K3:   customer on the other end. Start it, then run this again:"
+      log "[$ct] GUARD K3:     ssh root@${pip:-<its node>} pct start $ct"
+      st_skip "$ct"; return 1
+    fi
+    log "[$ct] cleanup: production CT $ct is running, so CT $dr is a second machine on one"
+    log "[$ct] cleanup:   address - asking it to stop"
+    rsh "$dip" "timeout $SHUTDOWN_TIMEOUT pct shutdown $dr"
+    out="$(probe "$dip" "$dr")"
+    st="$(awk '$1=="STATUS"{print $2; exit}' <<<"$out")"
+    if [[ "$st" == running ]]; then
+      log "[$ct] cleanup: CT $dr did not come down within ${SHUTDOWN_TIMEOUT}s - nothing forced"
+      log "[$ct] cleanup:   its network is left alone too: moving it while it is up would take"
+      log "[$ct] cleanup:   a running service off the air without stopping it."
+      st_fail "$ct"; return 1
+    fi
+    log "[$ct] cleanup: CT $dr is stopped on $dn"
+  fi
+
+  # ---- step 3: the address, so a reboot cannot put it back on the wire ----
+  while read -r _k _n _line; do
+    [[ "$_k" == NETLINE ]] || continue
+    [[ "$(net_bridge "$_line")" == "$MOCKNET_BRIDGE" ]] && continue
+    _line="$(printf '%s' "$_line" | sed -E "s/bridge=[^,]*/bridge=$MOCKNET_BRIDGE/")"
+    if ! rsh "$dip" "pct set $dr --$_n '$_line'"; then
+      log "[$ct] ERROR: pct set $dr --$_n failed on $dn - CT $dr still holds a live address"
+      st_fail "$ct"; return 1
+    fi
+    _moved="$_moved $_n"
+  done <<< "$out"
+  rsh "$dip" "pct set $dr --onboot 0" \
+    || log "[$ct] WARN: could not set onboot 0 on CT $dr - do it by hand"
+  if [[ -n "$_moved" ]]; then
+    log "[$ct] cleanup:$_moved moved onto $MOCKNET_BRIDGE, onboot 0 - CT $dr cannot answer again"
+  else
+    log "[$ct] cleanup: CT $dr was already on $MOCKNET_BRIDGE, onboot 0"
+  fi
+
+  # ---- K4 and the destroy ------------------------------------------------
+  if (( DESTROY )); then
+    if [[ "$st" == running ]]; then
+      log "[$ct] GUARD K4: CT $dr is running - not destroying it"
+      st_fail "$ct"; return 1
+    fi
+    if ! rsh "$dip" "pct destroy $dr"; then
+      log "[$ct] ERROR: pct destroy $dr failed on $dn - it is stopped and off the wire, so"
+      log "[$ct] ERROR:   nothing is at risk; R13 still holds replication for CT $ct."
+      st_fail "$ct"; return 1
+    fi
+    log "[$ct] DESTROYED: CT $dr is gone from $dn"
+    log "[$ct]   ct-replica R13 is released: CT $ct is replicated again from tonight."
+    st_ok "$ct"; return 0
+  fi
+
+  log "[$ct] CT $dr is kept, stopped and unable to answer - the data it served is still"
+  log "[$ct]   on $dn if the failback turns out to have missed something."
+  log "[$ct]   R13 STILL HOLDS: ct-replica leaves CT $ct's DR copy alone while that config"
+  log "[$ct]   exists, so the nightly run keeps reporting it as DR ACTIVE and exiting"
+  log "[$ct]   non-zero. That is what protects the copy from before the outage."
+  log "[$ct]   when the fallback has stopped being worth that:"
+  log "[$ct]     ct-prepare.sh --cleanup --ctid $ct --destroy"
   st_ok "$ct"; return 0
 }
 
@@ -1000,8 +1289,14 @@ else
   log "=== $(hostname) prepare mode=$MODE containers: ${CTS[*]} ==="
   for _ct in "${CTS[@]}"; do
     hr_ct
-    if   (( ISOLATE )); then do_isolate "$_ct" || true
+    # --isolate as a MODE does one thing more than the function does: it asks
+    # the container to stop afterwards, when stopping can work at all. The
+    # function itself must not, because --evacuate calls it for containers that
+    # have just refused to come down, and asking a second time would wait out
+    # the timeout again for an answer it already has.
+    if   (( ISOLATE )); then do_isolate "$_ct" && stop_after_isolate "$_ct" || true
     elif (( RESTORE )); then do_restore "$_ct" || true
+    elif (( CLEANUP )); then do_cleanup "$_ct" || true
     else                     do_list    "$_ct" || true
     fi
   done
@@ -1015,6 +1310,11 @@ if (( ISOLATE || EVACUATE )) && (( ok )); then
   log "  next: ketsync distribute --all      # D1 will accept these now"
   log "  and when the storage is back:  ct-prepare.sh --restore --all"
   (( EVACUATE )) && log "  the storages this switched off:  ct-prepare.sh --restore --node <ip>"
+fi
+if (( CLEANUP )) && (( ok )) && (( ! DESTROY )); then
+  log "  the 9<id>s are stopped and off the wire, and still there. While their configs"
+  log "  exist ct-replica's R13 holds replication for those containers on purpose."
+  log "  when you no longer want the fallback:  ct-prepare.sh --cleanup --all --destroy"
 fi
 (( failed || skipped )) && exit 1
 exit 0

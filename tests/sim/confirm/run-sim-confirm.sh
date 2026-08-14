@@ -224,6 +224,26 @@ if scenario "15: the menu refuses before the question is even asked"; then
   done_scenario
 fi
 
+if scenario "16: cleanup says what it stops, because that is what it is for"; then
+  # The last verb of a disaster, and the one whose name sounds harmless. What
+  # it actually does is stop the container that has been serving customers in
+  # production's place, so the question says that rather than "tidy up".
+  run_tty n cleanup --all
+  has "STOPS each 9<id> that stood in during the outage"
+  has "--destroy it removes them for good"
+  never_ran
+  done_scenario
+fi
+
+if scenario "17: a bare cleanup prints its own menu and refuses"; then
+  run_headless cleanup
+  rc_is 2
+  never_ran
+  has "--destroy              also destroy the 9<id>"
+  has "refused: no scope given"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

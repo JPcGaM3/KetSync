@@ -225,7 +225,7 @@ feel temporary - a 9xxx container is one somebody has to deliberately unwind.
 Stage 1 of the DR runbook - get the production containers out of the way -
 was four or five raw `pvesm`, `umount` and `pct` commands per node, in an
 order almost everybody gets wrong. It is `isolate`, `restore` and `evacuate`
-now. 53 scenarios, 49 mutations.
+now. 69 scenarios, 58 mutations.
 
 **What makes it safe is a proof, not an intention.** P2 and E2 refuse unless
 the container's rootfs storage is provably dead, and the proof is not an
@@ -264,6 +264,57 @@ This breaks `tp`'s rule 3 in two places on purpose - an IP remap and a
 shutdown, both of a running production container - and `engines/tp/CLAUDE.md`
 says so, says why, and says not to extend the carve-out to a third verb
 without the same kind of proof.
+
+**`--cleanup` is the other end of the same disaster, and it is where the third
+break lives.** Everything above happens while the storage node is dead. This
+happens after it is back and `ct-failback --final` has put the newest data
+into the production image, and it deals with what is left standing: a
+production container still on the isolated bridge, and a `9<id>` on a compute
+node still holding the address production is about to use again. It restores
+the production network from the isolate record, stops the `9<id>`, moves that
+one onto `MOCKNET_BRIDGE` so a compute node rebooting cannot put the address
+back on the wire, sets its `onboot` to 0, and - only with `--destroy` -
+removes it.
+
+The first drill found the gap the hard way. `recall --final` and
+`failback --final` both finished, and afterwards CT 110 was still on `vmbr99`
+and CT 9110 was still there: every remaining step was a `pct` command in a log
+line, which is the thing this whole layer exists to stop being true.
+
+**Stopping is the default and destroying is a flag**, because stopping is
+reversible with one `pct start` and destroying is not reversible at all. The
+cost of that default is real and the run prints it every time: ct-replica's
+R13 keys on the `9<id>`'s config EXISTING rather than on it running, so a kept
+one holds replication for that container and the nightly run keeps exiting
+non-zero. That is the protection working - the pre-outage copy is what R13 is
+guarding - but somebody has to decide when the fallback has stopped being
+worth a paused nightly, and that somebody is not this engine.
+
+**What proves it is safe to do at all is the failback's own state file.** K2
+reads `state/failback-<ctid>.json` and requires a `--final` round that
+finished `ok`. A presync is a rehearsal that leaves the newest data exactly
+where it was, so "the last failback said ok" without reading WHICH MODE it was
+is the whole bug that guard exists for. The file is written by the machine
+that ran the failback, so `--cleanup` is run there too, and a missing file is
+reported as "not on this machine" rather than assumed either way.
+
+K3 is the one that protects a customer: a RUNNING `9<id>` is only stopped when
+the production container is running. Stopping it otherwise means nothing
+answers that address at all - an outage caused by the tidy-up - and starting
+production is a decision with a customer on the other end, so it refuses and
+names the command instead of running it. An already-stopped `9<id>` is not
+asked about, because there is nothing left to take away.
+
+**`--isolate` gained the same instinct at the other end.** Off the wire is not
+the end of it: an isolated container is still a pending writer, blocked only
+because its storage is gone. So the isolate MODE now asks it to stop
+afterwards - but only when the dead mount is already out of the way, which is
+what the `gone` verdict is. While the mount is still there the processes are
+in uninterruptible sleep and `pct shutdown` hangs until a timeout for nothing,
+and freeing them means unmounting a storage every container on that node
+shares. A run that named ONE container will not do that to a machine behind
+the operator's back: it prints `ketsync evacuate --node <ip>`, which is the
+command that does it deliberately, and stops there.
 
 **On Open vSwitch the kernel cannot name a bridge, and "read the kernel, not
 the config" nearly cost this fleet its DR.** Every check about where an
@@ -553,9 +604,10 @@ doctor` says so on the next good day.
     ketsync recall       tp's - engines/tp/ct-recall.sh, 53 scenarios,
                          47 mutations. See section 6
     ketsync status       tp's
-    ketsync isolate      tp's - engines/tp/ct-prepare.sh, 53 scenarios,
-    ketsync restore      46 mutations, shared by all three. See section 4b
+    ketsync isolate      tp's - engines/tp/ct-prepare.sh, 69 scenarios,
+    ketsync restore      58 mutations, shared by all four. See section 4b
     ketsync evacuate
+    ketsync cleanup
 
 Nothing here is a stub any more. ketsync's own `tests/` covers `sync` and not
 `role` or `doctor`, and that is the remaining debt: see `tests/README.md`.

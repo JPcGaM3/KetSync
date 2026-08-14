@@ -141,7 +141,7 @@
     <tr><td>5</td><td>ตัดกลับตัวจริง</td>
         <td class="m">--final ทั้งสองคำสั่ง</td><td class="m">9300 &rarr; 8300 &rarr; 300</td></tr>
     <tr><td>6</td><td>เก็บกวาด</td>
-        <td class="m">pct destroy 9300</td><td>—</td></tr>
+        <td class="m">ketsync cleanup --all</td><td>—</td></tr>
   </table>
   <p>สิ่งที่หน้านี้จะย้ำอยู่เรื่อยๆ มีอยู่สองเรื่อง เรื่องแรกคือ<b>เลข 9 นำหน้า แปลว่าของชั่วคราว</b>
      — ข้อมูลในนั้นไม่มีใครก๊อปให้เลยจนกว่าจะสั่ง <span class="m">recall</span>
@@ -474,26 +474,38 @@ pct shutdown 9300</pre></div></details></li>
 ./ketsync failback --ctid 300 --final</pre></div></details>
       <p>ด่าน B7 จะ snapshot ไฟล์ดิสก์ตัวจริงก่อนเขียนทับ ถ้า snapshot ไม่สำเร็จมันจะไม่ทำ
          นี่คือทางถอยทางเดียวของขั้นนี้</p></li>
-    <li>เปิดตัวจริง แล้วเปิด onboot กลับ
-      <details class="cmd"><summary>pct set 300 --onboot 1</summary><div class="code"><pre><span class="c"># on the COMPUTE node that owns CT 300</span>
-pct set 300 --onboot 1
-pct start 300</pre></div></details></li>
+    <li>คืน network กับ onboot ของตัวจริง จากที่เครื่องมือจดไว้ตอนตัดขาด แล้วเปิดเอง
+      <details class="cmd"><summary>./ketsync restore --ctid 300</summary><div class="code"><pre><span class="c"># bridge and onboot come out of the isolate record - nothing is typed</span>
+./ketsync restore --ctid 300</pre></div></details>
+      <details class="cmd"><summary>pct start 300</summary><div class="code"><pre><span class="c"># on the COMPUTE node that owns CT 300 - a person decides this one</span>
+pct start 300</pre></div></details>
+      <p>ไม่ต้องจำว่า bridge เดิมชื่ออะไร <span class="m">restore</span> อ่านจากไฟล์บันทึกที่
+         <span class="m">isolate</span> เขียนไว้ก่อนย้าย ส่วนคำสั่งเปิดยังเป็นของคน — ทั้งชุดนี้ไม่มีตัวไหนเปิด container ให้</p></li>
   </ol>
   <div class="warn"><p><b>อย่าเพิ่ง destroy 9300</b> ปล่อยไว้จนกว่าจะเช็กแล้วว่าตัวจริงกลับมาถูกต้อง
-     ตราบใดที่ 9300 ยังอยู่ R13 ก็ยังกันไม่ให้ cron เขียนทับสำเนา — ทางถอยยังอยู่ครบ</p></div>
+     ตราบใดที่ 9300 ยังอยู่ R13 ก็ยังกันไม่ให้ cron เขียนทับสำเนา — ทางถอยยังอยู่ครบ
+     ขั้นถัดไปเป็นคนเก็บให้ด้วยคำสั่งเดียว ไม่ต้องไปพิมพ์ <span class="m">pct</span> เอง</p></div>
 </section>
 
 <section id="s7">
   <div class="eyebrow"><span class="num">7</span><h2>ขั้น 6 — เก็บกวาด ไม่งั้นครั้งหน้าจะชนกับครั้งนี้</h2></div>
   <ol class="steps">
     <li>เช็กก่อนว่าตัวจริงใช้งานได้จริง ไม่ใช่แค่บูตขึ้น — เข้าเว็บ ลองสั่งงาน ดู log ของ CT เอง</li>
-    <li>เก็บกวาดตัวชั่วคราวบนเครื่อง compute ให้หมด
-      <details class="cmd"><summary>pct status 9300</summary><div class="code"><pre><span class="c"># on each COMPUTE node - check it is stopped and already recalled first</span>
-pct status 9300
-pct destroy 9300</pre></div></details>
-      <p>คำสั่งนี้คือสิ่งที่<b>ปลด R13</b> หลังจากนี้ cron จะกลับมาเขียนทับสำเนา 8300
-         ตามปกติ ทำหลังจากมั่นใจแล้วเท่านั้น เครื่องมือในชุดนี้ไม่มีตัวไหนสั่งเองเลย
-         ด้วยเหตุผลนี้ข้อเดียว</p></li>
+    <li>เก็บตัวชั่วคราวบนเครื่อง compute ให้เรียบร้อย
+      <details class="cmd"><summary>./ketsync cleanup --ctid 300</summary><div class="code"><pre><span class="c"># on the STORAGE node - the one that ran the failback</span>
+./ketsync cleanup --ctid 300</pre></div></details>
+      <p>มันเช็กก่อนว่า <span class="m">failback --final</span> ของตัวนี้จบ ok จริง (ด่าน K2 อ่านจาก state
+         ของ failback เอง) ถ้ายังไม่มี network ตัวจริงคืนมันคืนให้ก่อน แล้วค่อยสั่งหยุด 9300
+         ย้าย net ของ 9300 ไป <span class="m">vmbr99</span> และตั้ง onboot 0 — จากตรงนี้ 9300
+         เปิดขึ้นมาเองก็ตอบใครไม่ได้อีกแล้ว ข้อมูลยังอยู่ครบเป็นทางถอย</p>
+      <p>ถ้า 9300 ยังรันอยู่ แต่ตัวจริงยังไม่ได้เปิด มันจะปฏิเสธ (ด่าน K3) — หยุดตัวที่กำลังตอบอยู่
+         ทั้งที่ยังไม่มีใครมารับแทน คือ downtime ที่เกิดจากการเก็บกวาดเอง</p></li>
+    <li>เมื่อมั่นใจแล้วว่าไม่ต้องถอย ค่อยลบทิ้ง
+      <details class="cmd"><summary>./ketsync cleanup --ctid 300 --destroy</summary><div class="code"><pre><span class="c"># this is what releases R13 - after this the nightly copy resumes</span>
+./ketsync cleanup --ctid 300 --destroy</pre></div></details>
+      <p><b>ตราบใดที่ config ของ 9300 ยังอยู่ R13 ยังกัน</b> ไม่ให้ cron เขียนทับสำเนา 8300
+         — ทางถอยยังครบ แต่ก็แปลว่า CT 300 ยังไม่ถูกก๊อปทุกคืน และรอบ cron จะขึ้นแดงอยู่อย่างนั้น
+         <span class="m">--destroy</span> คือสิ่งที่ปลดมัน ทำเมื่อพร้อมเท่านั้น</p></li>
     <li>ลบ <code class="inl">PAUSE</code> เพื่อให้เริ่มก๊อปตามปกติอีกครั้ง
       <details class="cmd"><summary>rm /root/ketsync/engines/tp/PAUSE</summary><div class="code"><pre><span class="c"># on the STORAGE node</span>
 rm /root/ketsync/engines/tp/PAUSE</pre></div></details></li>

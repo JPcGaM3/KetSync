@@ -410,7 +410,9 @@
     <li>ลบ 9300 ทิ้ง หลังจาก <span class="m">touch PAUSE</span> แล้วเท่านั้น
         VMID ที่ค้างอยู่ทำให้ D3 ปฏิเสธการกู้ครั้งหน้า</li>
     <li>ย้าย net ของสำเนากลับไป <span class="m">vmbr99</span> ด่าน R11 จะบ่นทุกรอบจนกว่าจะทำ</li>
-    <li>ถ้าย้ายตัวจริงไป vmbr99 ตอนขั้นแรก ย้ายกลับมา bridge จริง</li>
+    <li>ถ้าย้ายตัวจริงไป vmbr99 ตอนขั้นแรก ย้ายกลับมา bridge จริง —
+        <span class="m">ketsync restore</span> อ่านจากบันทึกให้เอง หรือ
+        <span class="m">ketsync cleanup</span> ทำให้พร้อมกับเก็บ 9xxx ในคำสั่งเดียว</li>
     <li>คืน <span class="m">onboot</span> เป็นค่าเดิมของแต่ละ CT</li>
     <li>ลบ <span class="m">PAUSE</span> แล้วรัน replica หนึ่งรอบด้วยมือ ต้องได้
         <span class="m">failed=0</span> ถึงจะถือว่าจบ</li>

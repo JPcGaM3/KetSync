@@ -167,11 +167,11 @@ mutant_lib "-y is honoured even when it was never given" \
 
 # ---------- which verbs write ------------------------------------------------
 mutant "a writing verb is not recognised as one" \
-  's{\Q    migrate|replica|failback|distribute|recall|prepare|isolate|restore|evacuate|sync) return 0;;\E}{    nothing) return 0;;}' \
+  's{\Q    migrate|replica|failback|distribute|recall|prepare|isolate|restore|evacuate|cleanup|sync) return 0;;\E}{    nothing) return 0;;}' \
   1
 
 mutant "sync stops counting as something that writes to other machines" \
-  's{\Qrestore|evacuate|sync) return 0;;\E}{restore|evacuate) return 0;;}' \
+  's{\Qrestore|evacuate|cleanup|sync) return 0;;\E}{restore|evacuate|cleanup) return 0;;}' \
   12
 
 mutant "--dry-run is asked about, which is how a prompt stops being read" \
@@ -208,6 +208,17 @@ mutant "the menu is printed and the command runs anyway" \
 mutant "any number of arguments counts as a bare verb, so nothing ever runs" \
   's{\Qif (( \E\$#\Q == 1 )) && ks_writes\E}{if (( \$# >= 1 )) \&\& ks_writes}' \
   2
+
+# cleanup arrived last and reads as the harmless one. It stops the container
+# that has been serving customers in production's place, so it is asked about
+# like everything else, and a bare one refuses like everything else.
+mutant "cleanup is not counted as a verb that writes" \
+  's{\Qevacuate|cleanup|sync) return 0;;\E}{evacuate|sync) return 0;;}' \
+  16 17
+
+mutant "a bare cleanup has no menu, so it falls through to the question" \
+  's{\Q    cleanup) cat <<\E\x27\QMENU\E\x27}{    __nocleanup) cat <<\x27MENU\x27}' \
+  17
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

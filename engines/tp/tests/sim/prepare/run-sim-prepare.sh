@@ -45,6 +45,7 @@ new_world(){
   SIMROOT="$(mktemp -d /tmp/ctprep-sim.XXXXXX)"
   export SIMROOT SIMLIB="$HERE/lib.sh" SIMBIN="$HERE/bin" SIM_BKP_HOST="$BKP_HOST"
   WORK="$SIMROOT/work"; PVE="$SIMROOT/pve"
+  SIM_MOCK_BRIDGE=vmbr99
   mkdir -p "$WORK/state" "$WORK/logs" "$PVE/nodes" "$PVE/ketsync/isolate" "$SIMROOT/nodes"
   : > "$SIMROOT/violations"; : > "$SIMROOT/trace"
 
@@ -165,6 +166,17 @@ ct_veths_ovs(){ # ctid node bridge...
 # bridge name.
 node_ovs_mute(){ rm -f "$(node_d "$1")/ovs"; }
 
+# What ct-failback.sh leaves behind on the machine that ran it. --cleanup reads
+# it as the proof that the production image holds the newest data, so the shape
+# matters: it is the engine's real state file, one JSON object per line.
+failback_state(){ # ctid mode status
+  mkdir -p "$WORK/state"
+  printf '{\n  "ctid": %s,\n  "last": {"ts":"2026-01-01T00:00:00+0700","mode":"%s","status":"%s","rc":0}\n}\n' \
+    "$1" "$2" "$3" > "$WORK/state/failback-$1.json"; }
+no_failback_state(){ rm -f "$WORK/state/failback-$1.json"; }
+ct_gone_from(){ [[ -f "$PVE/nodes/$2/lxc/$1.conf" ]] && _err "CT $1 should no longer exist on $2"; return 0; }
+ct_there(){     [[ -f "$PVE/nodes/$2/lxc/$1.conf" ]] || _err "CT $1 should still exist on $2"; return 0; }
+
 rec_f(){ printf '%s/pve/ketsync/isolate/%s.tsv' "$SIMROOT" "$1"; }
 rec_put(){ # ctid node bridge-of-net0
   mkdir -p "$PVE/ketsync/isolate"
@@ -181,13 +193,18 @@ EOF
 }
 conf_set(){ { grep -v "^$1=" "$WORK/ctrep.conf" || true; } > "$WORK/.c"
             mv -f "$WORK/.c" "$WORK/ctrep.conf"
+            # The fake needs to know which bridge is the isolated one: its rule
+            # about a live storage is "do not move a serving container ONTO it",
+            # and a rule that assumed vmbr99 would stop meaning anything the day
+            # a scenario changed the name.
+            [[ "$1" == MOCKNET_BRIDGE ]] && SIM_MOCK_BRIDGE="$2"
             printf '%s=%s\n' "$1" "$2" >> "$WORK/ctrep.conf"; return 0; }
 write_nodemap(){ printf '# ip\tpve node name\n%s\tpve01\n%s\tpve02\n' "$N1" "$N2" > "$WORK/nodes.map"; }
 inventory(){ printf '%s\n' "$@" > "$WORK/inventory-replica.tsv"; }
 no_inventory(){ rm -f "$WORK/inventory-replica.tsv"; }
 
 run_engine(){
-  ( export SIMROOT SIMLIB SIMBIN SIM_BKP_HOST SIMWORK="$WORK"
+  ( export SIMROOT SIMLIB SIMBIN SIM_BKP_HOST SIMWORK="$WORK" SIM_MOCK_BRIDGE
     SIM_DRY=0
     for _a in "$@"; do [[ "$_a" == --dry-run ]] && SIM_DRY=1; done
     export SIM_DRY
@@ -410,6 +427,59 @@ if scenario "7b: GUARD P4 - a bond uplinking the isolated bridge counts, on OVS 
   has "port 'eno3' reaches a wire"
   cfg_net pve01 300 net0 vmbr0
   rec_none 300
+  done_scenario
+fi
+
+if scenario "10d: isolate asks it to stop once the dead mount is out of the way"; then
+  # Off the wire is not the end of it: an isolated container is still a pending
+  # writer, blocked only because its storage is gone and writing again the
+  # instant it comes back. So isolate stops it - but only when stopping can
+  # work at all, which is once the mount is no longer there. `gone` is exactly
+  # that: something already unmounted it.
+  storage pve01 tank-hdd-nas gone
+  run_engine --isolate --ctid 300
+  rc_is 0; clean
+  has "ISOLATED: net0 now on vmbr99"
+  has "STOPPED on pve01"
+  ct_status_is 300 pve01 stopped
+  traced "pct shutdown 300"
+  done_scenario
+fi
+
+if scenario "10e: a dead mount that is still there is not something --ctid may unmount"; then
+  # `pct shutdown` here would hang until the timeout and change nothing: the
+  # container's processes are in uninterruptible sleep on a mount that is still
+  # present. Freeing them means unmounting it, which every container on that
+  # storage feels - so a run that named ONE container says which command does
+  # that instead of doing it.
+  run_engine --isolate --ctid 300
+  rc_is 0; clean
+  has "ISOLATED: net0 now on vmbr99"
+  has "ketsync evacuate --node 10.100.1.32"
+  hasnt "STOPPED on pve01"
+  untraced "pct shutdown"
+  ct_status_is 300 pve01 running
+  done_scenario
+fi
+
+if scenario "10f: a container that will not come down stays isolated, never forced"; then
+  storage pve01 tank-hdd-nas gone
+  ct_stubborn 300 pve01
+  run_engine --isolate --ctid 300
+  rc_is 0; clean
+  has "did not come down within"
+  has "nothing here forces a stop"
+  ct_status_is 300 pve01 running
+  done_scenario
+fi
+
+if scenario "10g: a dry isolate does not stop anything either"; then
+  storage pve01 tank-hdd-nas gone
+  run_engine --isolate --ctid 300 --dry-run
+  rc_is 0; clean
+  has "DRY: would ask it to stop"
+  untraced "pct shutdown"
+  ct_status_is 300 pve01 running
   done_scenario
 fi
 
@@ -821,6 +891,171 @@ if scenario "50: a node that stopped answering mid-run disables nothing"; then
   rc_is 1; clean
   has "GUARD E1"
   storage_enabled tank-hdd-nas
+  done_scenario
+fi
+
+# ---------------------------------------------------------------------------
+# --cleanup: the far end of the disaster. The storage node is back, the
+# failback has put the newest data into the production image, and what is left
+# standing is a 9<id> holding the address production is about to use again.
+#
+# The world these scenarios need is the one AFTER the outage: production alive
+# and running, a 9<id> on the other node, and the failback's own state file
+# saying its last run was a final one that finished.
+after_the_outage(){   # [production status]
+  storage pve01 tank-hdd-nas alive
+  ct_state 300 pve01 "${1:-running}"
+  add_ct 9300 pve02 local-lvm
+  storage pve02 local-lvm alive
+  ct_state 9300 pve02 stopped
+  failback_state 300 final ok
+}
+
+if scenario "51: cleanup stops the stand-in, takes it off the wire, and keeps it"; then
+  # Stopping is reversible with one `pct start`; destroying is not reversible at
+  # all. So the 9<id> is kept by default, on a bridge with no uplink so a
+  # compute node rebooting cannot put a production address back on the wire.
+  after_the_outage
+  ct_state 9300 pve02 running
+  run_engine --cleanup --ctid 300
+  rc_is 0; clean
+  has "K2: failback --final finished ok"
+  has "cleanup: CT 9300 is stopped on pve02"
+  has "moved onto vmbr99"
+  has "R13 STILL HOLDS"
+  ct_status_is 9300 pve02 stopped
+  cfg_net pve02 9300 net0 vmbr99
+  onboot_is pve02 9300 0
+  ct_there 9300 pve02
+  done_scenario
+fi
+
+if scenario "52: --destroy removes it, and says what that releases"; then
+  after_the_outage
+  run_engine --cleanup --ctid 300 --destroy
+  rc_is 0; clean
+  has "DESTROYED: CT 9300 is gone from pve02"
+  has "R13 is released"
+  ct_gone_from 9300 pve02
+  done_scenario
+fi
+
+if scenario "53: GUARD K2 - no failback state at all is not permission"; then
+  # This mode puts away the container that has been serving customers, so it
+  # asks for proof the data is home. The proof is the failback's own record,
+  # written by the machine that ran it - so a missing file means "not here",
+  # which is a different answer from "not done" and gets a different message.
+  after_the_outage
+  no_failback_state 300
+  run_engine --cleanup --ctid 300
+  rc_is 1; clean
+  has "GUARD K2: no failback state for CT 300 on this machine"
+  has "the one that holds the production images"
+  untraced "pct shutdown"
+  untraced "pct destroy"
+  done_scenario
+fi
+
+if scenario "54: GUARD K2 - a presync is a rehearsal, not a cutover"; then
+  # A presync leaves the newest data exactly where it was. Reading "the last
+  # failback said ok" without reading WHICH MODE it was is the whole bug this
+  # guard is here for.
+  after_the_outage
+  failback_state 300 presync ok
+  run_engine --cleanup --ctid 300
+  rc_is 1; clean
+  has "was mode='presync' status='ok'"
+  has "only a FINAL round that ended ok"
+  untraced "pct shutdown"
+  done_scenario
+fi
+
+if scenario "55: GUARD K2 - a final round that FAILED is not a cutover either"; then
+  after_the_outage
+  failback_state 300 final failed
+  run_engine --cleanup --ctid 300
+  rc_is 1; clean
+  has "status='failed'"
+  untraced "pct shutdown"
+  done_scenario
+fi
+
+if scenario "56: GUARD K3 - the stand-in is not stopped while production is down"; then
+  # CT 9300 is what answers that address at this moment. Stopping it before
+  # somebody starts production is an outage caused by the tidy-up, and starting
+  # production is a decision with a customer on the other end - never this
+  # engine's.
+  after_the_outage stopped
+  ct_state 9300 pve02 running
+  run_engine --cleanup --ctid 300
+  rc_is 1; clean
+  has "GUARD K3: CT 9300 is RUNNING and production CT 300 is stopped"
+  has "pct start 300"
+  untraced "pct shutdown"
+  ct_status_is 9300 pve02 running
+  done_scenario
+fi
+
+if scenario "57: cleanup puts the production network back first, out of the record"; then
+  # The normal order after a real DR: distribute isolated production on the way
+  # in, so it is still on vmbr99 on the way out. Restoring it is part of the
+  # same tidy-up, and it happens BEFORE the stand-in is put away - the address
+  # has to belong to something at every moment.
+  after_the_outage
+  ct_nets  300 pve01 vmbr99
+  ct_veths 300 pve01 vmbr99
+  rec_put  300 pve01 vmbr0
+  run_engine --cleanup --ctid 300
+  rc_is 0; clean
+  has "still has an isolate record - putting its network back first"
+  has "RESTORED: net0(vmbr0)"
+  cfg_net pve01 300 net0 vmbr0
+  rec_none 300
+  cfg_net pve02 9300 net0 vmbr99
+  done_scenario
+fi
+
+if scenario "58: nothing was left behind, and that is an answer rather than a failure"; then
+  after_the_outage
+  ct_gone 9300 pve02
+  run_engine --cleanup --ctid 300
+  rc_is 0; clean
+  has "no CT 9300 anywhere in the cluster - nothing was left behind"
+  done_scenario
+fi
+
+if scenario "59: a dry cleanup stops nothing, moves nothing and destroys nothing"; then
+  after_the_outage
+  ct_state 9300 pve02 running
+  run_engine --cleanup --ctid 300 --destroy --dry-run
+  rc_is 0; clean
+  has "DRY: would stop CT 9300"
+  has "DRY: would then destroy CT 9300"
+  untraced "pct shutdown"
+  untraced "pct set"
+  untraced "pct destroy"
+  ct_there 9300 pve02
+  done_scenario
+fi
+
+if scenario "60: --destroy is a flag of --cleanup, not a mode of its own"; then
+  run_engine --destroy --ctid 300
+  rc_is 2
+  has "--destroy is a flag of --cleanup"
+  done_scenario
+fi
+
+if scenario "61: --cleanup and --isolate are the two ends of one disaster"; then
+  run_engine --cleanup --isolate --ctid 300
+  rc_is 2
+  has "--cleanup is the end of a disaster"
+  done_scenario
+fi
+
+if scenario "62: --cleanup with no container named is refused"; then
+  run_engine --cleanup
+  rc_is 2
+  has "usage: ct-prepare.sh --cleanup --all | --ctid"
   done_scenario
 fi
 

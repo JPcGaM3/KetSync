@@ -24,6 +24,10 @@
 #    tp evacuate   the same, a node at a time: disable the dead storage,
 #                  unmount it, then stop what was on it - in that order, which
 #                  is the only order in which the stopping works
+#    tp cleanup    the far end of the same disaster: the failback has put the
+#                  data back, so put the production network back, stop the
+#                  9<id> that was standing in for it and take that one off the
+#                  wire. --destroy removes it, which is what releases R13
 #
 #  Read-only helpers:
 #    tp status     what every CT's last run did, both engines, one table
@@ -221,6 +225,7 @@ case "${1:-}" in
   isolate)  shift; engine ct-prepare.sh --isolate "$@";;
   restore)  shift; engine ct-prepare.sh --restore "$@";;
   evacuate) shift; engine ct-prepare.sh --evacuate "$@";;
+  cleanup)  shift; engine ct-prepare.sh --cleanup  "$@";;
   status)   shift; cmd_status "$@";;
   doctor)   shift; cmd_doctor "$@";;
   version)  echo "tp $(cd "$TP_HOME" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;

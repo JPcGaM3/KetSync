@@ -205,8 +205,10 @@ cmd_doctor(){
     for f in $(ks_ssh "$bkp" "ls /etc/pve/nodes/*/lxc/9*.conf 2>/dev/null" \
                | sed 's|.*/||; s|\.conf$||'); do
       say "  CT $f is still placed - a DR container that outlived its disaster"
-      say "    it also makes D3 refuse the next placement of CT ${f#9}."
-      say "    recall it, then destroy it - the DR guide's last stage says how."
+      say "    it also holds R13, so CT ${f#9} is not being replicated, and makes D3"
+      say "    refuse the next placement of it."
+      say "    when the failback is done:  ./ketsync cleanup --ctid ${f#9}"
+      say "    that stops it and takes it off the wire; add --destroy to release R13."
       left=1; rc=1
     done
     (( left )) || say "  nothing left over"

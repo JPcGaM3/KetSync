@@ -44,8 +44,17 @@ PVE="$SIMROOT/pve"
 # The shutdown itself is handled further down, where the fake can check that
 # the mount was dealt with first.
 case "$c" in
-  *"pct start"*|*"pct destroy"*|*"pct create"*|*"pct stop "*)
+  *"pct start"*|*"pct create"*|*"pct stop "*)
     violation "touched container lifecycle: $c"; exit 1;;
+  # --cleanup --destroy may remove a 9<id>, and that is the ONLY destroy this
+  # engine is allowed. The number is the whole permission: a production id
+  # arriving here is the worst bug this repo could ship, so the fake refuses to
+  # pretend rather than leaving it to an assertion somebody might not write.
+  *"pct destroy"*)
+    _did="${c##*pct destroy }"; _did="${_did%% *}"
+    if [[ ! "$_did" =~ ^[0-9]+$ ]] || (( _did < 9000 )); then
+      violation "destroyed CT $_did, which is not a 9<id>: $c"; exit 1
+    fi;;
 esac
 
 # ---------------------------------------------------------------- backup node
@@ -183,12 +192,34 @@ case "$c" in
     dry_forbids "stopped a container" || exit 1
     id="${c##*pct shutdown }"; id="${id%% *}"
     [[ -f "$D/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+    # A 9<id> is the container standing in for production, on local storage
+    # that is alive by definition - the rules below are about the production
+    # container whose disk has gone, and they do not fit it. Its own rule is
+    # that stopping it while production is not running is an outage caused by
+    # the tidy-up, which is worse than leaving it up.
+    if (( id >= 9000 )); then
+      _prod=$(( id - 9000 )); _pst=""
+      for _pd in "$SIMROOT"/nodes/*/ct/"$_prod.status"; do
+        [[ -f "$_pd" ]] && _pst="$(cat "$_pd")"
+      done
+      if [[ "$_pst" != running ]]; then
+        violation "stopped CT $id while production CT $_prod was '${_pst:-nowhere}'"
+        exit 1
+      fi
+      printf 'stopped\n' > "$D/$id.status"; : > "$D/$id.veth"; exit 0
+    fi
     sid="$(cat "$D/$id.rootsid" 2>/dev/null)"
     if [[ "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
       violation "shut down CT $id while its storage '$sid' was ALIVE"
       exit 1
     fi
-    if [[ ! -f "$N/storage/$sid.unmounted" ]]; then exit 124; fi
+    # Blocked I/O is what makes a shutdown hang, and there are two ways for it
+    # not to be blocked: this run unmounted the dead storage, or the mountpoint
+    # was already gone when the run started - which is what the `gone` verdict
+    # IS. Modelling only the first made a shutdown against an already-unmounted
+    # storage hang in the fake and return in reality.
+    if [[ ! -f "$N/storage/$sid.unmounted" \
+       && "$(storage_verdict_of "$NODE" "$sid")" != gone ]]; then exit 124; fi
     [[ -f "$D/$id.stubborn" ]] && exit 124
     printf 'stopped\n' > "$D/$id.status"
     : > "$D/$id.veth"
@@ -256,18 +287,39 @@ case "$c" in
     nid="$(sed -n 's/.*--\(net[0-9][0-9]*\) .*/\1/p' <<<"$c")"
     line="${c#*--"$nid" }"; line="${line#\'}"; line="${line%\'}"
     [[ -f "$D/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+    # The 9<id> again: --cleanup takes it off the wire so a reboot cannot put
+    # its address back. There is no record for it and its storage is alive -
+    # neither rule below applies. Its own rule is that it must be STOPPED
+    # first: moving a running container's bridge takes a live service off the
+    # air without stopping it, which is the worst of both.
+    if (( id >= 9000 )); then
+      [[ "$(cat "$D/$id.status" 2>/dev/null)" == running ]] \
+        && { violation "moved CT $id's network while it was RUNNING"; exit 1; }
+      awk -v n="$nid" -v l="$nid: $line" '$0 ~ "^"n": " {print l; next} {print}' \
+          "$D/$id.nets" > "$D/.nets.$$" && mv -f "$D/.nets.$$" "$D/$id.nets"
+      exit 0
+    fi
     sid="$(cat "$D/$id.rootsid" 2>/dev/null)"
+    newbr="$(printf '%s' "$line" | tr ',' '\n' | sed -n 's/^bridge=//p' | head -1)"
     # The refusal this whole engine is built around. A storage that answered is
-    # a container that is very likely serving somebody, and taking its network
-    # away is an outage caused by the tool meant to prevent one.
-    if [[ "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
-      violation "changed CT $id's network while its storage '$sid' was ALIVE"
+    # a container that is very likely serving somebody, and moving it onto the
+    # bridge with no uplink is an outage caused by the tool meant to prevent
+    # one.
+    #
+    # It is the DIRECTION that makes it that, not the write. --restore moves a
+    # container the other way, off the isolated bridge, and the storage being
+    # alive again is exactly when that is supposed to happen - a rule that
+    # refused any write on a live storage would have called the whole way home
+    # a violation, and no scenario would have noticed until one restored on a
+    # fleet that had recovered.
+    if [[ "$newbr" == "${SIM_MOCK_BRIDGE:-vmbr99}" \
+       && "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
+      violation "moved CT $id onto $newbr while its storage '$sid' was ALIVE"
       exit 1
     fi
     # The record is the only copy of the bridge about to be overwritten. Moving
     # first and writing it down afterwards loses it for good if the run dies in
     # between - so the order is an invariant, not a preference.
-    newbr="$(printf '%s' "$line" | tr ',' '\n' | sed -n 's/^bridge=//p' | head -1)"
     oldbr="$(sed -n "s/^$nid: .*/&/p" "$D/$id.nets" 2>/dev/null | tr ',' '\n' | sed -n 's/^bridge=//p' | head -1)"
     if [[ "$newbr" != "$oldbr" ]] && ! rec_exists "$id"; then
       violation "moved CT $id's $nid from '$oldbr' to '$newbr' with no record written first"
@@ -295,6 +347,18 @@ case "$c" in
             "$D/$id.veth" > "$D/.veth.$$" 2>/dev/null && mv -f "$D/.veth.$$" "$D/$id.veth"
       fi
     fi
+    exit 0;;
+
+  # Allowed only for a 9<id>, and only stopped - both checked above and again
+  # here, because this is the one command in the fake that cannot be undone.
+  "pct destroy "*)
+    dry_forbids "destroyed a container" || exit 1
+    id="${c##*pct destroy }"; id="${id%% *}"
+    [[ -f "$D/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+    [[ "$(cat "$D/$id.status")" == running ]] \
+      && { violation "destroyed CT $id while it was RUNNING"; exit 1; }
+    rm -f "$D/$id.status" "$D/$id.nets" "$D/$id.veth" "$D/$id.onboot" "$D/$id.rootsid"
+    rm -f "$PVE/nodes/$NODE/lxc/$id.conf"
     exit 0;;
 
   "pct set "*--onboot*)

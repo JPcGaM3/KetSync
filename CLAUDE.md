@@ -69,7 +69,7 @@ held", and the run exits 0 having done nothing.
 left: `distribute` stopped being one when `engines/tp/ct-distribute.sh` was
 written, and `recall` when `engines/tp/ct-recall.sh` was, with 64/68 and 53/47
 scenarios and mutations behind them - which is the bar for the next one.
-`isolate`/`restore`/`evacuate` arrived at 53/49, deliberately smaller because
+`isolate`/`restore`/`evacuate`/`cleanup` arrived at 69/58, deliberately smaller because
 `ct-prepare.sh` moves no customer data: there is no transfer to tear, no
 mountpoint to fill and no direction to invert, so the surface really is
 smaller. Do not read it as the new bar. The helper that printed "designed but
@@ -87,7 +87,7 @@ commands is one file going stale.
 it found three bugs that had been live on the fleet, none of which review had
 caught. `distribute` has one too, 13 and 13, because it is the only verb here
 that composes two engines and every joint between them is invisible from
-inside either one. The confirmation has 15 and 14, and it needs its own
+inside either one. The confirmation has 17 and 16, and it needs its own
 because its whole behaviour turns on whether there is a person on the other
 end - the prompting half runs under a pty, and a pipe tests the refusal by
 being one. `role` and `doctor` still do not, and that is the remaining debt. A
@@ -97,8 +97,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 382 tp scenarios + 49 for ketsync
-    make mutation # 381 known bugs put back. None may survive
+    make test     # both layers: 398 tp scenarios + 51 for ketsync
+    make mutation # 392 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

@@ -15,8 +15,10 @@ A bug here does not fail a test — it corrupts somebody's container at 2am.
     tp distribute DR copy on the backup ->  a compute node's OWN storage
     tp recall     a compute node's 9<id> ->  back into its copy on the backup
     tp isolate    a production CT off the wire, and tp restore puts it back;
-                  tp evacuate does a whole node. The only engine that moves no
-                  bytes: it writes a network and stops what cannot be left up
+                  tp evacuate does a whole node; tp cleanup puts the 9<id>
+                  away once the failback is done. The only engine that moves
+                  no bytes: it writes a network and stops what cannot be left
+                  up
 
 Every engine runs on the **storage node**. The machines around it:
 
@@ -41,7 +43,7 @@ halves, do not touch the engine — say so instead.
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    59 mutations
     ct-distribute.sh tests/mutation/run-mutation-distribute.sh  68 mutations
     ct-recall.sh     tests/mutation/run-mutation-recall.sh      47 mutations
-    ct-prepare.sh    tests/mutation/run-mutation-prepare.sh     49 mutations
+    ct-prepare.sh    tests/mutation/run-mutation-prepare.sh     58 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
@@ -70,7 +72,7 @@ guides are Thai because the operator is Thai — that is the only exception, and
 inside them Thai belongs in the prose, never inside `<pre>` or `<code>`.
 Commands are copied and pasted at 2am; they have to survive that.
 
-**3. Nothing here starts, creates or destroys a container.**
+**3. Nothing here starts a container, and nothing creates one.**
 No rollback state machine either. Cutover, DR promotion and the return trip are
 decisions made by hand, on purpose, by somebody looking at the machine. The
 engines refuse to run when the lifecycle is wrong (`--stopped`, B1, B2, R2,
@@ -78,12 +80,24 @@ D1) — they never fix it themselves. Bringing a service back is a decision with
 a customer on the other end: `distribute` prints the `pct start` and stops
 there, and that has not moved.
 
-This rule used to say "no shutdown" and "no IP remap" too. `ct-prepare.sh`
-took both, deliberately: `--isolate` moves every net line of a RUNNING
-production container onto `MOCKNET_BRIDGE`, and `--evacuate` shuts containers
-down. Both are allowed for the same reason, and it is not convenience — it is
+This rule used to say "no shutdown", "no IP remap" and "no destroy" too.
+`ct-prepare.sh` took all three, deliberately: `--isolate` moves every net line
+of a RUNNING production container onto `MOCKNET_BRIDGE`, `--evacuate` shuts
+containers down, and `--cleanup --destroy` removes a `9<id>` once its data is
+home. They are allowed for the same reason, and it is not convenience — it is
 that at two hundred containers the alternative is a person typing the same
 command two hundred times at four in the morning, and being right every time.
+
+The destroy is the narrowest of the three and stays that way. Only a `9<id>`,
+whose number is worked out from `DR_OFFSET` rather than typed; only with
+`--destroy`, because stopping is reversible with one `pct start` and this is
+not; and only after K2 has read `ct-failback`'s own state file and found a
+`--final` round that finished ok, which is the proof the production image
+holds the newest data. Without the flag `--cleanup` stops the `9<id>` and
+moves it onto `MOCKNET_BRIDGE` instead, which removes the collision and keeps
+the fallback. Note what that costs and say it out loud: R13 keys on the
+config EXISTING, so a kept `9<id>` holds replication for that container until
+somebody destroys it.
 
 What makes it safe is the proof, not the intent. P2 and E2 refuse unless the
 container's rootfs storage is PROVABLY dead: a `stat` on its mountpoint, on
@@ -166,8 +180,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 76 + 70 + 64 + 53 + 53 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 58 + 59 + 68 + 47 + 49 engine + 9 dispatcher, all caught
+    make test       # 66 + 76 + 70 + 64 + 53 + 69 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 58 + 59 + 68 + 47 + 58 engine + 9 dispatcher, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did

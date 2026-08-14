@@ -253,7 +253,7 @@ mutant "opposite directions in one command are resolved instead of refused" \
   28
 
 mutant "a command with no mode picks one" \
-  's{\Qif (( ! LIST && ! ISOLATE && ! RESTORE && ! EVACUATE )); then\E}{if false; then}' \
+  's{\Qif (( ! LIST && ! ISOLATE && ! RESTORE && ! EVACUATE && ! CLEANUP )); then\E}{if false; then}' \
   27
 
 mutant "a container listed twice in the inventory is read as one" \
@@ -330,6 +330,52 @@ mutant "a node holding none of the inventory is evacuated anyway" \
 mutant "evacuate --all stops after the first node it finds" \
   's{\Q      SEEN_NODE[\E\$_pip\Q]=1; NODES+=("\E\$_pip\Q")\E}{      SEEN_NODE[\$_pip]=1; [[ \$\{#NODES[@]\} == 0 ]] \&\& NODES+=("\$_pip")}' \
   49
+
+# ---------- stopping what was just isolated ---------------------------------
+# Off the wire is half of it. The other half is whether the container can be
+# stopped at all, which turns entirely on whether its dead mount is still
+# there - and both directions of getting that wrong are silent: one leaves a
+# pending writer up, the other hangs a --ctid run on a shutdown that cannot
+# return.
+mutant "isolate leaves it running even where a shutdown would have worked" \
+  's{\Q  if [[ "\E\$ISO_VERDICT\Q" != gone ]]; then\E}{  if true; then}' \
+  10d
+
+mutant "isolate asks a container whose dead mount is still under it to stop" \
+  's{\Q  if [[ "\E\$ISO_VERDICT\Q" != gone ]]; then\E}{  if [[ "\$ISO_VERDICT" == gone ]]; then}' \
+  10e
+
+mutant "a dry isolate stops the container for real" \
+  's!\Q  (( DRY )) && { log "[\E\$ct\Q] DRY: would ask it to stop if its dead mount were gone"; return 0; }\E!  :!' \
+  10g
+
+# ---------- --cleanup: the far end of the disaster --------------------------
+# Every one of these ends with a container stopped, or removed, on the strength
+# of something that was not checked. The proof that the data is home is a file
+# the failback wrote, and reading it loosely is the whole risk.
+mutant "cleanup takes a missing failback record as permission" \
+  's{\Q  if [[ ! -f "\E\$_fb\Q" ]]; then\E}{  if false; then}' \
+  53
+
+mutant "cleanup reads the failback status and not which MODE it was" \
+  's{\Q  if [[ "\E\$_fbmode\Q" != final || "\E\$_fbstatus\Q" != ok ]]; then\E}{  if [[ "\$_fbstatus" != ok ]]; then}' \
+  54
+
+mutant "cleanup stops the stand-in while nothing else answers that address" \
+  's{\Q    if [[ "\E\$pst\Q" != running ]]; then\E}{    if false; then}' \
+  56
+
+mutant "cleanup destroys the 9<id> without being asked to" \
+  's{\Q  if (( DESTROY )); then\E}{  if true; then}' \
+  51
+
+mutant "cleanup leaves the stand-in on the bridge it was answering on" \
+  's{\Q  while read -r _k _n _line; do\E}{  while read -r _k _n _line; do continue;}' \
+  51
+
+mutant "cleanup leaves onboot alone, so the next reboot starts the stand-in" \
+  's{\Q  rsh "\E\$dip\Q" "pct set \E\$dr\Q --onboot 0"\E}{  :}' \
+  51
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
