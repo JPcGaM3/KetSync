@@ -27,6 +27,13 @@ argument is in `docs/decisions.md` section 2.
 **3. Nothing starts a container.** `distribute` moves data and writes a config,
 then prints the `pct start`. Same rule as every engine in `tp`.
 
+`ketsync distribute` is the one verb this layer does not pass through: it runs
+`ct-prepare.sh` first and `ct-distribute.sh` after, because deciding the ORDER
+is what this layer is for. It adds no guard of its own and must not. What
+makes preparing automatically safe is `ct-prepare.sh`'s own proof that the
+storage is dead - against a healthy fleet the whole first half does nothing,
+which is the property to keep.
+
 **4. No defaults, no guessing, anywhere.** A node with no row in `nodes.tsv`
 is a hard stop, never a guessed address. Placement comes from `fleet.tsv`'s
 `dr` column, not from free RAM. There is no fallback storage and no default
@@ -62,15 +69,18 @@ than keeping it warm.
 **8. Nothing that writes to a real machine ships without a simulator.** Read
 `tests/README.md`. `sync` has one - 21 scenarios and 19 mutations - and writing
 it found three bugs that had been live on the fleet, none of which review had
-caught. `role` and `doctor` still do not, and that is the remaining debt. A
+caught. `distribute` has one too, 13 and 13, because it is the only verb here
+that composes two engines and every joint between them is invisible from
+inside either one. `role` and `doctor` still do not, and that is the remaining
+debt. A
 mutation that proves the simulator can fail is part of the simulator, not a
 follow-up.
 
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 372 tp scenarios + 21 for ketsync sync
-    make mutation # 344 known bugs put back. None may survive
+    make test     # both layers: 372 tp scenarios + 34 for ketsync
+    make mutation # 357 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -99,7 +109,9 @@ being separate when they stopped being empty.
     docs/c2v-debian.html CT to VM, the Debian/Ubuntu path
     ketsync              the dispatcher. Contains no logic of its own
     lib/common.sh        log, config, and the two tables everything reads
-    lib/cmd_*.sh         one file per subcommand
+    lib/cmd_*.sh         one file per subcommand. cmd_distribute.sh is the
+                         only one that composes engines rather than passing
+                         through - the sequencing IS this layer's job
     ketsync.conf.sample  this machine's role and the master's address
     nodes.tsv.sample     ip -> role. No name column, on purpose
     nodes.map            ip -> PVE node name. GENERATED. Never hand-edited
@@ -109,6 +121,10 @@ being separate when they stopped being empty.
     engines/tp/          the execution layer, five engines. Committed here
     docs/decisions.md    why it is shaped this way, and what is not built
     tests/sim/sync/      the sync simulator, and the pattern for the next one
+    tests/sim/distribute/
+                         the composed command: both engines are stubs that
+                         record their argv, because the argv is the whole of
+                         what the joins can get wrong
     tests/mutation/      one mutation per guard, each proven to kill a scenario
 
 `engines/tp` came from the standalone `tp` repo at commit `b4ddc0c` and is now

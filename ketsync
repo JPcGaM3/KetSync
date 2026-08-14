@@ -73,8 +73,11 @@ run_tp(){
 
 case "${1:-}" in
   # --- tp's, passed through untouched ---
-  migrate|replica|failback|status|distribute|recall|prepare|isolate|restore|evacuate)
+  migrate|replica|failback|status|recall|prepare|isolate|restore|evacuate)
               run_tp "$@";;
+  # The one verb this layer does not pass through. It composes two engines,
+  # because deciding the ORDER is what this layer is for - see the file.
+  distribute) shift; . "$BASE/lib/cmd_distribute.sh"; cmd_distribute "$@";;
   tp)         shift; run_tp "$@";;
 
   # --- this layer's own ---
