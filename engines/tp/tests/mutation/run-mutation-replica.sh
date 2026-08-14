@@ -200,6 +200,14 @@ mutant "R9 accepts a mock bridge that has an uplink" \
   's{\Q  if [[ "\E\$\Q_r9" == *UPLINK* ]]; then\E}{  if false; then}' \
   20 21
 
+# An OVS bond is a row in ovsdb, not a netdev: `list-ports` names the bond and
+# the engine's test for a physical device finds nothing on it, so a bridge with
+# two cables in it reads as an island. Every copy on that island carries a
+# production IP and MAC.
+mutant "R9 asks OVS for the bridge's PORTS, so a bonded uplink hides behind one name" \
+  's!\Q--timeout=5 list-ifaces\E!--timeout=5 list-ports!' \
+  21b
+
 # the MISSING branch is only reachable while it is tested FIRST: the remote
 # snippet prints MISSING and exits before it can print OK, so a missing bridge
 # fails the *OK* test too. Swapping them back makes the operator chase an ssh

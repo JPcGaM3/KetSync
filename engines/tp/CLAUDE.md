@@ -37,11 +37,11 @@ anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
     ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
-    ct-replica.sh    tests/mutation/run-mutation-replica.sh     57 mutations
+    ct-replica.sh    tests/mutation/run-mutation-replica.sh     58 mutations
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    59 mutations
-    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  62 mutations
+    ct-distribute.sh tests/mutation/run-mutation-distribute.sh  68 mutations
     ct-recall.sh     tests/mutation/run-mutation-recall.sh      47 mutations
-    ct-prepare.sh    tests/mutation/run-mutation-prepare.sh     46 mutations
+    ct-prepare.sh    tests/mutation/run-mutation-prepare.sh     49 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
@@ -111,10 +111,19 @@ the wire deliberately, because a `9<id>` is placed in order to answer. It takes
 its net lines from the **production** container's config rather than the copy's
 — the copy's bridge is the isolated one by design — and it may, because D1 has
 already established that production cannot answer. Nothing starts, so a wrong
-bridge costs a command and not an outage. What it never does is invent one: a
-production container that was moved onto `MOCKNET_BRIDGE` by hand has had its
-real bridge overwritten by the operator, and the run says so instead of
-guessing.
+bridge costs a command and not an outage.
+
+When that production config also says `MOCKNET_BRIDGE`, the real bridge comes
+from ct-prepare.sh's isolate record, which was written before anything moved.
+This is the normal case rather than the exception: `ketsync distribute`
+isolates before it places, so during a real DR every container arriving at D6
+has the isolated bridge in its config, put there minutes earlier by this same
+toolchain. The record has to say it is about this container and has to name
+something that is an interface name, or it is treated as absent.
+
+What it never does is invent one. A container somebody moved onto
+`MOCKNET_BRIDGE` by hand has no record, nothing can reconstruct where it came
+from, and the run says so instead of guessing.
 
 **5. Nothing has a default. Not `new_node`, not `storage`, not a dest.**
 A row missing one is an ERROR - the inventory ones refuse the whole file,
@@ -157,8 +166,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 75 + 70 + 58 + 53 + 50 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 57 + 59 + 62 + 47 + 46 engine + 9 dispatcher, all caught
+    make test       # 66 + 76 + 70 + 64 + 53 + 53 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 58 + 59 + 68 + 47 + 49 engine + 9 dispatcher, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did
@@ -233,7 +242,11 @@ and a dry run may mount only `ro`.
     R6   loop-mount ro,noload - no journal replay, no writes into the clone
     R7   one lock per lane; snapshot names carry the lane
     R8   an existing copy config must agree with the row's dest
-    R9   the mock bridge must have NO uplink - checked once, refuses the run
+    R9   the mock bridge must have NO uplink - checked once, refuses the run.
+         It asks OVS for the bridge's IFACES, not its ports: an OVS bond is
+         one port with no kernel netdev of its own, so a bridge uplinked by a
+         bond answers `list-ports` with a name that has no /device and no
+         /bonding, and reads as an island while it reaches the wire
     R10  one run at a time per target copy ("all" overlaps every storage lane)
     R11  a stopped copy must not sit on a production bridge
     R12  a whole source storage being down is ONE fact, not one per CT: its
@@ -315,7 +328,14 @@ and a dry run may mount only `ro`.
         enslaved to MOCKNET_BRIDGE and that bridge has no uplink on that
         node, all of it read from the KERNEL rather than from a config that
         can record a change nothing applied. Fewer veths than the config's
-        net lines is unverified, and unverified refuses. The exception exists
+        net lines is unverified, and unverified refuses. On an Open vSwitch
+        node the kernel cannot answer at all - every port of every OVS bridge
+        is enslaved to one datapath device called ovs-system - so the probe
+        asks ovsdb as well and the ENGINE picks between the two answers.
+        Putting that choice in the remote snippet instead would put it where
+        no simulator and no mutation can reach it. An unanswered ovsdb leaves
+        ovs-system in the message, which is not a bridge name, so the
+        container is refused and the operator can see why. The exception exists
         because the container this guard refuses is usually one whose NFS
         rootfs vanished: its processes are in uninterruptible sleep, SIGKILL
         does not reach them, `pct shutdown` hangs, and the one remedy left

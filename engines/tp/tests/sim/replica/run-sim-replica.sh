@@ -717,6 +717,23 @@ if scenario "21: R9 a bond on the island bridge counts as an uplink too"; then
   done_scenario
 fi
 
+if scenario "21b: R9 an OVS bond hides its NICs behind one port, and still counts"; then
+  # A kernel bond has a /sys/class/net/<if>/bonding directory; an OVS bond has
+  # nothing at all, because it is a row in ovsdb rather than a netdev. So
+  # `ovs-vsctl list-ports vmbr99` names bond0, the engine looks for a physical
+  # device called bond0, finds none, and calls a bridge with two cables in it
+  # an island. Every copy on it carries a PRODUCTION IP and MAC. list-ifaces
+  # returns the members instead, which is what the probe asks for.
+  bkp_bridge vmbr99 "vlan99 internal" "bond0 ovsbond enp3s0f0,enp3s0f1"
+  run_engine --ctid 105
+  rc_is 2; clean
+  has "GUARD R9: vmbr99 on bkp02 HAS AN UPLINK - NOTHING was run"
+  has "port 'enp3s0f0' is a physical NIC or a bond"
+  has "port 'enp3s0f1' is a physical NIC or a bond"
+  untraced "rsync"
+  done_scenario
+fi
+
 if scenario "22: R9 a mock bridge that does not exist is named as missing"; then
   # the operator has not built the island yet. The engine has a message for
   # exactly this, telling them what to create - see the MISSING branch.

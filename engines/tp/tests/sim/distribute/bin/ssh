@@ -110,6 +110,16 @@ if [[ ! -d "$T" ]]; then
       printf 'arch: amd64\nhostname: ct%s\nonboot: %s\n' "$id" "$(cat "$N/ct/$id.onboot" 2>/dev/null || echo 0)"
       cat "$N/ct/$id.nets" 2>/dev/null
       exit 0;;
+    # pmxcfs, which is where ct-prepare.sh keeps the record of which bridge
+    # each interface came from. It is read HERE and not on the target, because
+    # a container's home node and its DR node are different machines on any
+    # fleet that has somewhere to fail over to. The quotes come off first: the
+    # engine quotes the path, and a case pattern that forgot to would answer
+    # nothing while looking like it worked.
+    "cat '/etc/pve/"*|"cat /etc/pve/"*)
+      f="${c#cat }"; f="${f//\'/}"; f="${f%% *}"
+      [[ -f "$PVE${f#/etc/pve}" ]] || exit 1
+      cat "$PVE${f#/etc/pve}"; exit 0;;
     true) exit 0;;
   esac
   violation "command the simulator does not model on production node $host: $c"

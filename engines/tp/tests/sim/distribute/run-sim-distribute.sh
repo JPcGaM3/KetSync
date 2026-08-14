@@ -97,10 +97,15 @@ new_world(){
 add_prod_node(){ mkdir -p "$SIMROOT/nodes/$1/ct" "$SIMROOT/nodes/$1/bridges"
                  node_bridge "$1" vmbr0 eno1,nic
                  node_bridge "$1" vmbr99; }
-node_bridge(){ # node bridge [port,kind]...   kind nic or bond is an UPLINK
-  local n="$1" b="$2" p; shift 2
+node_bridge(){ # node bridge [port,kind[,member,member]]...  nic|bond is an UPLINK
+  local n="$1" b="$2" p _port _kind _rest; shift 2
   mkdir -p "$SIMROOT/nodes/$n/bridges"; : > "$SIMROOT/nodes/$n/bridges/$b"
-  for p in "$@"; do printf '%s %s\n' "${p%%,*}" "${p##*,}" >> "$SIMROOT/nodes/$n/bridges/$b"; done; }
+  # An ovsbond has members, and nothing else does: it is one OVS port with no
+  # kernel netdev of its own, hiding the NICs that actually reach the wire.
+  for p in "$@"; do
+    IFS=, read -r _port _kind _rest <<<"$p"
+    printf '%s %s %s\n' "$_port" "$_kind" "${_rest:-}" >> "$SIMROOT/nodes/$n/bridges/$b"
+  done; }
 node_nobridge(){ rm -f "$SIMROOT/nodes/$1/bridges/$2"; }
 node_down(){ : > "$SIMROOT/nodes/$1/.down"; }
 node_up(){   rm -f "$SIMROOT/nodes/$1/.down"; }
@@ -136,6 +141,33 @@ ct_veths(){  # ctid node bridge...
     printf 'veth%si%s %s\n' "$id" "$i" "$b" >> "$SIMROOT/nodes/$n/ct/$id.veth"
     i=$(( i + 1 ))
   done; }
+# The same container on an Open vSwitch node - which is what this fleet runs.
+# OVS enslaves every port of every bridge to ONE datapath device, ovs-system,
+# so the kernel's master is ovs-system for all of them and the bridge exists
+# only in ovsdb. Both facts are written down separately, because the engine has
+# to ask two different questions to put them back together.
+ct_veths_ovs(){ # ctid node bridge...
+  local id="$1" n="$2" i=0 b; shift 2
+  : > "$SIMROOT/nodes/$n/ct/$id.veth"
+  for b in "$@"; do
+    printf 'veth%si%s ovs-system\n' "$id" "$i" >> "$SIMROOT/nodes/$n/ct/$id.veth"
+    printf 'veth%si%s %s\n' "$id" "$i" "$b"    >> "$SIMROOT/nodes/$n/ovs"
+    i=$(( i + 1 ))
+  done; }
+# ovsdb cannot answer: ovs-vsctl is not installed, or openvswitch-switch is
+# down. The kernel still says ovs-system, and nothing can turn that into a
+# bridge name.
+node_ovs_mute(){ rm -f "$SIMROOT/nodes/$1/ovs"; }
+# What ct-prepare.sh --isolate leaves in pmxcfs: which bridge each interface
+# was on BEFORE it was moved onto the isolated one. `ketsync distribute` runs
+# isolate first, so on a real DR every container reaching D6 has vmbr99 in its
+# config and this file is the only thing that knows better.
+iso_rec(){ # ctid node netN,bridge...
+  local id="$1" n="$2" p; shift 2
+  mkdir -p "$PVE/ketsync/isolate"
+  { printf 'ctid\t%s\nnode\t%s\nwhen\t2026-01-01T00:00:00+0700\nby\tct-prepare.sh pid 1\nonboot\t1\n' "$id" "$n"
+    for p in "$@"; do printf '%s\t%s\n' "${p%%,*}" "${p##*,}"; done
+  } > "$PVE/ketsync/isolate/$id.tsv"; }
 
 add_target(){ # ip nodename
   local d="$SIMROOT/targets/$1"
@@ -449,6 +481,63 @@ if scenario "4g: an accepted isolated CT is not then refused for onboot"; then
   hasnt "is stopped but has onboot: 1"
   has "IT IS STILL A PENDING WRITER"
   cfg_exists pve01 9300
+  done_scenario
+fi
+
+if scenario "4h: on an OVS node the bridge comes from ovsdb, not from the master"; then
+  # This is the bug this fleet actually hit. Open vSwitch enslaves every port
+  # to one datapath device called ovs-system, so /sys/class/net/<if>/master
+  # names the datapath and NEVER the bridge - and D1 refused every container on
+  # the fleet with "still on the wire: veth110i0(ovs-system)" while they were
+  # correctly isolated on vmbr99. On an OVS fleet that closes the only route
+  # out of a dead storage node, which is the exact situation the guard is for.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets     300 pve01 vmbr99
+  ct_veths_ovs 300 pve01 vmbr99
+  run_engine --ctid 300
+  rc_is 0; clean
+  has "IT IS STILL A PENDING WRITER"
+  hasnt "GUARD D1"
+  hasnt "ovs-system"
+  cfg_exists pve01 9300
+  done_scenario
+fi
+
+if scenario "4i: an OVS node whose ovsdb does not answer is unverified, not isolated"; then
+  # ovs-vsctl missing or openvswitch-switch down. The kernel says ovs-system
+  # and nothing can turn that into a bridge name, so which bridge the container
+  # is on is unknown - and unknown is not isolated. The refusal names the word
+  # rather than hiding it, because the operator has to know it was OVS that
+  # went unanswered and not the container that moved.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets     300 pve01 vmbr99
+  ct_veths_ovs 300 pve01 vmbr99
+  node_ovs_mute pve01
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "still on the wire: veth300i0(ovs-system)"
+  has "ovs-system is Open vSwitch's datapath, not a bridge"
+  untraced "pvesm alloc"
+  no_cfg pve01 9300
+  done_scenario
+fi
+
+if scenario "4j: a bond uplinking the isolated bridge counts, on OVS too"; then
+  # An OVS bond is one PORT whose members are the NICs, and it has no kernel
+  # netdev of its own - so asking OVS for the bridge's PORTS returns a name
+  # with no /device and no /bonding, and vmbr99 reads as isolated while it
+  # reaches the customer's wire through two cables. Asking for its IFACES
+  # returns the members.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets  300 pve01 vmbr99
+  ct_veths 300 pve01 vmbr99
+  node_bridge pve01 vmbr99 bond0,ovsbond,eno2,eno3
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "vmbr99 on pve01 HAS AN UPLINK: port 'eno2'"
+  has "vmbr99 on pve01 HAS AN UPLINK: port 'eno3'"
+  untraced "pvesm alloc"
+  no_cfg pve01 9300
   done_scenario
 fi
 
@@ -788,6 +877,61 @@ if scenario "28d: a production CT isolated by hand cannot say where its bridge w
   has "came across on vmbr99, which has no uplink"
   has "would come up UNABLE TO ANSWER"
   has "nothing recorded where it came from"
+  done_scenario
+fi
+
+if scenario "28g: the record isolate wrote is where the real bridge comes back from"; then
+  # This is the normal path, not an edge case. `ketsync distribute` isolates
+  # before it places, so EVERY container that reaches D6 during a real DR has
+  # vmbr99 in its production config by then - put there minutes earlier by this
+  # same toolchain, which wrote down what it overwrote. Reading it back is the
+  # difference between a 9<id> that answers and a person retyping a bridge per
+  # container at four in the morning, which is the work the automation is for.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets  300 pve01 vmbr99
+  ct_veths 300 pve01 vmbr99
+  iso_rec  300 pve01 net0,vmbr0
+  run_engine --ctid 300
+  rc_is 0; clean
+  cfg_has pve01 9300 "bridge=vmbr0"
+  has "came from the isolate record on pve01"
+  hasnt "UNABLE TO ANSWER"
+  cfg_net_count pve01 9300 1
+  done_scenario
+fi
+
+if scenario "28h: a record that names another container is corrupt, not authoritative"; then
+  # A file called 300.tsv that says it is about 113 cannot be trusted about
+  # anything, and the thing it would be trusted about here is which customer
+  # segment a container comes up on. Same check ct-prepare.sh makes when it
+  # reads its own record back.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets  300 pve01 vmbr99
+  ct_veths 300 pve01 vmbr99
+  iso_rec  113 pve01 net0,vmbr0
+  mv "$PVE/ketsync/isolate/113.tsv" "$PVE/ketsync/isolate/300.tsv"
+  run_engine --ctid 300
+  rc_is 0; clean
+  cfg_has pve01 9300 "bridge=vmbr99"
+  has "would come up UNABLE TO ANSWER"
+  hasnt "came from the isolate record"
+  done_scenario
+fi
+
+if scenario "28i: a bridge name the record cannot have written is not pasted through"; then
+  # The record is a file in /etc/pve and files get edited. What is read out of
+  # it goes into a config PVE acts on, so anything that is not an interface
+  # name is treated as no record at all - the warning is the correct outcome,
+  # and a container that comes up on the isolated bridge is recoverable in a
+  # way that one on a segment nobody chose is not.
+  prod_ct 300 pve01 running; node_up pve01
+  ct_nets  300 pve01 vmbr99
+  ct_veths 300 pve01 vmbr99
+  iso_rec  300 pve01 "net0,vmbr0 --tag=7"
+  run_engine --ctid 300
+  rc_is 0; clean
+  cfg_has pve01 9300 "bridge=vmbr99"
+  has "would come up UNABLE TO ANSWER"
   done_scenario
 fi
 

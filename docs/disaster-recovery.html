@@ -318,10 +318,18 @@ ls /sys/class/net/vmbr99/brif/</pre></div></details>
      สำเนาบนเครื่อง backup อยู่บน <span class="m">vmbr99</span> โดยตั้งใจ ส่วนตัวนี้วางไว้เพื่อให้
      <b>ตอบ</b> IP MAC และ VLAN จึงตรงกับของเดิมทุกตัว ไม่ต้องพิมพ์เอง
      (พิมพ์ MAC ผิดตัวเดียวคือ ARP ทั้งวงเพี้ยน)</p>
+  <p>ตอนสั่ง <span class="m">ketsync distribute</span> มันตัดขาด CT ตัวจริงไปก่อนแล้ว
+     config ของ 300 ตอนนั้นจึงเป็น <span class="m">vmbr99</span> ทั้งแถบ — ตัวที่รู้ว่า bridge จริงคืออะไร
+     คือไฟล์บันทึกที่ขั้นแรกเขียนไว้ก่อนย้าย มันอ่านจากตรงนั้นให้เอง แล้วบอกว่าอ่านมาจากไหน</p>
+  <div class="out"><pre>[300]  net0 came from the isolate record on pve-r32: production CT 300 is
+[300]   on vmbr99 right now because ct-prepare.sh put it there, and that
+[300]   record is where its real bridge went. Nothing was guessed.</pre></div>
   <div class="warn"><p><b>ยกเว้นกรณีเดียว</b> ถ้าคุณย้าย CT 300 ไป <span class="m">vmbr99</span>
-     เองเพื่อผ่านด่าน D1 แปลว่า bridge จริงถูกทับไปแล้วและไม่มีใครจดไว้
+     เองด้วยมือ ไม่ได้ผ่านเครื่องมือ แปลว่า bridge จริงถูกทับไปแล้วและไม่มีใครจดไว้
      ตอนนั้นมันจะวางให้ตามปกติ แต่ขึ้นเตือนตัวใหญ่ว่า
-     <span class="m">would come up UNABLE TO ANSWER</span> — ต้องใส่ bridge จริงเองก่อนเปิด</p></div>
+     <span class="m">would come up UNABLE TO ANSWER</span> — ต้องใส่ bridge จริงเองก่อนเปิด
+     นี่คือเหตุผลที่ควรใช้ <span class="m">ketsync evacuate</span> หรือ
+     <span class="m">ketsync isolate</span> แทนการพิมพ์ <span class="m">pct set</span> เอง</p></div>
 
   <h3>ขั้นที่ 4 — ทั้งฟลีตทีเดียว เมื่อซ้อมตัวแรกผ่านแล้ว</h3>
   <details class="cmd"><summary>./ketsync distribute --all</summary><div class="code"><pre>./ketsync distribute --all</pre></div></details>
@@ -339,6 +347,13 @@ ls /sys/class/net/vmbr99/brif/</pre></div></details>
         <td>เอา port นั้นออก หรือใช้ bridge อื่นที่ปิดจริง</td></tr>
     <tr><td class="m">found 1 of the 2 interfaces</td><td>เห็น veth ไม่ครบตามที่ config บอก</td>
         <td>ตรวจไม่ครบไม่นับว่าตัดขาด ดูที่ <span class="m">/sys/class/net</span> เองก่อน</td></tr>
+    <tr><td class="m">still on the wire: ...(ovs-system)</td>
+        <td>เครื่องนั้นใช้ Open vSwitch แล้วถาม ovsdb ไม่ได้ —
+            <span class="m">ovs-system</span> คือ datapath ไม่ใช่ชื่อ bridge
+            ทุก port ของทุก OVS bridge อยู่บนตัวนี้หมด เลยตอบไม่ได้ว่าอยู่ bridge ไหน</td>
+        <td>เช็กว่า service ยังอยู่:
+            <span class="m">systemctl status openvswitch-switch</span> แล้วถามตรงๆ ว่าเส้นนั้นอยู่ bridge ไหน
+            <span class="m">ovs-vsctl iface-to-br veth300i0</span></td></tr>
     <tr><td class="m">GUARD D1 ... UNVERIFIED</td><td>ติดต่อเครื่อง compute ไม่ได้</td>
         <td>ติดต่อไม่ได้ ≠ ปิดอยู่ ต้องแก้ ssh ก่อน</td></tr>
     <tr><td class="m">GUARD D1 ... onboot: 1</td><td>ปิดอยู่ แต่จะบูตเองเมื่อ storage กลับมา</td>

@@ -52,7 +52,7 @@ tgt_dir(){ printf '%s/targets/%s' "$SIMROOT" "$1"; }
 # two are kept in step by hand - if the engine starts asking a different
 # question, this has to be taught to answer it.
 d1_probe(){ # $1 = the node's dir under nodes/, $2 = the command string
-  local n="$1" flat id br f ifn master port kind
+  local n="$1" flat id br f ifn master port kind members b m
   flat="$(printf '%s' "$2" | tr '\n' ' ')"
   id="$(sed -n 's|.*/sys/class/net/veth\([0-9][0-9]*\)i\*.*|\1|p' <<<"$flat")"
   br="$(sed -n 's|.*ip -br link show \([^ ]*\).*|\1|p' <<<"$flat")"
@@ -60,12 +60,33 @@ d1_probe(){ # $1 = the node's dir under nodes/, $2 = the command string
   f="$n/ct/$id.veth"
   if [[ -f "$f" ]]; then
     while read -r ifn master; do
-      [[ -n "${ifn:-}" ]] && printf 'VETH %s %s\n' "$ifn" "$master"
+      [[ -n "${ifn:-}" ]] || continue
+      printf 'VETH %s %s\n' "$ifn" "$master"
+      # An OVS node enslaves every port to the datapath, so the kernel's
+      # answer is ovs-system for all of them and the bridge is in ovsdb
+      # alone. Two facts, kept apart: the ovs map answers only when the probe
+      # asks ovs-vsctl. A probe that stops asking gets ovs-system - which is
+      # what this engine printed about every isolated container on an OVS
+      # fleet, refusing all of them.
+      if [[ "$flat" == *iface-to-br* ]]; then
+        b="$(awk -v i="$ifn" '$1==i{print $2; exit}' "$n/ovs" 2>/dev/null)"
+        [[ -n "$b" ]] && printf 'OVSBR %s %s\n' "$ifn" "$b"
+      fi
     done < "$f"
   fi
   [[ -f "$n/bridges/$br" ]] || { echo BRMISSING; return 0; }
-  while read -r port kind _; do
+  while read -r port kind members; do
     [[ -z "${port:-}" ]] && continue
+    # An OVS bond is one PORT with no kernel netdev of its own; its members
+    # are the NICs. `list-ports` names the bond, the engine's test for a
+    # physical device finds nothing, and a bridge with a bonded uplink reads
+    # as isolated. `list-ifaces` returns the members. The fake answers the two
+    # differently because ovs-vsctl does.
+    if [[ "$kind" == ovsbond ]]; then
+      [[ "$flat" == *list-ifaces* ]] || continue
+      for m in ${members//,/ }; do printf 'UPLINK %s\n' "$m"; done
+      continue
+    fi
     case "$kind" in nic|bond) printf 'UPLINK %s\n' "$port";; esac
   done < "$n/bridges/$br"
   echo OK; return 0

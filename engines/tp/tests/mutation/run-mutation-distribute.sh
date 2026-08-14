@@ -395,6 +395,23 @@ mutant "the onboot check is asked of a container that is already running" \
   's{\Q    if [[ "\E\$pstat\Q" != running ]]; then\E}{    if true; then}' \
   4g
 
+# The OVS half. Open vSwitch enslaves every port to one datapath device, so
+# the kernel's master is ovs-system on every interface of every bridge and the
+# membership is in ovsdb alone. The probe asks both and the ENGINE decides,
+# rather than the snippet, precisely so these three can exist: a decision made
+# inside a remote command string is one no mutation can reach.
+mutant "D1 takes the datapath device for a bridge name, and refuses an OVS fleet" \
+  's{\Q                  _br="\E\$\Q(veth_bridge "\E\$_iso\Q" "\E\$_if\Q" "\E\$_br\Q")"\E}{                  :}' \
+  4h
+
+mutant "an unanswered ovsdb reads as no bridge at all, losing the word that says why" \
+  's!\$\{b:-\$3\}!\$b!' \
+  4i
+
+mutant "the probe asks OVS for the bridge's PORTS, so a bonded uplink hides behind one name" \
+  's!\Q--timeout=5 list-ifaces\E!--timeout=5 list-ports!' \
+  4j
+
 # ---------- D6: the 9<id> is placed in order to ANSWER -----------------------
 # Which makes its network the one thing it may not inherit from the copy: the
 # copy sits on a bridge with no uplink on purpose. Everything below is a way of
@@ -412,12 +429,29 @@ mutant "D6 reads the net of the COPY id instead of the production one" \
   28b
 
 mutant "a bridge that came back isolated is placed without a word about it" \
-  's{\Q      [[ "\E\$_b\Q" == "\E\$MOCKNET_BRIDGE\Q" ]] && CT_PNET_ISO=\E}{      false \&\& CT_PNET_ISO=}' \
-  28d
+  's{\Q        if [[ "\E\$_b\Q" == "\E\$MOCKNET_BRIDGE\Q" ]]; then\E}{        if false; then}' \
+  28d 28g
 
 mutant "the bridge is matched inside the line, so vmbr990 reads as vmbr99" \
-  's{\Q      [[ "\E\$_b\Q" == "\E\$MOCKNET_BRIDGE\Q" ]] && CT_PNET_ISO=\E}{      [[ "\$_n" == *"bridge=\$MOCKNET_BRIDGE"* ]] \&\& CT_PNET_ISO=}' \
+  's{\Q        if [[ "\E\$_b\Q" == "\E\$MOCKNET_BRIDGE\Q" ]]; then\E}{        if [[ "\$_n" == *"bridge=\$MOCKNET_BRIDGE"* ]]; then}' \
   28f
+
+# The record ct-prepare.sh wrote before it moved anything. `ketsync distribute`
+# isolates first, so during a real DR every container arriving here has the
+# isolated bridge in its production config and this file is the only thing that
+# knows what it replaced. Losing it does not fail a run - it places every
+# container on a bridge with no uplink and says it worked.
+mutant "D6 looks for the isolate record somewhere ct-prepare.sh does not write it" \
+  's{\QISO_REC_DIR/\E}{ISO_REC_DIR/old/}' \
+  28g
+
+mutant "a record that says it is about another container is trusted anyway" \
+  's{\Q|| _rec=""\E}{|| :}' \
+  28h
+
+mutant "a bridge name out of the record is pasted into the config unchecked" \
+  's{\Q^[A-Za-z0-9._-]+\E}{^.*}' \
+  28i
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

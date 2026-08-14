@@ -110,7 +110,8 @@
 #       the same as PVE applying it to a running container, and this engine
 #       claims to have taken something off the network. So it re-reads the
 #       master of every veth and refuses to report success until they have all
-#       moved.
+#       moved. On an Open vSwitch node the master is the datapath and not the
+#       bridge, so the probe asks ovsdb too - see veth_bridge().
 #
 #  Nothing here starts, creates or destroys a container, ever. `--evacuate` is
 #  the one mode that stops one, and it is separate for a reason: everything
@@ -282,6 +283,33 @@ rsh(){ ssh $SSH_OPT "root@$1" "${@:2}" </dev/null 2>/dev/null; }
 # the whole point of the checks that use this is that they are exact.
 net_bridge(){ printf '%s' "$1" | tr ',' '\n' | sed -n 's/^bridge=//p' | head -1; }
 
+# Which bridge a veth is REALLY on, out of the probe's own output.
+#
+# Open vSwitch does not enslave a port to the bridge it belongs to. Every port
+# of every OVS bridge on a host is enslaved to one datapath device called
+# ovs-system, so /sys/class/net/<if>/master names the datapath and never the
+# bridge - the membership lives in ovsdb, and ovs-vsctl is the only thing that
+# can answer for it. That is why the probe asks it, and this is where the
+# answer is used.
+#
+# This is not theoretical. On an OVS fleet P6 would refuse every container it
+# had just isolated correctly, and ct-distribute's D1 did: "still on the wire:
+# veth110i0(ovs-system)", about a container that was on vmbr99. The one route
+# out of a dead storage node, closed by a string comparison.
+#
+# An unresolved ovs-system is returned unchanged rather than blanked. It is
+# not a bridge name, so every comparison against MOCKNET_BRIDGE still fails
+# and nothing is reported as isolated - but the operator sees the word that
+# tells them ovs-vsctl did not answer.
+veth_bridge(){   # $1 = probe output, $2 = interface, $3 = its kernel master
+  local b
+  case "$3" in
+    ""|ovs-system) b="$(awk -v i="$2" '$1=="OVSBR" && $2==i {print $3; exit}' <<<"$1")"
+                   printf '%s' "${b:-$3}";;
+    *)             printf '%s' "$3";;
+  esac
+}
+
 # ---------- the CT list -----------------------------------------------------
 # ct-replica's inventory, because a container this engine prepares is by
 # definition one that has a DR copy to hand over to.
@@ -370,7 +398,12 @@ rec_field(){ awk -F'\t' -v k="$2" '$1==k{print $2; exit}' <<<"$1"; }
 #
 #   NETS <n>              how many net lines its config declares
 #   NETLINE <netN> <line> each one, verbatim, so a bridge can be put back
-#   VETH <if> <bridge>    what the KERNEL has, which is the one that cannot lie
+#   VETH <if> <master>    what the KERNEL has, which is the one that cannot lie
+#   OVSBR <if> <bridge>   what OVSDB has, for a node where the kernel's answer
+#                         is the datapath rather than a bridge. Both are
+#                         printed and veth_bridge() picks: deciding here would
+#                         put the decision inside a remote snippet, where no
+#                         simulator and no mutation can reach it
 #   ONBOOT <0|1>
 #   STATUS <word>
 #   ROOTSID <storage-id>  where its rootfs lives
@@ -396,11 +429,13 @@ probe(){   # $1 = ip, $2 = ctid
     echo \"DSTATE \$(ps -eo stat= 2>/dev/null | grep -c '^D')\"
     for i in /sys/class/net/veth${ct}i*; do
       [ -e \"\$i\" ] || continue
+      n=\${i##*/}
       m=\$(readlink -f \"\$i/master\" 2>/dev/null)
-      echo \"VETH \$(basename \$i) \${m##*/}\"
+      echo \"VETH \$n \${m##*/}\"
+      b=\$(ovs-vsctl --timeout=5 iface-to-br \"\$n\" 2>/dev/null) && [ -n \"\$b\" ] && echo \"OVSBR \$n \$b\"
     done
     ip -br link show $MOCKNET_BRIDGE >/dev/null 2>&1 || { echo BRMISSING; exit 0; }
-    ports=\$(ovs-vsctl list-ports $MOCKNET_BRIDGE 2>/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2>/dev/null)
+    ports=\$(ovs-vsctl --timeout=5 list-ifaces $MOCKNET_BRIDGE 2>/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2>/dev/null)
     for p in \$ports; do
       if [ -e /sys/class/net/\$p/device ] || [ -d /sys/class/net/\$p/bonding ]; then echo \"UPLINK \$p\"; fi
     done
@@ -608,6 +643,7 @@ do_isolate(){   # $1 = ctid
   local _wired=""
   while read -r _k _if _br; do
     [[ "$_k" == VETH ]] || continue
+    _br="$(veth_bridge "$out" "$_if" "$_br")"
     [[ "$_br" == "$MOCKNET_BRIDGE" ]] || _wired="$_wired $_if(${_br:-none})"
   done <<< "$out"
   if [[ -n "$_wired" ]]; then
@@ -615,6 +651,13 @@ do_isolate(){   # $1 = ctid
     log "[$ct] GUARD P6:   PVE hotplugs a bridge change onto a running container, and this one"
     log "[$ct] GUARD P6:   did not take. CT $ct is NOT isolated - do not place its copy."
     log "[$ct] GUARD P6:   check it by hand:  ssh root@$pip ls -l /sys/class/net/veth${ct}i*/master"
+    if [[ "$_wired" == *"(ovs-system)"* ]]; then
+      log "[$ct] GUARD P6:   ovs-system is Open vSwitch's datapath, not a bridge - every port"
+      log "[$ct] GUARD P6:   on every OVS bridge is on it, so the kernel cannot name the bridge"
+      log "[$ct] GUARD P6:   and ovs-vsctl on $pn did not answer either:"
+      log "[$ct] GUARD P6:     ssh root@$pip ovs-vsctl iface-to-br veth${ct}i0"
+      log "[$ct] GUARD P6:   the net lines ARE written - put them back with --restore."
+    fi
     st_fail "$ct"; return 1
   fi
   log "[$ct] ISOLATED:$_moved now on $MOCKNET_BRIDGE, verified from /sys/class/net"

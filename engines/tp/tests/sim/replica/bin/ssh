@@ -51,8 +51,18 @@ case "$c" in
     [[ -f "$BKP/r9.fail" ]] && { echo "ssh_exchange_identification: closed" >&2; exit 255; }
     br="${c#*ip -br link show }"; br="${br%%[[:space:]]*}"
     [[ -f "$BKP/bridges/$br" ]] || { echo MISSING; exit 0; }
-    while read -r port kind _; do
+    while read -r port kind members; do
       [[ -z "${port:-}" ]] && continue
+      # An OVS bond is one PORT whose members are the NICs, and it has no
+      # kernel netdev of its own - so `list-ports` names something with no
+      # /device and no /bonding, and R9 would call a bridge with a bonded
+      # uplink isolated. `list-ifaces` returns the members. The fake answers
+      # the two differently because ovs-vsctl does.
+      if [[ "$kind" == ovsbond ]]; then
+        [[ "$c" == *list-ifaces* ]] || continue
+        for m in ${members//,/ }; do printf 'UPLINK %s\n' "$m"; done
+        continue
+      fi
       case "$kind" in nic|bond) printf 'UPLINK %s\n' "$port";; esac
     done < "$BKP/bridges/$br"
     echo OK; exit 0;;

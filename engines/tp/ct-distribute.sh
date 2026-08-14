@@ -640,12 +640,47 @@ st_skip(){ SKIPPED=$(( SKIPPED + 1 )); SKIPPED_IDS+=("$1"); st_write "$1" skippe
 # =============================================================================
 CT_SRC=""; CT_DR=""; CT_TO=""; CT_TONODE=""; CT_DST=""; CT_DSTTYPE=""
 CT_SIZE=""; CT_SRCMNT=""; CT_CFG=""; CUR_MNT=""; CUR_HOST=""
-CT_PNET=""; CT_PNET_ISO=""
+CT_PNET=""; CT_PNET_ISO=""; CT_PNET_REC=""
+
+# Where ct-prepare.sh keeps the record of which bridge each interface came
+# from, in pmxcfs so every member of the cluster sees the same bytes. The two
+# engines hold the path separately because they are separate programs; it is
+# one location and changing it in one place only would silently stop D6 from
+# finding what isolate wrote.
+ISO_REC_DIR=/etc/pve/ketsync/isolate
 
 # The bridge named by one net line. Split on commas and take the field, rather
 # than matching bridge=vmbr99 inside a string - which also matches vmbr990, and
 # the whole point of the check that uses this is that it is exact.
 net_bridge(){ printf '%s' "$1" | tr ',' '\n' | sed -n 's/^bridge=//p' | head -1; }
+
+# Which bridge a veth is REALLY on, out of the probe's own output.
+#
+# Open vSwitch does not enslave a port to the bridge it belongs to. Every port
+# of every OVS bridge on a host is enslaved to one datapath device called
+# ovs-system, so /sys/class/net/<if>/master names the datapath and never the
+# bridge - the membership lives in ovsdb, and ovs-vsctl is the only thing that
+# can answer for it. That is why the probe asks it, and this is where the
+# answer is used.
+#
+# This is not theoretical. D1 refused every container on this fleet with
+# "still on the wire: veth110i0(ovs-system)" while they were correctly on
+# vmbr99, because ovs-system is not vmbr99 and the comparison had no way to
+# know why. On an OVS fleet that made the isolated path unreachable: the one
+# route out of a dead storage node, closed by a string comparison.
+#
+# An unresolved ovs-system is returned unchanged rather than blanked. It is
+# not a bridge name, so every comparison against MOCKNET_BRIDGE still fails
+# and the container is still refused - but the operator sees the word that
+# tells them ovs-vsctl did not answer.
+veth_bridge(){   # $1 = probe output, $2 = interface, $3 = its kernel master
+  local b
+  case "$3" in
+    ""|ovs-system) b="$(awk -v i="$2" '$1=="OVSBR" && $2==i {print $3; exit}' <<<"$1")"
+                   printf '%s' "${b:-$3}";;
+    *)             printf '%s' "$3";;
+  esac
+}
 
 # The mount is on the TARGET, not here, so cleaning it up is a remote call. It
 # is done in the per-CT path rather than the exit trap on purpose: the trap
@@ -662,7 +697,7 @@ do_ct(){   # $1 = production ctid
   local ct="$1" rc=0 out cfg
   CT_SRC="${SRC_MAP[$ct]}"; CT_DR=$(( ct + DR_OFFSET ))
   CT_TO=""; CT_TONODE=""; CT_DST=""; CT_DSTTYPE=""; CT_SIZE=""; CT_SRCMNT=""; CT_CFG=""
-  CT_PNET=""; CT_PNET_ISO=""
+  CT_PNET=""; CT_PNET_ISO=""; CT_PNET_REC=""
 
   CT_TO="$(target_of "$ct")"
   if [[ -z "$CT_TO" ]]; then
@@ -721,16 +756,24 @@ do_ct(){   # $1 = production ctid
       # Every check below reads the KERNEL, not the config. A config can record
       # a change PVE has not applied to the running container; the bridge a
       # veth is actually enslaved to cannot.
+      #
+      # On an Open vSwitch node the kernel cannot name the bridge at all - see
+      # veth_bridge() - so the probe asks ovs-vsctl as well and prints both
+      # answers. Which one is used is decided here rather than there, because
+      # a decision made inside a remote snippet is a decision no simulator and
+      # no mutation can reach.
       local _iso
       _iso=$(rsh "$pip" "
         echo \"NETS \$(pct config $ct 2>/dev/null | grep -c '^net[0-9]')\"
         for i in /sys/class/net/veth${ct}i*; do
           [ -e \"\$i\" ] || continue
+          n=\${i##*/}
           m=\$(readlink -f \"\$i/master\" 2>/dev/null)
-          echo \"VETH \$(basename \$i) \${m##*/}\"
+          echo \"VETH \$n \${m##*/}\"
+          b=\$(ovs-vsctl --timeout=5 iface-to-br \"\$n\" 2>/dev/null) && [ -n \"\$b\" ] && echo \"OVSBR \$n \$b\"
         done
         ip -br link show $MOCKNET_BRIDGE >/dev/null 2>&1 || { echo BRMISSING; exit 0; }
-        ports=\$(ovs-vsctl list-ports $MOCKNET_BRIDGE 2>/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2>/dev/null)
+        ports=\$(ovs-vsctl --timeout=5 list-ifaces $MOCKNET_BRIDGE 2>/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2>/dev/null)
         for p in \$ports; do
           if [ -e /sys/class/net/\$p/device ] || [ -d /sys/class/net/\$p/bonding ]; then echo \"UPLINK \$p\"; fi
         done
@@ -745,6 +788,7 @@ do_ct(){   # $1 = production ctid
           case "$_k" in
             NETS) [[ "$_if" =~ ^[0-9]+$ ]] && _nets="$_if";;
             VETH) _nveth=$(( _nveth + 1 ))
+                  _br="$(veth_bridge "$_iso" "$_if" "$_br")"
                   [[ "$_br" == "$MOCKNET_BRIDGE" ]] || _wired="$_wired $_if(${_br:-none})";;
           esac
         done <<< "$_iso"
@@ -780,6 +824,12 @@ do_ct(){   # $1 = production ctid
                        done;;
           *OK*)        if [[ -n "$_wired" ]]; then
                          log "[$ct] GUARD D1:   still on the wire:$_wired"
+                         if [[ "$_wired" == *"(ovs-system)"* ]]; then
+                           log "[$ct] GUARD D1:   ovs-system is Open vSwitch's datapath, not a bridge - every"
+                           log "[$ct] GUARD D1:   port on every OVS bridge is on it. ovs-vsctl on $pnode did not"
+                           log "[$ct] GUARD D1:   answer, so which bridge it is on is unknown, and unknown is"
+                           log "[$ct] GUARD D1:   not isolated. Check:  ssh root@$pip ovs-vsctl show"
+                         fi
                        else
                          log "[$ct] GUARD D1:   $_unsure - and unverified is not isolated"
                        fi;;
@@ -862,17 +912,46 @@ do_ct(){   # $1 = production ctid
     # ever stops being true, that table is where the answer belongs.
     CT_PNET=$(rsh "$pip" "pct config $ct 2>/dev/null" | grep -E '^net[0-9]+:' || true)
     if [[ -n "$CT_PNET" ]]; then
-      # A production container that was moved onto the isolated bridge to get
-      # past D1 has had its real bridge overwritten, by hand, and nobody wrote
-      # down what it was. Saying so is the only honest option: a 9<id> placed
-      # with this net line comes up unable to answer, which is the one thing
-      # the whole DR exists to prevent.
-      local _n _b
+      # A production container on the isolated bridge got there one of two
+      # ways, and they end differently.
+      #
+      # `ketsync distribute` isolates before it places - that is the whole
+      # point of the composed command - so by the time this reads the
+      # production config, EVERY container it is about to place has
+      # MOCKNET_BRIDGE in it. Carrying that across would put every 9<id> on a
+      # bridge with no uplink and leave a person to retype the real one, per
+      # container, at four in the morning: the exact work the automation was
+      # for. ct-prepare.sh wrote down which bridge each interface came from
+      # BEFORE it moved it, in pmxcfs, precisely so this can be put back.
+      #
+      # The other way is a person with an ssh session and no record. Nothing
+      # can reconstruct that one, and D6 says so rather than inventing a
+      # bridge - see CT_PNET_ISO below.
+      local _rec="" _n _b _real _out=""
+      _rec="$(rsh "$pip" "cat '$ISO_REC_DIR/$ct.tsv' 2>/dev/null")"
+      # The record has to be about THIS container. A file named after one
+      # container that says it is another is corrupt, not authoritative, and
+      # the bridge it names would land on a customer's segment.
+      [[ "$(awk -F'\t' '$1=="ctid"{print $2; exit}' <<<"$_rec")" == "$ct" ]] || _rec=""
       while IFS= read -r _n; do
         [[ -n "$_n" ]] || continue
         _b="$(net_bridge "$_n")"
-        [[ "$_b" == "$MOCKNET_BRIDGE" ]] && CT_PNET_ISO="$CT_PNET_ISO ${_n%%:*}"
+        if [[ "$_b" == "$MOCKNET_BRIDGE" ]]; then
+          _real="$(awk -F'\t' -v k="${_n%%:*}" '$1==k{print $2; exit}' <<<"$_rec")"
+          # A bridge name goes into a config PVE will act on. Anything that is
+          # not an interface name is treated as no record at all rather than
+          # pasted through - the record is a file, and files get edited.
+          [[ "$_real" =~ ^[A-Za-z0-9._-]+$ ]] || _real=""
+          if [[ -n "$_real" ]]; then
+            CT_PNET_REC="$CT_PNET_REC ${_n%%:*}"
+            _n="$(printf '%s' "$_n" | sed -E "s/bridge=[^,]*/bridge=$_real/")"
+          else
+            CT_PNET_ISO="$CT_PNET_ISO ${_n%%:*}"
+          fi
+        fi
+        _out="$_out$_n"$'\n'
       done <<< "$CT_PNET"
+      CT_PNET="${_out%$'\n'}"
     fi
   fi
 
@@ -1121,6 +1200,11 @@ do_ct(){   # $1 = production ctid
   else
     log "[$ct]   net: the COPY's, which sits on $MOCKNET_BRIDGE by design - CT $ct has no config"
     log "[$ct]   anywhere in this cluster, so there was nothing to read the real one from."
+  fi
+  if [[ -n "$CT_PNET_REC" ]]; then
+    log "[$ct]  $CT_PNET_REC came from the isolate record on $pnode: production CT $ct is"
+    log "[$ct]   on $MOCKNET_BRIDGE right now because ct-prepare.sh put it there, and that"
+    log "[$ct]   record is where its real bridge went. Nothing was guessed."
   fi
   if [[ -n "$CT_PNET_ISO" ]]; then
     log "[$ct]   WARNING:$CT_PNET_ISO came across on $MOCKNET_BRIDGE, which has no uplink."

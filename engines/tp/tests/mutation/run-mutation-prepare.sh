@@ -175,6 +175,23 @@ mutant "P6 reads the config back instead of the kernel" \
   's{\Q    [[ "\E\$_k\Q" == VETH ]] || continue\E}{    [[ "\$_k" == NETLINE ]] || continue}' \
   10
 
+# The OVS half. Open vSwitch enslaves every port to one datapath device, so the
+# kernel's master is ovs-system on every interface of every bridge and the
+# membership is in ovsdb alone. The probe asks both and the ENGINE decides,
+# rather than the snippet, precisely so these can exist: a decision made inside
+# a remote command string is one no mutation can reach.
+mutant "P6 takes the datapath device for a bridge name, and never verifies an OVS node" \
+  's{\Q    _br="\E\$\Q(veth_bridge "\E\$out\Q" "\E\$_if\Q" "\E\$_br\Q")"\E}{    :}' \
+  10b
+
+mutant "an unanswered ovsdb reads as no bridge at all, losing the word that says why" \
+  's!\$\{b:-\$3\}!\$b!' \
+  10c
+
+mutant "the probe asks OVS for the bridge's PORTS, so a bonded uplink hides behind one name" \
+  's!\Q--timeout=5 list-ifaces\E!--timeout=5 list-ports!' \
+  7b
+
 # ---------- the record, and the order it is written in -----------------------
 # The invariant no log line can prove. Reversed, every message still reads
 # correctly and the fleet loses its only copy of the bridge names the first

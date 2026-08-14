@@ -225,7 +225,7 @@ feel temporary - a 9xxx container is one somebody has to deliberately unwind.
 Stage 1 of the DR runbook - get the production containers out of the way -
 was four or five raw `pvesm`, `umount` and `pct` commands per node, in an
 order almost everybody gets wrong. It is `isolate`, `restore` and `evacuate`
-now. 50 scenarios, 46 mutations.
+now. 53 scenarios, 49 mutations.
 
 **What makes it safe is a proof, not an intention.** P2 and E2 refuse unless
 the container's rootfs storage is provably dead, and the proof is not an
@@ -265,6 +265,40 @@ shutdown, both of a running production container - and `engines/tp/CLAUDE.md`
 says so, says why, and says not to extend the carve-out to a third verb
 without the same kind of proof.
 
+**On Open vSwitch the kernel cannot name a bridge, and "read the kernel, not
+the config" nearly cost this fleet its DR.** Every check about where an
+interface really is reads `/sys/class/net/<if>/master`, because a config can
+record a bridge change PVE never applied to a running container. OVS does not
+work that way: every port of every OVS bridge on a host is enslaved to ONE
+datapath device called `ovs-system`, and the bridge membership lives in ovsdb.
+So the master says `ovs-system` for an interface on `vmbr0` and `ovs-system`
+for the same interface after it moves to `vmbr99`, and a comparison against
+`MOCKNET_BRIDGE` can never be true. The first drill on this fleet ended with
+D1 refusing every container - `still on the wire: veth110i0(ovs-system)` -
+about containers that were correctly isolated. On an OVS fleet that closes the
+only route out of a dead storage node.
+
+The probe now prints both answers, `VETH <if> <master>` from the kernel and
+`OVSBR <if> <bridge>` from `ovs-vsctl iface-to-br`, and the ENGINE chooses -
+kernel first, ovsdb only when the kernel's answer is `ovs-system` or nothing.
+Choosing inside the remote snippet would have been shorter and is the wrong
+place: the simulators reproduce what a snippet DOES rather than executing it,
+so a decision made in there is a decision no scenario and no mutation can
+reach. In local bash it took three mutations, one of which - "take the
+datapath device for a bridge name" - is this bug, put back on purpose.
+
+An ovsdb that does not answer leaves `ovs-system` in the message rather than
+blanking it. It is not a bridge name, so the container is still refused; the
+operator sees the word that says it was OVS that went unanswered, and not the
+container that moved.
+
+The same probe asks OVS for the bridge's `list-ifaces` rather than its
+`list-ports`, in P4, D1 and R9. An OVS bond is one PORT whose members are the
+NICs and it has no kernel netdev of its own, so `list-ports` on a bridge
+uplinked by a bond returns a name with no `/device` and no `/bonding` - and
+the island bridge that every copy's production IP and MAC depends on would
+read as isolated while it reached the wire through two cables.
+
 ## 4c. Asking before writing
 
 Every verb that writes asks once, at the dispatcher, and says what it writes
@@ -298,7 +332,7 @@ resolves the target from `fleet.tsv`'s `dr` column (`--to` overrides, and a
 container with neither is refused rather than placed somewhere reasonable),
 checks `9<id>` is free across the whole cluster, allocates on the target's own
 storage, transfers, writes the config carrying the production network, and then
-prints the `pct start` for a human. 58 scenarios, 62 mutations.
+prints the `pct start` for a human. 64 scenarios, 68 mutations.
 
 Three things about it are new to this repo.
 
@@ -350,6 +384,26 @@ stopped". And it says out loud what it has accepted: the container is still a
 PENDING WRITER, blocked now and writing again the instant the storage returns,
 so it still has to be stopped before then - and failback's B1 refuses to write
 into the production image until it is.
+
+**The 9<id> takes its network from the isolate record when the production
+config has been overwritten.** D6 reads the production container's net lines
+rather than the copy's, because the copy sits on the isolated bridge by design
+and this one is placed in order to answer. But `ketsync distribute` isolates
+BEFORE it places, so on a real DR the production config also says
+`MOCKNET_BRIDGE` by the time D6 reads it - every container, not the odd one.
+Carrying that across would put the whole fleet on a bridge with no uplink and
+leave a person retyping a bridge per container at four in the morning, which is
+the work the automation exists to remove.
+
+ct-prepare.sh wrote each interface's real bridge into pmxcfs before it moved
+anything, precisely so this can be undone, and D6 reads it back. Two checks
+stand between that file and a config PVE will act on: the record must say it is
+about this container, and the value must look like an interface name. Either
+failing means "no record", which is the honest answer - a container that comes
+up on the isolated bridge is recoverable in a way that one on a segment nobody
+chose is not. A container moved onto the isolated bridge BY HAND still has no
+record and still gets the warning, because nothing can reconstruct what was
+overwritten.
 
 The `onboot: 1` check below it is therefore asked only of a container that is
 DOWN. Refusing a running-and-isolated container for `onboot` would be refusing
@@ -494,12 +548,12 @@ doctor` says so on the next good day.
     ketsync migrate      tp's, passed through untouched
     ketsync replica      tp's
     ketsync failback     tp's
-    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 58 scenarios,
-                         62 mutations. See section 5
+    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 64 scenarios,
+                         68 mutations. See section 5
     ketsync recall       tp's - engines/tp/ct-recall.sh, 53 scenarios,
                          47 mutations. See section 6
     ketsync status       tp's
-    ketsync isolate      tp's - engines/tp/ct-prepare.sh, 50 scenarios,
+    ketsync isolate      tp's - engines/tp/ct-prepare.sh, 53 scenarios,
     ketsync restore      46 mutations, shared by all three. See section 4b
     ketsync evacuate
 

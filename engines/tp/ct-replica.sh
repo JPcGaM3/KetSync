@@ -554,10 +554,16 @@ fi
 # NIC has a /sys/class/net/<if>/device symlink to its PCI device; a bond has a
 # /bonding directory. Neither exists for an OVS internal port or for the veth
 # PVE creates per container, which is exactly the distinction needed here.
+#
+# It asks OVS for list-IFACES, not list-ports. An OVS bond is one PORT whose
+# members are the NICs, and it has no kernel netdev of its own: `list-ports`
+# on a bridge uplinked by a bond returns a name that has no /device and no
+# /bonding, and this guard would have called that bridge isolated while it
+# reached the wire. list-ifaces returns the members themselves.
 if (( MOCKNET )); then
   _r9=$(ssh $SSH_OPT "$BKP_SSH" "
     ip -br link show $MOCKNET_BRIDGE >/dev/null 2>&1 || { echo MISSING; exit 0; }
-    ports=\$(ovs-vsctl list-ports $MOCKNET_BRIDGE 2>/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2>/dev/null)
+    ports=\$(ovs-vsctl --timeout=5 list-ifaces $MOCKNET_BRIDGE 2>/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2>/dev/null)
     for p in \$ports; do
       if [ -e /sys/class/net/\$p/device ] || [ -d /sys/class/net/\$p/bonding ]; then echo \"UPLINK \$p\"; fi
     done
@@ -586,7 +592,7 @@ if (( MOCKNET )); then
     log "GUARD R9:   copies carry PRODUCTION IPs and MACs; the only thing that made"
     log "GUARD R9:   that safe was this bridge being unable to reach a wire."
     log "GUARD R9:   ANY COPY ALREADY RUNNING ON IT MAY BE COLLIDING WITH PRODUCTION NOW."
-    log "GUARD R9:   check: ssh $BKP_SSH 'pct list' ; ovs-vsctl list-ports $MOCKNET_BRIDGE"
+    log "GUARD R9:   check: ssh $BKP_SSH 'pct list' ; ovs-vsctl list-ifaces $MOCKNET_BRIDGE"
     exit 2
   fi
   log "R9: $MOCKNET_BRIDGE ok on $BKP_NODE (no uplink)"

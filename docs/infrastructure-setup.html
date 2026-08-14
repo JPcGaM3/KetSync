@@ -252,10 +252,13 @@ ssh root@10.100.1.32 "pvesm status | grep tank-hdd-nas"</pre></div></details>
 </section>
 
 <section id="s5">
-  <div class="eyebrow"><span class="num">5</span><h2>สร้าง bridge ปิดตาย ที่เครื่อง backup</h2></div>
+  <div class="eyebrow"><span class="num">5</span><h2>สร้าง bridge ปิดตาย ทุกเครื่อง (backup + compute)</h2></div>
   <p>สำเนาที่เก็บไว้ต้องต่ออยู่กับ “เกาะร้าง” — เป็น bridge ที่ไม่มีสายออกไปไหนเลย
      ถ้าวันหนึ่งมีคนเผลอเปิดสำเนาขึ้นมา มันจะออกเน็ตไม่ได้ ไม่ไปชนกับตัวจริง</p>
-  <details class="cmd"><summary>cat >> /etc/network/interfaces <<'EOF'</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
+  <p>ต้องมีที่ <b>เครื่อง compute ทุกเครื่องด้วย</b> ไม่ใช่แค่ backup วันที่เครื่อง storage ตาย
+     ทางออกทางเดียวของ CT ที่ค้างอยู่คือย้าย network มาลง bridge นี้ ณ เครื่องที่มันรันอยู่
+     (guard P4 กับ D1 จะเช็กให้ตรงนั้น) เครื่องไหนไม่มี เครื่องนั้นกู้ไม่ได้ และจะรู้ตอนเกิดเหตุ</p>
+  <details class="cmd"><summary>cat >> /etc/network/interfaces <<'EOF'</summary><div class="code"><pre><span class="c"># on the BACKUP node, and on EVERY compute node</span>
 cat &gt;&gt; /etc/network/interfaces &lt;&lt;'EOF'
 
 auto vmbr99
@@ -266,13 +269,30 @@ iface vmbr99 inet manual
 EOF
 
 ifup vmbr99</pre></div></details>
+  <p>เครื่องที่ใช้ Open vSwitch (ดูจาก <code class="inl">ovs_type OVSBridge</code> ใน
+     <code class="inl">/etc/network/interfaces</code>) ให้สร้างเป็น OVS bridge แทน อย่าปนสองแบบในเครื่องเดียว</p>
+  <details class="cmd"><summary>cat >> /etc/network/interfaces <<'EOF'   (OVS)</summary><div class="code"><pre><span class="c"># OVS node only. No ovs_ports line: an island has nothing on it</span>
+apt install -y openvswitch-switch
+
+cat &gt;&gt; /etc/network/interfaces &lt;&lt;'EOF'
+
+auto vmbr99
+iface vmbr99 inet manual
+    ovs_type OVSBridge
+EOF
+
+ifup vmbr99</pre></div></details>
   <h3>เช็กว่าผ่าน</h3>
-  <details class="cmd"><summary>ip -br link show vmbr99</summary><div class="code"><pre><span class="c"># on the BACKUP node - the second line must print NOTHING</span>
+  <details class="cmd"><summary>ip -br link show vmbr99</summary><div class="code"><pre><span class="c"># on EVERY node that has it - the port list must be EMPTY</span>
 ip -br link show vmbr99
-ls /sys/class/net/vmbr99/brif/</pre></div></details>
-  <p>บรรทัดแรกต้องเห็น <code class="inl">vmbr99</code> บรรทัดที่สองต้องว่างเปล่า
+ls /sys/class/net/vmbr99/brif/          <span class="c"># linux bridge</span>
+ovs-vsctl --timeout=5 list-ifaces vmbr99 <span class="c"># OVS bridge</span></pre></div></details>
+  <p>บรรทัดแรกต้องเห็น <code class="inl">vmbr99</code> รายการ port ต้องว่างเปล่า
      ถ้ามีชื่อการ์ดโผล่มาแปลว่ามีสายต่ออยู่ — ต้องเอาออกก่อน ไม่งั้นโปรแกรมจะปฏิเสธไม่ยอมทำงาน (guard R9)
      ซึ่งถูกแล้ว อย่าไปปิด guard</p>
+  <p>ที่ถาม OVS ด้วยคำว่า <code class="inl">list-ifaces</code> ไม่ใช่ <code class="inl">list-ports</code>
+     เพราะ bond ของ OVS นับเป็น port เดียวที่ไม่มีตัวตนในเคอร์เนล ถามแบบ port จะเห็นแค่ชื่อ bond
+     แล้วเข้าใจผิดว่าเกาะนี้ไม่มีสาย ทั้งที่มีสายอยู่สองเส้น</p>
 </section>
 
 <section id="sp">
@@ -456,6 +476,7 @@ tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div></details>
     <tr><td>ssh ไป backup ได้โดยไม่ถามรหัส</td><td class="m">ssh root@10.100.1.9 true</td></tr>
     <tr><td>storage ชื่อตรงกันสองฝั่ง</td><td class="m">pvesm status | grep tank-</td></tr>
     <tr><td>bridge ที่ backup ไม่มีสายต่อ</td><td class="m">ls /sys/class/net/vmbr99/brif/</td></tr>
+    <tr><td>compute ทุกเครื่องมี vmbr99</td><td class="m">ip -br link show vmbr99</td></tr>
     <tr><td>PBS ต่อเข้า cluster แล้ว</td><td class="m">pvesm status | grep pbs-main</td></tr>
     <tr><td>doctor ไม่มีคำตัวใหญ่เหลือ</td><td class="m">./ketsync doctor</td></tr>
     <tr><td>ซ้อม 1 ตัวผ่าน</td><td class="m">./ketsync replica --dry-run --ctid 105</td></tr>

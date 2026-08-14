@@ -75,10 +75,15 @@ add_node(){
   printf '0\n' > "$(node_d "$1")/dstate"
 }
 node_d(){ printf '%s/nodes/%s' "$SIMROOT" "$1"; }
-node_bridge(){ # node bridge [port,kind]...
-  local n="$1" b="$2" p; shift 2
+node_bridge(){ # node bridge [port,kind[,member,member]]...
+  local n="$1" b="$2" p _port _kind _rest; shift 2
   : > "$(node_d "$n")/bridges/$b"
-  for p in "$@"; do printf '%s %s\n' "${p%%,*}" "${p##*,}" >> "$(node_d "$n")/bridges/$b"; done; }
+  # An ovsbond has members, and nothing else does: it is one OVS port with no
+  # kernel netdev of its own, hiding the NICs that actually reach the wire.
+  for p in "$@"; do
+    IFS=, read -r _port _kind _rest <<<"$p"
+    printf '%s %s %s\n' "$_port" "$_kind" "${_rest:-}" >> "$(node_d "$n")/bridges/$b"
+  done; }
 node_nobridge(){ rm -f "$(node_d "$1")/bridges/$2"; }
 node_down(){ : > "$(node_d "$1")/.down"; }
 # A node that writes a config and does not apply it to the running container.
@@ -142,6 +147,23 @@ ct_veths(){ # ctid node bridge...
     printf 'veth%si%s %s\n' "$id" "$i" "$b" >> "$(node_d "$n")/ct/$id.veth"
     i=$(( i + 1 ))
   done; }
+# The same container on an Open vSwitch node - which is what this fleet runs.
+# OVS enslaves every port of every bridge to ONE datapath device, ovs-system,
+# so the kernel's master is ovs-system for all of them and the bridge lives in
+# ovsdb alone. Both facts are written down separately, because the engine has
+# to ask two different questions to put them back together.
+ct_veths_ovs(){ # ctid node bridge...
+  local id="$1" n="$2" i=0 b; shift 2
+  : > "$(node_d "$n")/ct/$id.veth"
+  for b in "$@"; do
+    printf 'veth%si%s ovs-system\n' "$id" "$i" >> "$(node_d "$n")/ct/$id.veth"
+    printf 'veth%si%s %s\n' "$id" "$i" "$b"    >> "$(node_d "$n")/ovs"
+    i=$(( i + 1 ))
+  done; }
+# ovsdb cannot answer: ovs-vsctl is not installed, or openvswitch-switch is
+# down. The kernel still says ovs-system, and nothing can turn that into a
+# bridge name.
+node_ovs_mute(){ rm -f "$(node_d "$1")/ovs"; }
 
 rec_f(){ printf '%s/pve/ketsync/isolate/%s.tsv' "$SIMROOT" "$1"; }
 rec_put(){ # ctid node bridge-of-net0
@@ -194,6 +216,12 @@ cfg_net(){ # node ctid netN bridge
 kern_net(){ # node ctid ifN bridge
   local got; got=$(awk -v n="$3" '$1==n{print $2; exit}' "$(node_d "$1")/ct/$2.veth" 2>/dev/null)
   [[ "$got" == "$4" ]] || _err "$1 ct$2 $3 kernel master is '${got:-<none>}', expected '$4'"; }
+# Where OVSDB has the interface. On an OVS node this is the only place the
+# bridge is written down at all - the kernel master stays ovs-system through
+# the move, which is why kern_net cannot answer this question.
+ovs_net(){ # node ifN bridge
+  local got; got=$(awk -v n="$2" '$1==n{print $2; exit}' "$(node_d "$1")/ovs" 2>/dev/null)
+  [[ "$got" == "$3" ]] || _err "$1 $2 is on '${got:-<none>}' in ovsdb, expected '$3'"; }
 onboot_is(){ local got; got=$(cat "$(node_d "$1")/ct/$2.onboot" 2>/dev/null)
              [[ "$got" == "$3" ]] || _err "$1 ct$2 onboot is '${got:-<none>}', expected '$3'"; }
 rec_has(){ grep -qP -- "^$2\t$3$" "$(rec_f "$1")" 2>/dev/null \
@@ -329,6 +357,59 @@ if scenario "10: GUARD P6 - a config PVE did not apply is not an isolated contai
   has "GUARD P6: the config was written but the KERNEL still has: veth300i0(vmbr0)"
   has "CT 300 is NOT isolated - do not place its copy"
   hasnt "ISOLATED:"
+  done_scenario
+fi
+
+if scenario "10b: on an OVS node, isolating is verified against ovsdb"; then
+  # This fleet runs Open vSwitch, and OVS enslaves every port of every bridge
+  # to ONE datapath device called ovs-system. /sys/class/net/<if>/master names
+  # that datapath and never the bridge, so P6 - which re-reads the master and
+  # refuses until every interface has moved - could never be satisfied here.
+  # It would refuse every container it had just isolated correctly, and
+  # ct-distribute's D1 did exactly that on the live fleet.
+  ct_veths_ovs 300 pve01 vmbr0
+  run_engine --isolate --ctid 300
+  rc_is 0; clean
+  has "ISOLATED: net0 now on vmbr99"
+  hasnt "GUARD P6"
+  cfg_net pve01 300 net0 vmbr99
+  ovs_net pve01 veth300i0 vmbr99
+  # The record has to hold the REAL bridge, or --restore puts the container
+  # back onto the datapath device rather than onto the customer's network.
+  rec_has 300 net0 vmbr0
+  done_scenario
+fi
+
+if scenario "10c: GUARD P6 - an OVS node whose ovsdb does not answer is not verified"; then
+  # ovs-vsctl missing, or openvswitch-switch down. The kernel says ovs-system,
+  # nothing can turn that into a bridge name, and a bridge nobody can name is
+  # not one that has been checked. The net lines ARE written by then, so the
+  # refusal has to say how to put them back.
+  ct_veths_ovs 300 pve01 vmbr0
+  node_ovs_mute pve01
+  run_engine --isolate --ctid 300
+  rc_is 1; clean
+  has "GUARD P6: the config was written but the KERNEL still has: veth300i0(ovs-system)"
+  has "ovs-system is Open vSwitch's datapath, not a bridge"
+  has "put them back with --restore"
+  hasnt "ISOLATED:"
+  done_scenario
+fi
+
+if scenario "7b: GUARD P4 - a bond uplinking the isolated bridge counts, on OVS too"; then
+  # An OVS bond is one PORT whose members are the NICs, and it has no kernel
+  # netdev of its own. Asking OVS for the bridge's PORTS returns a name with no
+  # /device and no /bonding, so vmbr99 reads as isolated while it reaches the
+  # customer's wire through two cables. Asking for its IFACES returns the
+  # members, which is what the probe does.
+  node_bridge pve01 vmbr99 bond0,ovsbond,eno2,eno3
+  run_engine --isolate --ctid 300
+  rc_is 1; clean
+  has "GUARD P4: vmbr99 on pve01 HAS AN UPLINK"
+  has "port 'eno2' reaches a wire"
+  has "port 'eno3' reaches a wire"
+  cfg_net pve01 300 net0 vmbr0
+  rec_none 300
   done_scenario
 fi
 
