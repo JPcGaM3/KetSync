@@ -160,17 +160,22 @@
     <tr><td class="m">./ketsync migrate  &lt;flags&gt;</td><td class="m">engines/tp/tp migrate</td></tr>
     <tr><td class="m">./ketsync replica  &lt;flags&gt;</td><td class="m">engines/tp/tp replica</td></tr>
     <tr><td class="m">./ketsync failback &lt;flags&gt;</td><td class="m">engines/tp/tp failback</td></tr>
-    <tr><td class="m">./ketsync distribute &lt;flags&gt;</td><td class="m">engines/tp/tp distribute</td></tr>
+    <tr><td class="m">./ketsync distribute &lt;flags&gt;</td><td>อันเดียวที่<b>ไม่ใช่</b>การส่งต่อเฉยๆ —
+        เรียก <span class="m">ct-prepare.sh</span> ให้ก่อน แล้วค่อย <span class="m">tp distribute</span></td></tr>
     <tr><td class="m">./ketsync recall &lt;flags&gt;</td><td class="m">engines/tp/tp recall</td></tr>
+    <tr><td class="m">./ketsync isolate &lt;flags&gt;</td><td class="m">engines/tp/ct-prepare.sh --isolate</td></tr>
+    <tr><td class="m">./ketsync restore &lt;flags&gt;</td><td class="m">engines/tp/ct-prepare.sh --restore</td></tr>
+    <tr><td class="m">./ketsync evacuate &lt;flags&gt;</td><td class="m">engines/tp/ct-prepare.sh --evacuate</td></tr>
     <tr><td class="m">./ketsync status</td><td class="m">engines/tp/tp status</td></tr>
     <tr><td class="m">./ketsync doctor</td><td>ตรวจฝั่ง ketsync แล้วต่อด้วย <span class="m">tp doctor</span> ให้เลย</td></tr>
     <tr><td class="m">./ketsync tp ...</td><td>ทางลัดตรงไปที่ tp เผื่อมี flag ที่ยังไม่ได้สอน dispatcher</td></tr>
   </table>
   <div class="tip"><p><b>ทุกคำสั่งใช้งานได้จริงแล้วทั้งหมด</b> ไม่มีตัวไหนเป็นโครงเปล่าเหลืออยู่
-     ตัวสุดท้ายที่เพิ่งเสร็จคือ <code class="inl">recall</code>
-     (ดึงข้อมูลจากตัวชั่วคราวบน compute กลับเข้าสำเนาบนเครื่อง backup)
-     ซึ่งเป็นตัวที่ปิดช่องว่างอันตรายที่สุดของทั้ง DR — ดูขั้นที่ 3 ใน
-     <code class="inl">docs/disaster-recovery.html</code></p></div>
+     ชุดล่าสุดคือ <code class="inl">isolate</code> <code class="inl">restore</code>
+     <code class="inl">evacuate</code> ซึ่งเป็นขั้นที่ 1 ของ DR ทั้งขั้น —
+     เมื่อก่อนเป็นคำสั่ง <span class="m">pvesm</span> <span class="m">umount</span>
+     <span class="m">pct</span> สี่ห้าตัวต่อโหนด ที่ต้องทำตามลำดับซึ่งเกือบทุกคนทำสลับ
+     ดูขั้นที่ 1 ใน <code class="inl">docs/disaster-recovery.html</code></p></div>
 </section>
 
 <section id="s2">
@@ -449,6 +454,9 @@ $EDITOR fleet.tsv
     <tr><td class="m">--stopped</td><td>ต้นทางถูกปิดอยู่ ไม่ต้องรอ</td><td>migrate</td></tr>
     <tr><td class="m">--to &lt;ip&gt;</td><td>บังคับว่าจะไปลงเครื่องไหน</td><td>distribute</td></tr>
     <tr><td class="m">--dst &lt;id&gt;</td><td>บังคับว่าจะลง storage อะไร</td><td>distribute</td></tr>
+    <tr><td class="m">--node &lt;ip&gt;</td><td>ทำทั้งเครื่องนั้น ไม่ใช่ราย CT</td><td>evacuate, restore</td></tr>
+    <tr><td class="m">--no-prepare</td><td>วางอย่างเดียว ไม่ต้องเตรียมโหนดให้</td><td>distribute</td></tr>
+    <tr><td class="m">-y</td><td>ตัดสินใจไปแล้ว ไม่ต้องถาม — ข้ามแค่คำถาม ไม่ข้ามด่าน</td><td>ทุกตัว</td></tr>
     <tr><td class="m">--final</td><td>รอบสุดท้าย ต้องปิด 9xxx ก่อน</td><td>recall</td></tr>
     <tr><td class="m">--list</td><td>ดูแผนอย่างเดียว</td><td>distribute, recall</td></tr>
   </table>
@@ -465,7 +473,30 @@ $EDITOR fleet.tsv
     <tr><td>ตรวจว่าทุกอย่างต่อกันติดไหม</td><td class="m">./ketsync doctor</td></tr>
     <tr><td>ส่งตารางที่แก้แล้วไปให้ทุกเครื่อง</td><td class="m">./ketsync sync</td></tr>
     <tr><td>เครื่องนี้เป็นอะไรอยู่</td><td class="m">./ketsync role</td></tr>
+    <tr><td>เอา CT ตัวจริงออกจากเน็ต ตอน storage ตาย</td><td class="m">./ketsync isolate --ctid 110</td></tr>
+    <tr><td>คืนค่าที่ isolate เปลี่ยนไว้</td><td class="m">./ketsync restore --all</td></tr>
+    <tr><td>กู้ทั้งโหนด ปิด storage ที่ตาย umount แล้วปิดตู้</td><td class="m">./ketsync evacuate --node &lt;ip&gt;</td></tr>
   </table>
+
+  <h3>คำสั่งที่เขียนอะไรจะถามก่อน และคำสั่งเปล่าๆ จะไม่ทำ</h3>
+  <p>พิมพ์ชื่อคำสั่งเฉยๆ เช่น <code class="inl">./ketsync distribute</code> มันจะไม่ทำอะไร
+     แต่จะพิมพ์รายการ flag ออกมาให้ แล้วปฏิเสธด้วยรหัส 2 — เพราะคำสั่งเปล่าๆ อาจแปลว่าทั้งฟลีตก็ได้
+     และ <code class="inl">--all</code> ที่พิมพ์เพิ่มสี่ตัวอักษรคือหลักฐานว่าตั้งใจ ส่วน
+     <code class="inl">doctor</code> กับ <code class="inl">status</code> ไม่มีอะไรให้ระบุขอบเขต
+     พิมพ์เปล่าๆ ถูกต้องแล้ว</p>
+  <p>ส่วนคำสั่งที่เขียนของจริงจะถามก่อนหนึ่งครั้ง โดยบอกว่ามันจะเขียนอะไร ไม่ใช่ถามว่าแน่ใจมั้ย
+     กด Enter เฉยๆ = ไม่ทำ</p>
+  <div class="out"><pre>this OVERWRITES each DR copy on the backup node with the live image.
+  see exactly what it would do first:  ./ketsync replica --all --dry-run
+proceed? [y/N]</pre></div>
+  <div class="warn"><p><b>cron ต้องเติม <span class="m">-y</span></b> ถ้าไม่มีหน้าจอและไม่มี
+     <span class="m">-y</span> มันจะ<b>ปฏิเสธ</b>ด้วยรหัส 2 ไม่ใช่ตอบว่าไม่แล้วออก 0 เงียบๆ —
+     เพราะ cron ที่รายงานสำเร็จทุกคืนโดยไม่ได้ก๊อปอะไรเลย คือความเงียบที่หน้าตาเหมือนความสำเร็จ
+     <span class="m">-y</span> แปลว่าตัดสินใจไปแล้ว มันข้ามแค่คำถาม ไม่ข้ามด่านสักด่าน
+     และไม่มี <span class="m">--force</span> ให้ใช้ ตั้งใจไม่ให้มี
+     สั่ง <span class="m">./ketsync doctor</span> มันจะไล่ crontab บอกให้เองว่าบรรทัดไหนยังไม่มี</p></div>
+  <p>บรรทัด cron ที่เรียก engine ตรงๆ ไม่ต้องแก้อะไร คำถามอยู่ที่ชั้น
+     <code class="inl">ketsync</code> ซึ่งเป็นที่ที่คนยืนอยู่ ส่วน cron เรียก engine</p>
   <p>failback เริ่มด้วย <code class="inl">--list</code> เสมอ มันจะบอกว่าตอนนี้ CT ตัวไหนพร้อมเอากลับบ้าง
      และเครื่องไหนที่คุยไม่ได้ ห้ามข้ามไป <code class="inl">--final</code> เลย เพราะ
      <code class="inl">--final</code> คือรอบที่ทับ image ตัวจริง</p>

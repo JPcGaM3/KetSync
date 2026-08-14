@@ -220,6 +220,77 @@ the machine that died.
 depending on shared storage for the duration. It is temporary and it is meant to
 feel temporary - a 9xxx container is one somebody has to deliberately unwind.
 
+## 4b. `prepare` — built, as `engines/tp/ct-prepare.sh`
+
+Stage 1 of the DR runbook - get the production containers out of the way -
+was four or five raw `pvesm`, `umount` and `pct` commands per node, in an
+order almost everybody gets wrong. It is `isolate`, `restore` and `evacuate`
+now. 50 scenarios, 46 mutations.
+
+**What makes it safe is a proof, not an intention.** P2 and E2 refuse unless
+the container's rootfs storage is provably dead, and the proof is not an
+inference from "I cannot reach the storage node": it is a `stat` on that
+storage's own mountpoint, on the node that mounts it, with a timeout - and a
+HANG is the positive result. A live NFS mount answers instantly; one whose
+server is gone blocks in the kernel until the timeout kills it. A mountpoint
+that is not there any more counts too, because something already unmounted it.
+A storage that answers is a hard refusal with no override. `distribute --all`
+was run against this fleet while it was healthy, by mistake, the afternoon
+this was designed; run against a healthy fleet these modes must do nothing at
+all, and that is the property to preserve.
+
+**The order is the whole trick, and it is backwards from instinct.** Disable
+the storage, unmount it, restart pvestatd, and only then stop the containers.
+A container whose dead NFS rootfs is still mounted cannot be stopped at all -
+its processes are in uninterruptible sleep, `pct shutdown` waits for a guest
+that cannot answer, and SIGKILL does not reach a task in D state. Unmount
+first and the same command returns in seconds. The simulator holds that as a
+causal fact rather than a log assertion: `pct shutdown` against a container
+whose dead storage is still mounted returns 124 and changes nothing.
+
+**A container that will not stop is isolated, never forced.** Every net line
+moves onto `MOCKNET_BRIDGE`, which defends the thing the DR actually cares
+about - one address, not one process - and there is no rung above that.
+
+**The record is the only copy of what is being overwritten**, so it is written
+first, at `/etc/pve/ketsync/isolate/<ctid>.tsv` and `.../evacuate/<node>.tsv`.
+pmxcfs, so every member sees the same bytes and a reboot cannot lose them; not
+the guest description field, which PVE owns, re-encodes on every write, and
+which is where the operator keeps their own notes. `ls` of those directories
+is the list of outstanding debt, which is exactly what `doctor` reports, and
+deleting the file is how the debt clears.
+
+This breaks `tp`'s rule 3 in two places on purpose - an IP remap and a
+shutdown, both of a running production container - and `engines/tp/CLAUDE.md`
+says so, says why, and says not to extend the carve-out to a third verb
+without the same kind of proof.
+
+## 4c. Asking before writing
+
+Every verb that writes asks once, at the dispatcher, and says what it writes
+rather than whether you are sure. A prompt that asks "are you sure" teaches
+people to press y without reading it, and is then worth less than nothing: it
+looks like a safety net while being a keystroke. The default is no.
+
+No terminal and no `-y` is a REFUSAL with exit 2, not a quiet no. `read` on an
+empty stdin returns immediately, and treating that as "no" while exiting 0
+would be a nightly cron reporting success having done nothing - the outcome
+this repo refuses everywhere else. `-y` means the decision was already made:
+it skips the question and nothing else, no guard, ever.
+
+**There is no `--force` and there must not be.** It was proposed and the case
+for it could not be named. A flag whose use case has to be invented under
+pressure is a flag that gets used under pressure, by somebody who is stuck at
+three in the morning and out of ideas - the worst possible moment to be
+allowed past a guard. When a guard refuses something it should allow, that is
+a bug in the guard; it happened twice in one week and both were fixed in the
+guard. A narrow named override like `--to` or `--dst` reads in a log as a
+decision somebody made; `--force` reads as somebody in a hurry.
+
+A bare writing verb refuses with a menu instead of defaulting to `--all`. The
+four characters are the record of what somebody meant: `--all` in a shell
+history says "I meant the fleet", and a bare verb says "I pressed Enter".
+
 ## 5. `distribute` — built, as `engines/tp/ct-distribute.sh`
 
 Moves a copy from the backup node onto a compute node during a disaster:
@@ -428,6 +499,9 @@ doctor` says so on the next good day.
     ketsync recall       tp's - engines/tp/ct-recall.sh, 53 scenarios,
                          47 mutations. See section 6
     ketsync status       tp's
+    ketsync isolate      tp's - engines/tp/ct-prepare.sh, 50 scenarios,
+    ketsync restore      46 mutations, shared by all three. See section 4b
+    ketsync evacuate
 
 Nothing here is a stub any more. ketsync's own `tests/` covers `sync` and not
 `role` or `doctor`, and that is the remaining debt: see `tests/README.md`.

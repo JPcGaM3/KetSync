@@ -142,7 +142,7 @@ being separate when they stopped being empty.
     fleet.tsv.sample     ct, home node, dr node, dr storage. Four columns, all
                          required, no tier and no fallback. "inventory" always
                          means one of tp's work lists
-    engines/tp/          the execution layer, five engines. Committed here
+    engines/tp/          the execution layer, six engines. Committed here
     docs/decisions.md    why it is shaped this way, and what is not built
     tests/sim/sync/      the sync simulator, and the pattern for the next one
     tests/sim/distribute/

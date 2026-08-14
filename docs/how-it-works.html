@@ -227,7 +227,7 @@
   <div class="eyebrow"><span class="num crit">1</span><h2>ยืนยันว่าตาย แล้วกันตัวจริงไม่ให้ตอบ</h2></div>
 
   <div class="flow">
-    <div class="cap">stage 1 — ยังไม่มีอะไรถูกเขียน ย้อนกลับได้ทั้งหมด</div>
+    <div class="cap">stage 1 — ketsync evacuate. ยังไม่มีอะไรถูกเขียนลงข้อมูลลูกค้า ย้อนกลับได้ทั้งหมด</div>
     <div class="rail">
       <div class="box dead"><div class="who">storage node</div><div class="id">300</div>
         <div class="what">image เข้าถึงไม่ได้ CT ค้างอยู่กับ I/O ที่ไม่กลับมา</div></div>
@@ -241,19 +241,21 @@
     <li><span class="hand">คนกด</span> ยืนยันว่าตายจริง ไม่ใช่แค่ช้า
         เครื่องที่ ping ติดแต่ NFS ค้าง ยังไม่ใช่เครื่องที่ตาย
         และเช็ค quorum ก่อนทุกอย่าง ถ้า <span class="m">/etc/pve</span> เขียนไม่ได้
-        ขั้นที่เหลือจะไปพังตอนท้ายสุดซึ่งแพงที่สุด</li>
-    <li><span class="hand">คนกด</span> ทุก CT ที่จะย้าย ตั้ง
-        <span class="m">onboot 0</span> ก่อนไปยุ่งกับ mount
-        คำสั่งนี้เขียนลง <span class="m">/etc/pve</span> ไม่ได้ใช้อะไรจาก storage ที่ตาย
-        ถ้าเครื่อง compute รีบูตระหว่างที่กำลังแก้ อันนี้คือสิ่งเดียวที่กัน CT ไม่ให้ขึ้นเอง</li>
-    <li><span class="hand">คนกด</span> กู้โหนดให้ตอบสนอง ปิด storage ที่ตายก่อน
-        แล้วค่อย <span class="m">umount -f -l</span> แล้วค่อย restart
-        <span class="m">pvestatd</span> สลับลำดับไม่ได้ ถ้า restart ก่อนถอด mount มันจะไปค้างที่เดิม</li>
-    <li><span class="hand">คนกด</span> เอาตัวจริงออกจากทาง มีสองทาง
-        <b>ปิดมัน</b> ซึ่งทำได้เมื่อ mount ที่ตายถูกถอดแล้ว
-        หรือ <b>ย้ายทุก net line ไป vmbr99</b> ซึ่งใช้ได้แม้ตอนที่ปิดไม่ลง
-        เพราะเขียนแค่ <span class="m">/etc/pve</span> แล้ว hotplug ทันที</li>
+        ขั้นที่เหลือจะไปพังตอนท้ายสุดซึ่งแพงที่สุด นี่คือการตัดสินใจข้อเดียวในขั้นนี้</li>
+    <li><span class="auto">อัตโนมัติ</span> <span class="m">ketsync evacuate</span> ทำที่เหลือทั้งขั้น
+        ทีละโหนด ตามลำดับที่ทำงานได้จริง — ปิด storage ที่ตาย แล้ว
+        <span class="m">umount -f -l</span> แล้ว restart <span class="m">pvestatd</span>
+        แล้วค่อยสั่งปิดตู้ สลับลำดับไม่ได้ ถ้าปิดตู้ก่อนถอด mount มันจะค้าง เพราะ process
+        อยู่ใน D state และ SIGKILL ไปไม่ถึง</li>
+    <li><span class="auto">อัตโนมัติ</span> ตู้ที่ปิดไม่ลงถูกย้ายทุก net line ไป
+        <span class="m">vmbr99</span> แทน ซึ่งใช้ได้แม้ตอนนั้น เพราะเขียนแค่
+        <span class="m">/etc/pve</span> แล้ว hotplug ทันที ไม่ต้องใช้อะไรจาก storage ที่ตาย
+        และมันจดไว้ว่า bridge เดิมคืออะไร เพื่อให้ <span class="m">restore</span> คืนค่าได้ตอนจบ
+        ไม่มีขั้นที่แรงกว่าการขอปิดดีๆ — ถ้ายังไม่ได้อีก มันรายงานชื่อตู้นั้นออกมา</li>
   </ol>
+  <div class="warn"><p><b>มันจะไม่ยอมทำถ้า storage ยังดีอยู่</b> ด่าน P2/E2 พิสูจน์ก่อน ด้วยการ
+     <span class="m">stat</span> ที่ mountpoint พร้อม timeout — การค้างคือผลบวก mount ที่ยังดีตอบทันที
+     ถ้ามันตอบ = ปฏิเสธ ไม่มี override รันกับฟลีตที่ปกติดีแล้วมันไม่ทำอะไรเลย</p></div>
 
   <div class="warn"><p>ทางที่สองไม่ได้ปิดมัน มันยังเป็น pending writer อยู่ —
      I/O ค้างตอนนี้ แต่วินาทีที่ storage กลับมามันจะเขียนต่อ ต้องปิดให้ได้ก่อนถึงตอนนั้น
@@ -279,6 +281,9 @@
 
   <p>รันจากเครื่อง backup ซึ่งเป็น master ตอนนี้ เครื่องมือไม่ได้อยู่ปลายทางไหนเลยของการโอน
      rsync ทำ remote-to-remote ไม่ได้ มันเลยสั่งให้เครื่องปลายทางดึงจากเครื่อง backup เอง</p>
+  <p><span class="m">distribute</span> เรียกขั้นที่ 1 ให้เองก่อนเสมอ ฉะนั้นถ้าไม่อยากทำทีละขั้น
+     พิมพ์บรรทัดสุดท้ายบรรทัดเดียวก็ได้ — <span class="m">--ctid</span> จะ isolate เฉพาะตู้นั้น
+     ไม่ evacuate ทั้งโหนด เพราะเพื่อนบ้านไม่ได้ถูกถามถึง</p>
 
   <pre>./ketsync distribute --list
 ./ketsync distribute --ctid 300 --dry-run
@@ -418,8 +423,8 @@
         <td>เครื่องแยกไม่ออกระหว่าง "มันตาย" กับ "ฉันติดต่อไม่ได้"</td></tr>
     <tr><td>เปลี่ยน KS_ROLE</td><td class="m">คน</td>
         <td>เดาผิดคือสองเครื่องเขียน dataset เดียวกัน</td></tr>
-    <tr><td>ย้าย net ตัวจริงไป vmbr99</td><td class="m">คน</td>
-        <td>ถ้า storage ยังดีอยู่ คำสั่งนี้คือการตัดลูกค้าออกจากเน็ตเอง</td></tr>
+    <tr><td>ปิดตู้ / ย้าย net ไป vmbr99</td><td class="m">เครื่องมือ</td>
+        <td>ทำได้ก็ต่อเมื่อพิสูจน์ได้ว่า rootfs ตายแล้ว ซึ่งแปลว่าตู้นั้นไม่ได้ให้บริการอะไรอยู่แล้ว</td></tr>
     <tr><td>distribute ขนข้อมูล</td><td class="m">เครื่องมือ</td>
         <td>ย้อนกลับได้ทั้งหมด ลบ 9xxx แล้วเริ่มใหม่ได้</td></tr>
     <tr><td>เปิด 9xxx</td><td class="m">คน</td>
