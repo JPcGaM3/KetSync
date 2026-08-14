@@ -21,6 +21,9 @@
 #    tp restore    put its bridges and its onboot back, from what isolate
 #                  wrote down. Both are ct-prepare.sh, which moves no data and
 #                  refuses unless the container's storage is provably dead
+#    tp evacuate   the same, a node at a time: disable the dead storage,
+#                  unmount it, then stop what was on it - in that order, which
+#                  is the only order in which the stopping works
 #
 #  Read-only helpers:
 #    tp status     what every CT's last run did, both engines, one table
@@ -217,6 +220,7 @@ case "${1:-}" in
   # should have to know which file a verb lives in.
   isolate)  shift; engine ct-prepare.sh --isolate "$@";;
   restore)  shift; engine ct-prepare.sh --restore "$@";;
+  evacuate) shift; engine ct-prepare.sh --evacuate "$@";;
   status)   shift; cmd_status "$@";;
   doctor)   shift; cmd_doctor "$@";;
   version)  echo "tp $(cd "$TP_HOME" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;

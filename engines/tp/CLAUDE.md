@@ -14,8 +14,9 @@ A bug here does not fail a test — it corrupts somebody's container at 2am.
     tp failback   promoted copy        ->  back into the production image
     tp distribute DR copy on the backup ->  a compute node's OWN storage
     tp recall     a compute node's 9<id> ->  back into its copy on the backup
-    tp isolate    a production CT off the wire, and tp restore puts it back.
-                  The only engine that moves no bytes: it writes a network
+    tp isolate    a production CT off the wire, and tp restore puts it back;
+                  tp evacuate does a whole node. The only engine that moves no
+                  bytes: it writes a network and stops what cannot be left up
 
 Every engine runs on the **storage node**. The machines around it:
 
@@ -40,7 +41,7 @@ halves, do not touch the engine — say so instead.
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    59 mutations
     ct-distribute.sh tests/mutation/run-mutation-distribute.sh  62 mutations
     ct-recall.sh     tests/mutation/run-mutation-recall.sh      47 mutations
-    ct-prepare.sh    tests/mutation/run-mutation-prepare.sh     34 mutations
+    ct-prepare.sh    tests/mutation/run-mutation-prepare.sh     46 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
@@ -69,26 +70,32 @@ guides are Thai because the operator is Thai — that is the only exception, and
 inside them Thai belongs in the prose, never inside `<pre>` or `<code>`.
 Commands are copied and pasted at 2am; they have to survive that.
 
-**3. Nothing here starts, stops or destroys a container.**
+**3. Nothing here starts, creates or destroys a container.**
 No rollback state machine either. Cutover, DR promotion and the return trip are
 decisions made by hand, on purpose, by somebody looking at the machine. The
 engines refuse to run when the lifecycle is wrong (`--stopped`, B1, B2, R2,
-D1) — they never fix it themselves.
+D1) — they never fix it themselves. Bringing a service back is a decision with
+a customer on the other end: `distribute` prints the `pct start` and stops
+there, and that has not moved.
 
-This rule used to say "no IP remap" as well, and `ct-prepare.sh --isolate`
-broke that half deliberately: it moves every net line of a RUNNING production
-container onto `MOCKNET_BRIDGE`. The reason it is allowed and stopping is not
-is that it is reversible and it is the only remedy that still works when the
-container's rootfs has gone — `pct shutdown` hangs on processes in
-uninterruptible sleep, while a bridge change is a write to `/etc/pve` that
-hotplugs live and needs nothing from the dead storage.
+This rule used to say "no shutdown" and "no IP remap" too. `ct-prepare.sh`
+took both, deliberately: `--isolate` moves every net line of a RUNNING
+production container onto `MOCKNET_BRIDGE`, and `--evacuate` shuts containers
+down. Both are allowed for the same reason, and it is not convenience — it is
+that at two hundred containers the alternative is a person typing the same
+command two hundred times at four in the morning, and being right every time.
 
-What makes it safe is not that it is reversible in principle but that P2
-refuses unless the container's rootfs storage is PROVABLY dead — a `stat` on
-its mountpoint that blocked until a timeout killed it — and that P5 refuses to
-overwrite the record of where each interface came from. Run against a healthy
-fleet it does nothing at all. Do not extend the carve-out to a second verb
-without the same kind of proof.
+What makes it safe is the proof, not the intent. P2 and E2 refuse unless the
+container's rootfs storage is PROVABLY dead: a `stat` on its mountpoint, on
+the node that mounts it, that blocked until a timeout killed it. A storage
+that answers is a hard refusal with no override. Run against a healthy fleet
+these modes do nothing at all — which is the property to preserve. P5 refuses
+to overwrite the record of where each interface came from, and E4 isolates a
+container that will not stop rather than forcing it, because there is no rung
+above asking.
+
+Do not extend the carve-out to a third verb without the same kind of proof,
+and do not weaken the proof to make a mode more useful.
 
 **4. A copy never reaches the wire by accident.**
 `migrate` writes the target config with no network and `onboot: 0`; the operator
@@ -150,8 +157,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 75 + 70 + 58 + 53 + 37 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 57 + 59 + 62 + 47 + 34 engine + 9 dispatcher, all caught
+    make test       # 66 + 75 + 70 + 58 + 53 + 50 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 45 + 57 + 59 + 62 + 47 + 46 engine + 9 dispatcher, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did

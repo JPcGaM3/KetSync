@@ -45,7 +45,7 @@ new_world(){
   SIMROOT="$(mktemp -d /tmp/ctprep-sim.XXXXXX)"
   export SIMROOT SIMLIB="$HERE/lib.sh" SIMBIN="$HERE/bin" SIM_BKP_HOST="$BKP_HOST"
   WORK="$SIMROOT/work"; PVE="$SIMROOT/pve"
-  mkdir -p "$WORK/state" "$WORK/logs" "$PVE/nodes" "$PVE/ketsync" "$SIMROOT/nodes"
+  mkdir -p "$WORK/state" "$WORK/logs" "$PVE/nodes" "$PVE/ketsync/isolate" "$SIMROOT/nodes"
   : > "$SIMROOT/violations"; : > "$SIMROOT/trace"
 
   add_node pve01; add_node pve02
@@ -89,6 +89,22 @@ node_pve_ro(){    : > "$(node_d "$1")/.rowo"; }
 node_rec_stuck(){ : > "$(node_d "$1")/.recstuck"; }
 # A write that succeeds and stores nothing - which is why it is read back.
 node_rec_trunc(){ : > "$(node_d "$1")/.rectrunc"; }
+# A container that will not come down even once its dead mount has been forced
+# to fail. There is no rung above asking politely, so evacuate isolates it.
+ct_stubborn(){ : > "$(node_d "$2")/ct/$1.stubborn"; }
+storage_disabled(){ [[ -f "$PVE/storage-$1.disabled" ]] \
+  || _err "storage $1 should be disabled cluster-wide"; }
+storage_enabled(){  [[ -f "$PVE/storage-$1.disabled" ]] \
+  && _err "storage $1 should NOT be disabled"; return 0; }
+storage_unmounted(){ [[ -f "$(node_d "$1")/storage/$2.unmounted" ]] \
+  || _err "$2 should have been unmounted on $1"; }
+storage_mounted(){ [[ -f "$(node_d "$1")/storage/$2.unmounted" ]] \
+  && _err "$2 should still be mounted on $1"; return 0; }
+ct_status_is(){ local got; got=$(cat "$(node_d "$2")/ct/$1.status" 2>/dev/null)
+  [[ "$got" == "$3" ]] || _err "ct$1 on $2 is '$got', expected '$3'"; }
+evac_f(){ printf '%s/pve/ketsync/evacuate/%s.tsv' "$SIMROOT" "$1"; }
+evac_there(){ [[ -f "$(evac_f "$1")" ]] || _err "there is no evacuate record for $1"; }
+evac_none(){  [[ -f "$(evac_f "$1")" ]] && _err "an evacuate record for $1 should NOT exist"; return 0; }
 dstate(){ printf '%s\n' "$2" > "$(node_d "$1")/dstate"; }
 
 # alive | dead | gone. The WORD, not a boolean: the engine tells three cases
@@ -127,9 +143,9 @@ ct_veths(){ # ctid node bridge...
     i=$(( i + 1 ))
   done; }
 
-rec_f(){ printf '%s/pve/ketsync/isolate-%s.tsv' "$SIMROOT" "$1"; }
+rec_f(){ printf '%s/pve/ketsync/isolate/%s.tsv' "$SIMROOT" "$1"; }
 rec_put(){ # ctid node bridge-of-net0
-  mkdir -p "$PVE/ketsync"
+  mkdir -p "$PVE/ketsync/isolate"
   printf 'ctid\t%s\nnode\t%s\nwhen\t2026-01-01T00:00:00+0700\nby\thand pid 1\nonboot\t1\nnet0\t%s\n' \
     "$1" "$2" "$3" > "$(rec_f "$1")"; }
 
@@ -360,7 +376,7 @@ fi
 if scenario "15: --dry-run runs every guard and writes nothing at all"; then
   run_engine --isolate --all --dry-run
   rc_is 0; clean
-  has "DRY: would write /etc/pve/ketsync/isolate-300.tsv"
+  has "DRY: would write /etc/pve/ketsync/isolate/300.tsv"
   has "DRY: would move net0 onto vmbr99"
   cfg_net  pve01 300 net0 vmbr0
   kern_net pve01 300 veth300i0 vmbr0
@@ -395,7 +411,7 @@ if scenario "18: restore refuses when there is no record to restore from"; then
   ct_veths 300 pve01 vmbr99
   run_engine --restore --ctid 300
   rc_is 1; clean
-  has "no record at /etc/pve/ketsync/isolate-300.tsv"
+  has "no record at /etc/pve/ketsync/isolate/300.tsv"
   has "guessing a bridge puts a customer on the wrong segment"
   cfg_net pve01 300 net0 vmbr99
   done_scenario
@@ -438,7 +454,7 @@ if scenario "22: a read-only /etc/pve stops the run before anything is moved"; t
   node_pve_ro pve01
   run_engine --isolate --ctid 300
   rc_is 1; clean
-  has "could not write /etc/pve/ketsync/isolate-300.tsv"
+  has "could not write /etc/pve/ketsync/isolate/300.tsv"
   has "A cluster without quorum is read-only"
   cfg_net pve01 300 net0 vmbr0
   done_scenario
@@ -540,7 +556,7 @@ if scenario "33: the record cannot be removed, so the run says so instead of lyi
   node_rec_stuck pve01
   run_engine --restore --ctid 300
   rc_is 1; clean
-  has "could not remove /etc/pve/ketsync/isolate-300.tsv"
+  has "could not remove /etc/pve/ketsync/isolate/300.tsv"
   has "doctor will keep reporting"
   cfg_net pve01 300 net0 vmbr0
   done_scenario
@@ -584,6 +600,146 @@ if scenario "36: vmbr990 is not vmbr99, and a fleet big enough has both"; then
   hasnt "already on vmbr99, with no record"
   cfg_net pve01 300 net0 vmbr99
   rec_has 300 net0 vmbr990
+  done_scenario
+fi
+
+if scenario "38: evacuate frees the blocked I/O first, then the container stops"; then
+  # The order everyone gets backwards. A container whose dead NFS rootfs is
+  # still mounted cannot be shut down at all - its processes are in
+  # uninterruptible sleep and SIGKILL does not reach them. Unmount first and
+  # the same command returns in seconds.
+  run_engine --evacuate --node "$N1"
+  rc_is 0; clean
+  storage_disabled tank-hdd-nas
+  storage_unmounted pve01 tank-hdd-nas
+  ct_status_is 300 pve01 stopped
+  ct_status_is 310 pve01 stopped
+  has "STOPPED on pve01"
+  traced "systemctl restart pvestatd"
+  rec_none 300
+  done_scenario
+fi
+
+if scenario "39: a container that still will not stop is isolated, never forced"; then
+  ct_stubborn 300 pve01
+  run_engine --evacuate --node "$N1"
+  rc_is 0; clean
+  ct_status_is 300 pve01 running
+  ct_status_is 310 pve01 stopped
+  has "did not come down within 90s"
+  has "nothing here forces a stop"
+  cfg_net pve01 300 net0 vmbr99
+  rec_there 300
+  done_scenario
+fi
+
+if scenario "40: GUARD E2 - a node whose storage answered is left completely alone"; then
+  storage pve01 tank-hdd-nas alive
+  run_engine --evacuate --node "$N1"
+  rc_is 1; clean
+  has "every storage this node's containers use ANSWERED"
+  storage_enabled tank-hdd-nas
+  storage_mounted pve01 tank-hdd-nas
+  ct_status_is 300 pve01 running
+  evac_none pve01
+  done_scenario
+fi
+
+if scenario "41: a healthy storage on the same node keeps its containers running"; then
+  # A compute node with one dead NFS storage and one working local one has to
+  # come out of this with the local containers still up. This is the collateral
+  # damage a node that reboots itself causes, and the reason not to reboot.
+  add_ct 330 pve01 local-lvm
+  storage pve01 local-lvm alive
+  inventory "300	replica-hdd" "310	replica-hdd" "320	replica-ssd" "330	replica-hdd"
+  run_engine --evacuate --node "$N1"
+  rc_is 0; clean
+  has "CT 330 is on 'local-lvm', which answered - left alone"
+  storage_enabled local-lvm
+  storage_mounted pve01 local-lvm
+  ct_status_is 330 pve01 running
+  ct_status_is 300 pve01 stopped
+  done_scenario
+fi
+
+if scenario "42: the record of what was switched off is written before it is"; then
+  run_engine --evacuate --node "$N1"
+  rc_is 0; clean
+  evac_there pve01
+  grep -q "disabled	tank-hdd-nas" "$(evac_f pve01)" || _err "the record does not name the storage"
+  done_scenario
+fi
+
+if scenario "43: restore --node switches the storages back on and clears the record"; then
+  run_engine --evacuate --node "$N1"
+  rc_is 0; clean
+  run_engine --restore --node "$N1"
+  rc_is 0; clean
+  storage_enabled tank-hdd-nas
+  evac_none pve01
+  has "RE-ENABLED: tank-hdd-nas on pve01"
+  done_scenario
+fi
+
+if scenario "44: restore --node refuses a storage this tool never disabled"; then
+  run_engine --restore --node "$N1"
+  rc_is 1; clean
+  has "this tool did not evacuate pve01"
+  has "only switches back on what it switched off"
+  done_scenario
+fi
+
+if scenario "45: evacuate --dry-run touches neither the storage nor the containers"; then
+  run_engine --evacuate --node "$N1" --dry-run
+  rc_is 0; clean
+  has "DRY: would write /etc/pve/ketsync/evacuate/pve01.tsv"
+  storage_enabled tank-hdd-nas
+  storage_mounted pve01 tank-hdd-nas
+  ct_status_is 300 pve01 running
+  evac_none pve01
+  done_scenario
+fi
+
+if scenario "46: evacuate with no node named is refused - it is not a per-CT verb"; then
+  run_engine --evacuate --ctid 300
+  rc_is 2
+  has "evacuating is per NODE"
+  untraced "pvesm set"
+  done_scenario
+fi
+
+if scenario "47: --evacuate and --isolate together is refused, not merged"; then
+  run_engine --evacuate --isolate --node "$N1"
+  rc_is 2
+  has "already isolates what it cannot stop"
+  done_scenario
+fi
+
+if scenario "48: GUARD E1 - a node with no inventory container is not evacuated"; then
+  inventory "320	replica-ssd"
+  run_engine --evacuate --node "$N1"
+  rc_is 1; clean
+  has "no container from the inventory lives on this node"
+  storage_enabled tank-hdd-nas
+  done_scenario
+fi
+
+if scenario "49: evacuate --all does every node that holds one, one at a time"; then
+  run_engine --evacuate --all
+  rc_is 0; clean
+  storage_disabled tank-hdd-nas
+  storage_disabled tank-ssd-nas
+  ct_status_is 300 pve01 stopped
+  ct_status_is 320 pve02 stopped
+  done_scenario
+fi
+
+if scenario "50: a node that stopped answering mid-run disables nothing"; then
+  node_down pve01
+  run_engine --evacuate --node "$N1"
+  rc_is 1; clean
+  has "GUARD E1"
+  storage_enabled tank-hdd-nas
   done_scenario
 fi
 

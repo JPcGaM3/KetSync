@@ -8,7 +8,7 @@
 #  fake and the whole cluster lives under $SIMROOT.
 #
 #    $SIMROOT/pve/nodes/<node>/lxc/<id>.conf   pmxcfs, shared by every member
-#    $SIMROOT/pve/ketsync/isolate-<id>.tsv     the record - pmxcfs, so ONE copy
+#    $SIMROOT/pve/ketsync/isolate/<id>.tsv     the record - pmxcfs, so ONE copy
 #                                              no matter which node wrote it
 #    $SIMROOT/nodes/<node>/                    a production node: its
 #                                              containers, its bridges, its
@@ -33,7 +33,8 @@ dry_forbids(){
 
 node_dir(){ printf '%s/nodes/%s' "$SIMROOT" "$1"; }
 ct_dir(){   printf '%s/nodes/%s/ct' "$SIMROOT" "$1"; }
-rec_file(){ printf '%s/pve/ketsync/isolate-%s.tsv' "$SIMROOT" "$1"; }
+rec_file(){  printf '%s/pve/ketsync/isolate/%s.tsv' "$SIMROOT" "$1"; }
+evac_file(){ printf '%s/pve/ketsync/evacuate/%s.tsv' "$SIMROOT" "$1"; }
 
 # alive | dead | gone, as the WORD a scenario set - not a boolean, because the
 # engine distinguishes three cases and a boolean would let two of them collapse
@@ -44,6 +45,11 @@ storage_verdict_of(){ cat "$(node_dir "$1")/storage/$2.verdict" 2>/dev/null; }
 # reads. A live mount answers (0), a dead one blocks until timeout kills it
 # (124), and a mountpoint nobody mounted is simply not there (1).
 stat_rc_of(){
+  # An unmounted storage is not a mounted one that answers slowly. Once the
+  # mount is out of the namespace the stat returns immediately with ENOENT,
+  # which is the third case the engine tells apart - and the case evacuate
+  # creates on purpose.
+  [[ -f "$(node_dir "$1")/storage/$2.unmounted" ]] && { printf '1'; return; }
   case "$(storage_verdict_of "$1" "$2")" in
     alive) printf '0';;
     dead)  printf '124';;

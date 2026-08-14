@@ -70,7 +70,7 @@ mutation-distribute: ## 62 known bugs put back into ct-distribute.sh
 mutation-recall:   ## 47 known bugs put back into ct-recall.sh
 	@$(ROOT)/tests/mutation/run-mutation-recall.sh
 
-mutation-prepare:  ## 34 known bugs put back into ct-prepare.sh
+mutation-prepare:  ## 46 known bugs put back into ct-prepare.sh
 	@$(ROOT)/tests/mutation/run-mutation-prepare.sh
 
 mutation-tp:       ## 9 known bugs put back into the tp dispatcher

@@ -38,11 +38,13 @@ trace "ssh $host :: $(printf '%s' "$c" | tr '\n' ' ')"
 
 PVE="$SIMROOT/pve"
 
-# Nothing here may touch container lifecycle, on any machine, ever. This engine
-# writes a config and nothing else - `--evacuate` is where stopping lives, and
-# it is a separate mode precisely so this one can be proven never to.
+# Starting, creating and destroying are never this engine's to do, on any
+# machine, ever. `pct stop` is not either: --evacuate asks a container to shut
+# down and isolates the ones that will not, and there is no rung above that.
+# The shutdown itself is handled further down, where the fake can check that
+# the mount was dealt with first.
 case "$c" in
-  *"pct start"*|*"pct stop"*|*"pct shutdown"*|*"pct destroy"*|*"pct create"*)
+  *"pct start"*|*"pct destroy"*|*"pct create"*|*"pct stop "*)
     violation "touched container lifecycle: $c"; exit 1;;
 esac
 
@@ -121,18 +123,85 @@ case "$c" in
     done < "$N/bridges/$br"
     echo OK; exit 0;;
 
+  *"readlink /etc/pve/local"*) printf '%s\n' "$NODE"; exit 0;;
+
+  # ---- what --evacuate does to a node ------------------------------------
+  "pvesm set "*--disable*)
+    dry_forbids "changed a storage's enabled flag" || exit 1
+    sid="$(awk '{print $3}' <<<"$c")"
+    v="$(sed -n 's/.*--disable \([01]\).*/\1/p' <<<"$c")"
+    [[ -f "$N/storage/$sid.verdict" ]] || { echo "storage '$sid' does not exist" >&2; exit 255; }
+    # storage.cfg is pmxcfs: disabling is cluster-wide, so the flag is stored
+    # once and every node sees it. A per-node flag would let a scenario pass
+    # while the real thing took a storage away from machines nobody asked about.
+    if [[ "$v" == 1 ]]; then : > "$PVE/storage-$sid.disabled"; else rm -f "$PVE/storage-$sid.disabled"; fi
+    exit 0;;
+
+  "umount -f -l "*)
+    dry_forbids "unmounted a storage" || exit 1
+    p="${c#umount -f -l }"; p="${p//\'/}"
+    sid="${p##*/}"
+    [[ -f "$N/storage/$sid.verdict" ]] || { echo "umount: $p: not mounted" >&2; exit 32; }
+    if [[ "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
+      violation "unmounted '$sid' on $NODE while it was ALIVE - every container on it loses its disk"
+      exit 1
+    fi
+    : > "$N/storage/$sid.unmounted"
+    exit 0;;
+
+  "systemctl restart pvestatd"*) exit 0;;
+
+  # A container whose dead rootfs is STILL MOUNTED has its processes in
+  # uninterruptible sleep: pct shutdown waits for a guest that cannot answer
+  # and `timeout` kills the wait. Unmount first and the same command returns.
+  # That causal chain is the reason evacuate does things in the order it does,
+  # and modelling it here is what makes the order testable.
+  *"pct shutdown "*)
+    dry_forbids "stopped a container" || exit 1
+    id="${c##*pct shutdown }"; id="${id%% *}"
+    [[ -f "$D/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+    sid="$(cat "$D/$id.rootsid" 2>/dev/null)"
+    if [[ "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
+      violation "shut down CT $id while its storage '$sid' was ALIVE"
+      exit 1
+    fi
+    if [[ ! -f "$N/storage/$sid.unmounted" ]]; then exit 124; fi
+    [[ -f "$D/$id.stubborn" ]] && exit 124
+    printf 'stopped\n' > "$D/$id.status"
+    : > "$D/$id.veth"
+    exit 0;;
+
+  "mkdir -p /etc/pve/ketsync/evacuate && cat > "*)
+    dry_forbids "wrote the evacuate record" || exit 1
+    f="${c#*cat > }"; f="${f//\'/}"
+    n="${f##*/}"; n="${n%.tsv}"
+    [[ -f "$N/.rowo" ]] && { echo "mkdir: Read-only file system" >&2; exit 1; }
+    mkdir -p "$PVE/ketsync/evacuate"; cat > "$(evac_file "$n")"; exit 0;;
+
+  "cat /etc/pve/ketsync/evacuate/"*|"cat '/etc/pve/ketsync/evacuate/"*)
+    f="${c#cat }"; f="${f%% *}"; f="${f//\'/}"
+    n="${f##*/}"; n="${n%.tsv}"
+    [[ -f "$(evac_file "$n")" ]] || exit 1
+    cat "$(evac_file "$n")"; exit 0;;
+
+  "rm -f /etc/pve/ketsync/evacuate/"*|"rm -f '/etc/pve/ketsync/evacuate/"*)
+    dry_forbids "removed the evacuate record" || exit 1
+    f="${c#rm -f }"; f="${f//\'/}"
+    n="${f##*/}"; n="${n%.tsv}"
+    rm -f "$(evac_file "$n")"; exit 0;;
+
   # ---- the record, in pmxcfs so one copy serves the whole cluster
-  "mkdir -p /etc/pve/ketsync && cat > "*)
+  "mkdir -p /etc/pve/ketsync/isolate && cat > "*)
     dry_forbids "wrote the isolate record" || exit 1
     f="${c#*cat > }"; f="${f//\'/}"
-    id="${f##*isolate-}"; id="${id%.tsv}"
+    id="${f##*/}"; id="${id%.tsv}"
     [[ -f "$N/.rowo" ]] && { echo "mkdir: cannot create directory '/etc/pve/ketsync': Read-only file system" >&2; exit 1; }
     sid="$(cat "$D/$id.rootsid" 2>/dev/null)"
     if [[ "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
       violation "wrote an isolate record for CT $id whose storage '$sid' is ALIVE"
       exit 1
     fi
-    mkdir -p "$PVE/ketsync"
+    mkdir -p "$PVE/ketsync/isolate"
     if [[ -f "$N/.rectrunc" ]]; then
       # pmxcfs is a filesystem with a size limit and a network under it. A
       # write that returns 0 and lands as nothing is the case the read-back
@@ -144,16 +213,16 @@ case "$c" in
     fi
     exit 0;;
 
-  "cat /etc/pve/ketsync/isolate-"*|"cat '/etc/pve/ketsync/isolate-"*)
+  "cat /etc/pve/ketsync/isolate/"*|"cat '/etc/pve/ketsync/isolate/"*)
     f="${c#cat }"; f="${f%% *}"; f="${f//\'/}"
-    id="${f##*isolate-}"; id="${id%.tsv}"
+    id="${f##*/}"; id="${id%.tsv}"
     [[ -f "$(rec_file "$id")" ]] || exit 1
     cat "$(rec_file "$id")"; exit 0;;
 
-  "rm -f /etc/pve/ketsync/isolate-"*|"rm -f '/etc/pve/ketsync/isolate-"*)
+  "rm -f /etc/pve/ketsync/isolate/"*|"rm -f '/etc/pve/ketsync/isolate/"*)
     dry_forbids "removed the isolate record" || exit 1
     f="${c#rm -f }"; f="${f//\'/}"
-    id="${f##*isolate-}"; id="${id%.tsv}"
+    id="${f##*/}"; id="${id%.tsv}"
     [[ -f "$N/.recstuck" ]] && { echo "rm: cannot remove: Read-only file system" >&2; exit 1; }
     rm -f "$(rec_file "$id")"; exit 0;;
 

@@ -18,6 +18,8 @@
 #    ketsync isolate      take a production CT off the wire so its copy can
 #                         answer for it, recording which bridge it came from
 #    ketsync restore      put that bridge, and onboot, back afterwards
+#    ketsync evacuate     a whole node: disable the dead storage, unmount it,
+#                         then stop the containers that were on it
 #
 #    ketsync tp <anything>   pass straight through to the engines, for a flag
 #                            this dispatcher has not been taught
@@ -71,7 +73,7 @@ run_tp(){
 
 case "${1:-}" in
   # --- tp's, passed through untouched ---
-  migrate|replica|failback|status|distribute|recall|prepare|isolate|restore)
+  migrate|replica|failback|status|distribute|recall|prepare|isolate|restore|evacuate)
               run_tp "$@";;
   tp)         shift; run_tp "$@";;
 

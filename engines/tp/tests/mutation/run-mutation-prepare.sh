@@ -180,7 +180,7 @@ mutant "P6 reads the config back instead of the kernel" \
 # correctly and the fleet loses its only copy of the bridge names the first
 # time a run dies halfway - so the fake holds it, not a scenario.
 mutant "the record never lands, and the interfaces move anyway" \
-  's#\Q        "mkdir -p /etc/pve/ketsync && cat > \E\x27\Q\E\$\Q(rec_path "\E\$ct\Q")\E\x27\Q" 2>/dev/null; then\E#        "cat > /dev/null" 2>/dev/null; then#' \
+  's#\Q        "mkdir -p \E\$REC_DIR\Q && cat > \E\x27\Q\E\$\Q(rec_path "\E\$ct\Q")\E\x27\Q" 2>/dev/null; then\E#        "cat > /dev/null" 2>/dev/null; then#' \
   1
 
 mutant "the record keeps the bridge it is moving TO, not the one it came from" \
@@ -236,7 +236,7 @@ mutant "opposite directions in one command are resolved instead of refused" \
   28
 
 mutant "a command with no mode picks one" \
-  's{\Qif (( ! LIST && ! ISOLATE && ! RESTORE )); then\E}{if false; then}' \
+  's{\Qif (( ! LIST && ! ISOLATE && ! RESTORE && ! EVACUATE )); then\E}{if false; then}' \
   27
 
 mutant "a container listed twice in the inventory is read as one" \
@@ -259,6 +259,60 @@ mutant "a zero stat timeout, which makes every storage read as alive" \
 mutant "the log is written outside the engine's own tree" \
   's{\QLOGDIR="\E\$BASE\Q/logs"\E}{LOGDIR="\$BASE/../../logs"}' \
   1
+
+# ---------- --evacuate: a node, and the order it is dealt with in -----------
+# Disable, unmount, THEN stop. Everyone does it the other way round, including
+# the runbook this replaced, because the instinct is to close the container
+# before touching its disk - and a container whose dead rootfs is still mounted
+# cannot be closed at all.
+
+mutant "E2 evacuates a node whose storage answered perfectly well" \
+  's{\Q  if (( \E\$\{#DEADSIDS\[@\]\}\Q == 0 )); then\E}{  if false; then}' \
+  40
+
+mutant "E2 stops leaving healthy storages, and the containers on them, alone" \
+  's{\Q      log "[\E\$pip\Q] E2: CT \E\$ct\Q is on \E\x27\Q\E\$sid\Q\E\x27\Q, which answered - left alone, not touched"\E\n\Q      continue\E}{      log "[\$pip] E2: CT \$ct is on \x27\$sid\x27, which answered - left alone, not touched"}' \
+  41
+
+mutant "the record of what was switched off never lands" \
+  's#\Q        "mkdir -p \E\$EVAC_DIR\Q && cat > \E\x27\Q\E\$\Q(evac_path "\E\$pn\Q")\E\x27\Q" 2>/dev/null; then\E#        "cat > /dev/null" 2>/dev/null; then#' \
+  42
+
+mutant "the storage is disabled but never unmounted, so nothing can be stopped" \
+  's{\Q    if rsh "\E\$pip\Q" "umount -f -l \E\x27\Q\E\$\{DEADPATHS\[\$i\]\}\Q\E\x27\Q"; then\E}{    if false; then}' \
+  38
+
+mutant "pvestatd is left holding the mount that just went away" \
+  's{\Q"systemctl restart pvestatd"\E}{"true"}' \
+  38
+
+mutant "the shutdown is believed rather than checked" \
+  's#\Q    if [[ "\E\$st\Q" != running ]]; then\E#    if true; then#' \
+  39
+
+mutant "a container that will not stop is forced instead of isolated" \
+  's{\Q    do_isolate "\E\$ct\Q" || true\E}{    rsh "\$pip" "pct stop \$ct" || true}' \
+  39
+
+mutant "restore --node switches on a storage this tool never switched off" \
+  's{\Q  if [[ -z "\E\$rec\Q" ]]; then\E}{  if false; then}' \
+  44
+
+mutant "--evacuate is taken as a per-container verb after all" \
+  's{\Qif (( EVACUATE )) && (( ! ALL )) && [[ -z "\E\$ONLY_NODE\Q" ]]; then\E}{if false; then}' \
+  46
+
+mutant "--evacuate and --isolate in one command are merged instead of refused" \
+  's{\Qif (( EVACUATE && (ISOLATE || RESTORE) )); then\E}{if false; then}' \
+  47
+
+mutant "a node holding none of the inventory is evacuated anyway" \
+  's{\Q  if (( \E\$\{#MINE\[@\]\}\Q == 0 )); then\E}{  if false; then}' \
+  48
+
+mutant "evacuate --all stops after the first node it finds" \
+  's{\Q      SEEN_NODE[\E\$_pip\Q]=1; NODES+=("\E\$_pip\Q")\E}{      SEEN_NODE[\$_pip]=1; [[ \$\{#NODES[@]\} == 0 ]] \&\& NODES+=("\$_pip")}' \
+  49
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
