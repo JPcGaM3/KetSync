@@ -223,9 +223,9 @@
      ดูเทียบกันแล้วจะเห็นว่าไม่มีทางใช้แทนกันได้เลย</p>
 
   <h3>fleet.tsv — แผนที่ ไม่ใช่ใบงาน</h3>
-  <div class="code"><pre># ct	home	dr	dst
+  <details class="cmd"><summary>110	10.100.1.32	10.100.1.32	local-lvm</summary><div class="code"><pre># ct	home	dr	dst
 110	10.100.1.32	10.100.1.32	local-lvm
-120	10.100.1.33	10.100.1.33	local-lvm</pre></div>
+120	10.100.1.33	10.100.1.33	local-lvm</pre></div></details>
   <p>อ่านว่า “CT 110 ปกติอยู่ที่ 10.100.1.32 ถ้า storage ล่ม ให้ไปขึ้นที่ 10.100.1.32 ลง
      <code class="inl">local-lvm</code> ของเครื่องนั้น” เขียนไว้ล่วงหน้า ไม่ใช่ให้เครื่องเลือกเองตอนตี 3
      ทุก IP ที่เขียนตรงนี้ต้องมีแถวใน <code class="inl">nodes.tsv</code>
@@ -237,15 +237,15 @@
      แถวที่ไม่มีจะถูกปฏิเสธ ไม่ใช่เดาให้</p>
 
   <h3>inventory-migrate.tsv — ใบงานย้ายเข้ามา</h3>
-  <div class="code"><pre># old_node    old_ctid  new_ctid  new_node      storage
-10.100.1.23   300       99100     10.100.1.19   tank-hdd-nas</pre></div>
+  <details class="cmd"><summary>10.100.1.23   300       99100     10.100.1.19   tank-hdd-nas</summary><div class="code"><pre># old_node    old_ctid  new_ctid  new_node      storage
+10.100.1.23   300       99100     10.100.1.19   tank-hdd-nas</pre></div></details>
   <p>อ่านว่า “CT 300 บนเครื่องเก่า 10.100.1.23 ให้มาเกิดใหม่เป็น CT 99100 บน 10.100.1.19 ใช้ storage ชื่อ tank-hdd-nas”
      ใช้เฉพาะช่วงย้ายของเข้าฟลีต ย้ายเสร็จก็ไม่ต้องใช้อีก</p>
 
   <h3>inventory-replica.tsv — ใบงานก๊อปทุกคืน</h3>
-  <div class="code"><pre># src_ctid  [tgt_ctid]  [storage-assert]  [dest]
+  <details class="cmd"><summary>105                                       ssd</summary><div class="code"><pre># src_ctid  [tgt_ctid]  [storage-assert]  [dest]
 105                                       ssd
-113         8113        tank-ssd-nas      ssd</pre></div>
+113         8113        tank-ssd-nas      ssd</pre></div></details>
   <p>อ่านว่า “ก๊อป CT 105 ไปที่ pool ssd” ส่วนคอลัมน์หลังตัวแรกใส่ได้ไม่เรียงลำดับ engine ดูจากรูปแบบเอาเองว่าอันไหนคืออะไร
      ไฟล์นี้ <code class="inl">ct-replica.sh</code> กับ <code class="inl">ct-failback.sh</code> ใช้ร่วมกัน</p>
 
@@ -283,7 +283,7 @@
      <code class="inl">/root/ketsync</code> ให้เหมือนกันหมด ไม่ใช่เรื่องความสวยงาม —
      <code class="inl">ketsync sync</code> ส่งไปที่ path ที่ตัวมันเองติดตั้งอยู่ ถ้าอีกเครื่องเก็บไว้ที่อื่น
      ตารางจะไม่ไปถึงเลย ตอนนี้มันฟ้องชื่อเครื่องออกมาให้แล้ว แต่ก่อนหน้านี้เงียบสนิท</p></div>
-  <div class="code"><pre><span class="c"># on the STORAGE node - this is the master</span>
+  <details class="cmd"><summary>git clone <this repo> /root/ketsync</summary><div class="code"><pre><span class="c"># on the STORAGE node - this is the master</span>
 git clone &lt;this repo&gt; /root/ketsync
 cd /root/ketsync
 
@@ -293,7 +293,7 @@ cp fleet.tsv.sample     fleet.tsv
 
 cd engines/tp
 cp inventory-replica.sample.tsv  inventory-replica.tsv
-cp inventory-migrate.sample.tsv  inventory-migrate.tsv   <span class="c"># only while migrating</span></pre></div>
+cp inventory-migrate.sample.tsv  inventory-migrate.tsv   <span class="c"># only while migrating</span></pre></div></details>
   <p>แก้ <code class="inl">nodes.tsv</code> ให้ครบทุกเครื่องก่อนอย่างอื่น เพราะทุก IP ที่ระบบนี้จะใช้มาจากไฟล์นี้ที่เดียว
      ถ้าเครื่องไหนไม่มีแถวในนี้ ระบบจะหยุดแล้วบอก ไม่เดา IP ให้</p>
 
@@ -301,13 +301,13 @@ cp inventory-migrate.sample.tsv  inventory-migrate.tsv   <span class="c"># only 
   <p>ไม่ใช่เพื่อรัน replica — มันรันไม่ได้ ดูหัวข้อถัดไป — แต่เพราะวันที่เครื่อง storage ตาย
      เครื่องที่เก็บโค้ดไว้ก็ตายไปด้วย เครื่อง backup คือที่ที่คุณจะยืนสั่ง
      <code class="inl">distribute</code> ตอนนั้น</p>
-  <div class="code"><pre><span class="c"># on the BACKUP node - same path, on purpose</span>
+  <details class="cmd"><summary>git clone <this repo> /root/ketsync</summary><div class="code"><pre><span class="c"># on the BACKUP node - same path, on purpose</span>
 git clone &lt;this repo&gt; /root/ketsync
 cd /root/ketsync
 
 cp ketsync.conf.sample  ketsync.conf     <span class="c"># KS_ROLE=slave</span>
 $EDITOR engines/tp/ctrep.conf             <span class="c"># BW_TOTAL_MB for THIS machine</span>
-./ketsync doctor                          <span class="c"># builds nodes.map here</span></pre></div>
+./ketsync doctor                          <span class="c"># builds nodes.map here</span></pre></div></details>
   <p>ตาราง 4 ไฟล์ (<code class="inl">nodes.tsv</code>, <code class="inl">fleet.tsv</code>,
      inventory ทั้งสอง) ไม่ต้องก๊อปมา เดี๋ยว <code class="inl">ketsync sync</code> ส่งมาให้เอง
      ส่วน <code class="inl">.conf</code> ทั้งหมดกับ <code class="inl">nodes.map</code>
@@ -349,12 +349,12 @@ $EDITOR engines/tp/ctrep.conf             <span class="c"># BW_TOTAL_MB for THIS
      dataset เดียวกันพร้อมกัน</p>
 
   <h3>ตั้งค่าที่ละเครื่อง — ต่างกันแค่สองบรรทัด</h3>
-  <div class="code"><pre><span class="c"># on the STORAGE node - ketsync.conf</span>
+  <details class="cmd"><summary>KS_ROLE=master</summary><div class="code"><pre><span class="c"># on the STORAGE node - ketsync.conf</span>
 KS_ROLE=master
-KS_MASTER_IP=10.100.1.17      <span class="c"># this machine</span></pre></div>
-  <div class="code"><pre><span class="c"># on the BACKUP node - ketsync.conf</span>
+KS_MASTER_IP=10.100.1.17      <span class="c"># this machine</span></pre></div></details>
+  <details class="cmd"><summary>KS_ROLE=slave</summary><div class="code"><pre><span class="c"># on the BACKUP node - ketsync.conf</span>
 KS_ROLE=slave
-KS_MASTER_IP=10.100.1.17      <span class="c"># the storage node</span></pre></div>
+KS_MASTER_IP=10.100.1.17      <span class="c"># the storage node</span></pre></div></details>
   <div class="stop"><p><b>ห้าม scp ไฟล์ ketsync.conf ข้ามเครื่อง</b> ไฟล์นี้มี
      <code class="inl">KS_ROLE</code> อยู่ ถ้าก๊อปของ master ไปวางที่ slave
      ทุกเครื่องจะเชื่อว่าตัวเองเป็น master และนั่นคือสภาพที่ทั้งระบบนี้ออกแบบมาเพื่อเลี่ยง
@@ -373,8 +373,8 @@ KS_MASTER_IP=10.100.1.17      <span class="c"># the storage node</span></pre></d
   </table>
 
   <h3>ส่งจริงๆ</h3>
-  <div class="code"><pre><span class="c"># on the MASTER, after editing any table</span>
-./ketsync sync</pre></div>
+  <details class="cmd"><summary>./ketsync sync</summary><div class="code"><pre><span class="c"># on the MASTER, after editing any table</span>
+./ketsync sync</pre></div></details>
   <p>มันจะไปถามทุกเครื่องใน <code class="inl">nodes.tsv</code> ว่ามี ketsync ติดตั้งอยู่มั้ย
      เครื่องไหนไม่มีก็ข้ามไปเงียบๆ (compute node ปกติไม่มี) เครื่องไหนติดตั้งไว้คนละ path
      มันจะบอกชื่อเครื่องนั้นออกมา</p>
@@ -388,14 +388,14 @@ KS_MASTER_IP=10.100.1.17      <span class="c"># the storage node</span></pre></d
      ของฟลีตที่เพิ่งติดตั้ง เพราะทุกเครื่องเริ่มจาก generation ที่ติดมากับไฟล์
      <code class="inl">.sample</code> เหมือนกันหมด</p>
   <p>ตอนเจอ มันจะหยุดและไม่ส่งอะไรเลย เพราะไม่มีทางรู้ว่าฝั่งไหนถูก</p>
-  <div class="code"><pre><span class="c"># 1. read what actually differs - changes nothing</span>
+  <details class="cmd"><summary>./ketsync sync --diff</summary><div class="code"><pre><span class="c"># 1. read what actually differs - changes nothing</span>
 ./ketsync sync --diff
 
 <span class="c"># 2. edit the file until THIS machine's copy is the right one</span>
 $EDITOR fleet.tsv
 
 <span class="c"># 3. say "mine is the one" - raises the generation above every machine, then pushes</span>
-./ketsync sync --bump fleet.tsv</pre></div>
+./ketsync sync --bump fleet.tsv</pre></div></details>
   <div class="tip"><p><b>ระบุชื่อไฟล์เสมอ</b> <code class="inl">--bump</code> เฉยๆ
      จะเคลียร์ทุกไฟล์ที่แตกกันพร้อมกัน ซึ่งถูกต้องก็ต่อเมื่อคุณอ่าน diff ครบทุกไฟล์แล้วจริงๆ</p></div>
 
@@ -414,22 +414,22 @@ $EDITOR fleet.tsv
   <p>ทุกครั้งที่ตั้งเครื่องใหม่ หรือแก้อะไรที่ใหญ่กว่าเพิ่ม CT หนึ่งตัว ให้ไล่ตามนี้</p>
   <ol class="steps">
     <li><b>เช็กว่าต่อกันติดก่อน</b> ยังไม่แตะข้อมูลอะไรทั้งนั้น
-      <div class="code"><pre>cd /root/ketsync
-./ketsync doctor</pre></div>
+      <details class="cmd"><summary>cd /root/ketsync</summary><div class="code"><pre>cd /root/ketsync
+./ketsync doctor</pre></div></details>
       <p>คำสั่งเดียวตรวจทั้งสองชั้น: ssh ถึงเครื่องไหนบ้าง, ชื่อ node ดึงมาได้ไหม, ทุกไฟล์มีเลข generation ไหม,
          IP ใน <code class="inl">fleet.tsv</code> มีแถวใน <code class="inl">nodes.tsv</code> ครบไหม,
          engine อยู่ครบและสั่งรันได้ไหม แล้วปิดท้ายด้วย <code class="inl">tp doctor</code> เรื่อง storage กับ state
          รหัสออกเป็นตัวที่แย่กว่าของสองชั้น</p></li>
     <li><b>ซ้อมก่อน ด้วย CT ที่ไม่สำคัญตัวเดียว</b> — <code class="inl">--dry-run</code> เดินผ่าน guard ทุกด่านเหมือนของจริง
         ต่างกันแค่ไม่เขียนอะไรลงดิสก์เลย
-      <div class="code"><pre>./ketsync replica --dry-run --ctid 110</pre></div></li>
+      <details class="cmd"><summary>./ketsync replica --dry-run --ctid 110</summary><div class="code"><pre>./ketsync replica --dry-run --ctid 110</pre></div></details></li>
     <li><b>ถ้าซ้อมผ่าน ค่อยรันจริงทีละตัว</b>
-      <div class="code"><pre>./ketsync replica --ctid 110</pre></div></li>
+      <details class="cmd"><summary>./ketsync replica --ctid 110</summary><div class="code"><pre>./ketsync replica --ctid 110</pre></div></details></li>
     <li><b>รันทั้ง lane</b> แยกตาม storage เพราะ bandwidth ceiling คิดเป็น lane
-      <div class="code"><pre>./ketsync replica --storage tank-hdd-nas</pre></div></li>
+      <details class="cmd"><summary>./ketsync replica --storage tank-hdd-nas</summary><div class="code"><pre>./ketsync replica --storage tank-hdd-nas</pre></div></details></li>
     <li><b>ค่อยใส่ cron</b> — ใส่ทีละ lane ไม่ใส่พร้อมกันสองอัน
-      <div class="code"><pre>*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-hdd-nas
-*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-ssd-nas</pre></div></li>
+      <details class="cmd"><summary>*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-hdd-nas</summary><div class="code"><pre>*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-hdd-nas
+*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-ssd-nas</pre></div></details></li>
   </ol>
   
 </section>
@@ -523,17 +523,17 @@ $EDITOR fleet.tsv
      <code class="inl">/root/tp/</code> อยู่ อย่าเพิ่งลบ ทำตามนี้ทีละข้อ แล้วค่อยลบตอนมั่นใจ</p>
   <ol class="steps">
     <li>clone ของใหม่ไว้คนละที่ก่อน ยังไม่แตะ cron
-      <div class="code"><pre>git clone &lt;this repo&gt; /root/ketsync</pre></div></li>
+      <details class="cmd"><summary>git clone <this repo> /root/ketsync</summary><div class="code"><pre>git clone &lt;this repo&gt; /root/ketsync</pre></div></details></li>
     <li>ย้ายไฟล์ข้อมูลเดิมมา แล้วเปลี่ยนชื่อให้ตรงชื่อใหม่
-      <div class="code"><pre>cd /root/ketsync/engines/tp
+      <details class="cmd"><summary>cd /root/ketsync/engines/tp</summary><div class="code"><pre>cd /root/ketsync/engines/tp
 cp /root/tp/inventory.tsv          ./inventory-migrate.tsv
 cp /root/tp/inventory-replica.tsv  ./inventory-replica.tsv
 cp /root/tp/ctmig.conf             ./ctmig.conf
 cp /root/tp/ctrep.conf             ./ctrep.conf
-cp -a /root/tp/state               ./state</pre></div>
+cp -a /root/tp/state               ./state</pre></div></details>
       <p>ถ้าลืมเปลี่ยนชื่อ engine จะไม่เดาให้ แต่จะบอกว่าไฟล์ชื่อเก่ายังอยู่และให้ rename เป็นอะไร</p></li>
     <li>ซ้อมด้วย CT ที่ไม่สำคัญตัวเดียว ตอนนี้ cron ยังชี้ของเก่าอยู่ ยังไม่มีอะไรเปลี่ยน
-      <div class="code"><pre>./ketsync replica --dry-run --ctid &lt;one unimportant ctid&gt;</pre></div></li>
+      <details class="cmd"><summary>./ketsync replica --dry-run --ctid <one unimportant ctid></summary><div class="code"><pre>./ketsync replica --dry-run --ctid &lt;one unimportant ctid&gt;</pre></div></details></li>
     <li>ย้าย cron ทีละ lane ไม่ย้ายพร้อมกัน ดูสักรอบสองรอบว่า log ออกมาปกติก่อนค่อยย้าย lane ถัดไป</li>
     <li>ถอยกลับได้เสมอ — ของเก่ายังอยู่ครบ แค่ชี้ cron กลับไปที่ path เดิม ไม่ต้อง restore อะไร</li>
   </ol>
@@ -552,5 +552,43 @@ cp -a /root/tp/state               ./state</pre></div>
 </footer>
 
 </div>
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp'; btn.type = 'button'; btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.c').forEach(function(el){ el.remove(); });
+      var text = clone.textContent.split('\n').filter(function(l){ return l.trim() !== ''; }).join('\n');
+      var done = function(){ btn.textContent='copied'; setTimeout(function(){ btn.textContent='copy'; },1200); };
+      function fallback(){
+        var ta=document.createElement('textarea'); ta.value=text;
+        ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){ btn.textContent='select manually'; }
+        document.body.removeChild(ta);
+      }
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,fallback);}else{fallback();}
+    });
+    box.appendChild(btn);
+  });
+  var all = document.querySelectorAll('details.cmd');
+  if(all.length){
+    var b=document.createElement('button');
+    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    var open=false;
+    b.addEventListener('click',function(){
+      open=!open;
+      all.forEach(function(d){ d.open=open; });
+      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+    });
+    var first=document.querySelector('header.doc');
+    if(first) first.parentNode.insertBefore(b, first.nextSibling);
+  }
+})();
+</script>
 </body>
 </html>

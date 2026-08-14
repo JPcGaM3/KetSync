@@ -173,25 +173,25 @@
   <p>สามอย่างนี้ทำวันธรรมดา ใช้เวลารวมไม่ถึง 10 นาที และเป็นตัวตัดสินว่าคืนนั้นจะราบรื่นหรือไม่</p>
   <ol class="steps">
     <li>ก๊อปตัวโปรแกรมไว้ที่เครื่อง backup ด้วย ถ้ารอไปทำตอนเกิดเหตุ เครื่องที่เก็บโค้ดอาจตายไปแล้ว
-      <div class="code"><pre><span class="c"># on the BACKUP node</span>
-git clone &lt;this repo&gt; /root/ketsync</pre></div>
+      <details class="cmd"><summary>git clone <this repo> /root/ketsync</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
+git clone &lt;this repo&gt; /root/ketsync</pre></div></details>
       <p>ต้องเป็น <code class="inl">/root/ketsync</code> เท่ากันทุกเครื่อง เพราะ
          <span class="m">ketsync sync</span> ส่งตารางไปที่ path ที่ตัวเองติดตั้งอยู่
          ถ้า clone ไว้ที่อื่นจะไม่ได้รับอะไรเลย</p></li>
     <li>เขียนลำดับความสำคัญไว้ ว่า CT ตัวไหนต้องขึ้นก่อน ใส่ในไฟล์ธรรมดาก็ได้
-      <div class="code"><pre><span class="c"># on the BACKUP node</span>
+      <details class="cmd"><summary>cat > /root/dr-order.txt <<'EOF'</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
 cat &gt; /root/dr-order.txt &lt;&lt;'EOF'
 300   shop  - customer facing, first
 113   api   - second
 121   batch - can wait
-EOF</pre></div>
+EOF</pre></div></details>
       <p>เขียนเลข CT ตัวจริง ไม่ต้องเขียน 8xxx หรือ 9xxx — ทุกคำสั่งในชุดนี้รับเลขตัวจริงเสมอ</p></li>
     <li>ซ้อมอ่านเดือนละครั้ง สามคำสั่งนี้ไม่แตะอะไรเลย มันบอกว่าถ้าวันนี้ต้องกู้จริงจะติดตรงไหน
-      <div class="code"><pre><span class="c"># on the STORAGE node, on an ordinary day</span>
+      <details class="cmd"><summary>./ketsync doctor</summary><div class="code"><pre><span class="c"># on the STORAGE node, on an ordinary day</span>
 ./ketsync doctor
 ./ketsync failback --list
 <span class="c"># on the BACKUP node - the machine you will actually be typing on</span>
-./ketsync distribute --list</pre></div>
+./ketsync distribute --list</pre></div></details>
       <p>อันสุดท้ายสำคัญที่สุด เพราะมันคือคำสั่งที่ต้องใช้ตอนเครื่อง storage ตาย
          ถ้าวันธรรมดามันยังรันไม่ได้ ตอนตี 3 ก็จะรันไม่ได้เหมือนกัน</p></li>
   </ol>
@@ -201,64 +201,44 @@ EOF</pre></div>
   <div class="eyebrow"><span class="num">2</span><h2>ขั้น 1 — ยืนยันว่าตายจริง แล้วกันตัวจริงไม่ให้กลับมาเอง</h2></div>
   <p>อย่ารีบ ปลุกสำเนาขึ้นมาทั้งที่ตัวจริงยังรันอยู่ = มีสองเครื่องใช้ IP เดียวกัน
      ซึ่งพังหนักกว่าเดิมและแก้ยากกว่า</p>
-  <div class="code"><pre><span class="c"># on the BACKUP node</span>
+  <details class="cmd"><summary>ping -c3 10.100.1.17</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
 ping -c3 10.100.1.17
-ssh -o ConnectTimeout=5 root@10.100.1.17 true; echo "rc=$?"</pre></div>
+ssh -o ConnectTimeout=5 root@10.100.1.17 true; echo "rc=$?"</pre></div></details>
   <ul class="clean">
     <li>ถ้ายัง ping ติดหรือ ssh เข้าได้ อย่าเพิ่งทำต่อ เครื่องอาจแค่ช้าหรือ NFS ค้าง
        ให้ไปแก้ที่ต้นเหตุก่อน สำเนายังอยู่ครบ ไม่ได้หายไปไหน</li>
     <li>ถ้าเครื่อง storage ยังพอมีชีวิต ให้ปิด cron ก่อนเป็นอย่างแรก
        ไม่งั้นรอบถัดไปมันจะพยายามก๊อปทับสำเนา ตอนที่คุณกำลังจะใช้สำเนานั้น
-      <div class="code"><pre><span class="c"># on the STORAGE node, if you can still reach it</span>
-touch /root/ketsync/engines/tp/PAUSE</pre></div></li>
+      <details class="cmd"><summary>touch /root/ketsync/engines/tp/PAUSE</summary><div class="code"><pre><span class="c"># on the STORAGE node, if you can still reach it</span>
+touch /root/ketsync/engines/tp/PAUSE</pre></div></details></li>
   </ul>
 
-  <h3>แล้วกัน 300 ไม่ให้บูตขึ้นมาเอง</h3>
-  <p>อันนี้คือขั้นที่คนลืมบ่อยที่สุด และเป็นขั้นที่ <span class="m">distribute</span>
-     จะปฏิเสธถ้ายังไม่ทำ CT ที่ตั้ง <code class="inl">onboot: 1</code> ไว้
-     จะสตาร์ตตัวเองทันทีที่เครื่อง storage กลับมา หรือทันทีที่เครื่อง compute รีบูต
-     โดยไม่มีใครพิมพ์คำสั่งอะไรเลย ตอนนั้นจะมี 300 กับ 9300 อยู่บน IP เดียวกัน
-     ต่างคนต่างเขียน rootfs ของตัวเอง แล้วรวมกันไม่ได้อีกเลย</p>
-  <div class="code"><pre><span class="c"># on each COMPUTE node, for each CT you are about to move</span>
-pct set 300 --onboot 0</pre></div>
-  <p>คำสั่งนี้ใช้ได้ถึงแม้ storage จะตายไปแล้ว เพราะ config ของ container อยู่ใน
-     <code class="inl">/etc/pve</code> ซึ่งเป็นของ cluster ไม่ได้อยู่บน NFS ที่ตายไป
-     ทำอันนี้<b>ก่อน</b>ไปยุ่งกับ mount เสมอ ถ้าระหว่างแก้เรื่อง mount แล้วเครื่อง compute
-     รีบูตขึ้นมา อันนี้คือสิ่งเดียวที่กัน container ไม่ให้ขึ้นเอง</p>
+  <h3>คำสั่งเดียว — ให้เครื่องมือเตรียมให้ทั้งโหนด</h3>
+  <p>ขั้นนี้เคยเป็นคำสั่งดิบสี่ห้าตัวต่อโหนด และเกือบทุกคนทำผิดลำดับ เพราะสัญชาตญาณบอกให้ปิดตู้ก่อนแตะ mount
+     ซึ่งเป็นลำดับที่ทำงานไม่ได้ ตอนนี้เครื่องมือทำให้ตามลำดับที่ถูกต้องเสมอ</p>
+  <div class="code"><pre><span class="c"># see what it would do to every node first - writes nothing</span>
+./ketsync evacuate --all --dry-run
 
-  <h3>แล้วจะพบว่า pct shutdown ค้าง</h3>
-  <p>นี่คือจุดที่คนติดจริง container ที่ rootfs หายไป จะมี process ค้างอยู่ใน
-     <b>uninterruptible sleep (D state)</b> รอ I/O ที่ไม่มีวันกลับมา และ
-     <code class="inl">SIGKILL</code> ฆ่า process ที่อยู่ใน D ไม่ได้ —
-     <code class="inl">pct shutdown</code> เลยรอจนหมดเวลา แล้ว
-     <code class="inl">pct stop</code> ก็ไปรอต่อคิวอยู่ข้างหลัง</p>
-  <p>ทางออกไม่ใช่การฆ่าแรงขึ้น แต่คือ<b>บังคับให้ mount ที่ตายแล้วตอบ error แทนที่จะค้าง</b>
-     พอ I/O เด้ง error ออกมา process ก็หลุดจาก D แล้วตายได้ตามปกติ</p>
-  <div class="code"><pre><span class="c"># on the COMPUTE node - what is actually stuck</span>
-ps -eo pid,stat,wchan:32,cmd | awk '$2 ~ /D/'
+<span class="c"># then do it, one node at a time or the whole fleet</span>
+./ketsync evacuate --node 10.100.1.32
+./ketsync evacuate --all</pre></div>
+  <p>มันทำสี่อย่างเรียงกัน ปิด storage ที่ตายก่อน เพื่อให้ <span class="m">pvestatd</span> เลิกเดินเข้าไปในนั้น
+     แล้วบังคับ mount ให้พัง เพื่อให้ I/O ที่ค้างเด้ง EIO ออกมา แล้ว restart
+     <span class="m">pvestatd</span> เพื่อให้โหนดกลับมารายงานตัวเองได้ แล้วค่อยสั่งปิดตู้ที่อยู่บน storage นั้น
+     — ตู้ที่ปิดไม่ลงจะถูกย้ายไป <span class="m">vmbr99</span> ให้แทน ไม่มีการบังคับปิดที่แรงกว่านั้น</p>
+  <div class="warn"><p><b>มันจะไม่ยอมทำถ้า storage ยังดีอยู่</b> ด่าน E2 พิสูจน์ก่อนว่า storage ตายจริง
+     ด้วยการ <span class="m">stat</span> ที่ mountpoint ของมันเอง พร้อม timeout — <b>การค้างคือผลบวก</b>
+     mount ที่ยังดีตอบทันที ถ้ามันตอบ = ปฏิเสธทั้งโหนด ไม่มี override
+     และตู้ที่อยู่บน storage ดีๆ บนโหนดเดียวกัน (เช่น local-lvm) จะไม่ถูกแตะเลยแม้แต่ตัวเดียว</p></div>
+  <p>ถ้าอยากจัดการทีละตู้แทนทั้งโหนด — เช่นไม่อยากให้เพื่อนบ้านโดนปิดไปด้วย — ใช้ isolate ตรงๆ
+     มันย้ายทุก net line ไป <span class="m">vmbr99</span> แล้วจดไว้ว่า bridge เดิมคืออะไร</p>
+  <div class="code"><pre>./ketsync prepare --list
+./ketsync isolate --ctid 110
+./ketsync restore --ctid 110</pre></div>
+  <div class="tip"><p><b>ไม่ต้องพิมพ์อะไรลงเครื่อง compute เลย</b> ทุกคำสั่งข้างบนพิมพ์ที่เครื่อง backup
+     แล้วมันไป ssh ทำให้เอง ส่วน <span class="m">onboot</span> ไม่ต้องไปตั้งเอง เพราะทุกตู้ในฟลีตนี้เป็น
+     <span class="m">onboot 0</span> อยู่แล้ว และ isolate จดค่าเดิมไว้ให้ตอน restore</p></div>
 
-<span class="c"># make the dead NFS mount return errors instead of blocking</span>
-umount -f /mnt/pve/&lt;the dead storage&gt;
-
-<span class="c"># if -f alone is not enough, detach the tree as well</span>
-umount -f -l /mnt/pve/&lt;the dead storage&gt;
-
-<span class="c"># now this finishes</span>
-pct stop 300
-pct unlock 300          <span class="c"># only if PVE left a lock behind</span></pre></div>
-  <table>
-    <tr><th>คำสั่ง</th><th>ทำอะไร</th></tr>
-    <tr><td class="m">umount -f</td><td>บอก NFS ให้ทิ้ง request ที่ค้างอยู่ ตอบ EIO ออกมา — อันนี้คือตัวที่ปลด D state</td></tr>
-    <tr><td class="m">umount -l</td><td>ถอด tree ออกจาก namespace การเข้าถึงใหม่จะพัง แต่ของที่ค้างอยู่แล้วอาจยังค้าง</td></tr>
-    <tr><td class="m">umount เฉยๆ</td><td>ไม่ผ่าน ตราบใดที่ยังมีคนใช้อยู่ (target is busy)</td></tr>
-  </table>
-  <div class="tip"><p><b>ถ้า GUI เทาไปทั้งหน้า</b> เพราะ PVE poll storage ที่ตายอยู่เรื่อยๆ
-     ปิด storage นั้นที่ Datacenter &rarr; Storage &rarr; เอา checkbox Enable ออก
-     (หรือ <span class="m">pvesm set &lt;id&gt; --disable 1</span>) แล้วหน้าจอจะกลับมาตอบสนอง
-     อย่าลืมเปิดกลับตอน storage ฟื้น</p></div>
-  <div class="warn"><p><b>ทางลัดที่ได้ผลแน่นอนแต่ราคาแพง</b> รีบูตเครื่อง compute
-     ถ้าจะทำ <b>ทำก่อนสั่ง distribute</b> — เพราะหลังจากนั้นเครื่องนั้นจะมี 9xxx
-     ที่กำลังให้บริการลูกค้าอยู่ การรีบูตตอนนั้นคือการล้มของที่เพิ่งกู้มา</p></div>
   <div class="stop"><p><b>PAUSE ช่วยเรื่องนี้ไม่ได้</b> เครื่อง storage ตายโดยไม่บอกล่วงหน้า
      ไม่มีใครทันพิมพ์ <code class="inl">touch PAUSE</code> และไฟล์นั้นก็อยู่บนเครื่องที่ตายไปแล้วด้วย
      ด่าน D1 จึงไปอ่าน <code class="inl">onboot</code> จากเครื่อง compute โดยตรง
@@ -272,7 +252,7 @@ pct unlock 300          <span class="c"># only if PVE left a lock behind</span><
   <p>ข้อดีของทางนี้คือมันไม่ต้องใช้อะไรจาก storage ที่ตายไปเลย config ของ container
      อยู่ใน <code class="inl">/etc/pve</code> และ PVE จะ hotplug ให้ทันที
      เป็นทางเดียวที่ยังทำงานได้ตอนที่ <span class="m">pct shutdown</span> ค้างอยู่</p>
-  <div class="code"><pre><span class="c"># on the COMPUTE node - look at EVERY net line first, not just net0</span>
+  <details class="cmd"><summary>pct config 300 | grep '^net'</summary><div class="code"><pre><span class="c"># on the COMPUTE node - look at EVERY net line first, not just net0</span>
 pct config 300 | grep '^net'
 
 <span class="c"># move each one, keeping name, hwaddr and ip exactly as they were</span>
@@ -281,7 +261,7 @@ pct set 300 --net0 name=eth0,bridge=vmbr99,hwaddr=BC:24:11:00:00:01,ip=10.100.2.
 <span class="c"># then check the KERNEL, which is what D1 reads - a config can say one</span>
 <span class="c"># thing while the running container never received the change</span>
 ls -l /sys/class/net/veth300i*/master
-ls /sys/class/net/vmbr99/brif/</pre></div>
+ls /sys/class/net/vmbr99/brif/</pre></div></details>
   <p>ต้องย้าย<b>ทุกเส้น</b> ไม่ใช่แค่ net0 — เส้นที่ลืมคือเส้นที่ตอบ และ
      <span class="m">vmbr99</span> บนเครื่องนั้นต้องไม่มี port จริงเสียบอยู่
      ถ้าเห็นว่า veth ทุกเส้นชี้ไป <span class="m">vmbr99</span> และใน
@@ -313,20 +293,20 @@ ls /sys/class/net/vmbr99/brif/</pre></div>
      และต้องมีคนเก็บกวาดทีหลัง</p>
 
   <h3>ขั้นที่ 1 — ดูก่อนว่ามันจะทำอะไร ยังไม่แตะอะไร</h3>
-  <div class="code"><pre>cd /root/ketsync
-./ketsync distribute --list</pre></div>
+  <details class="cmd"><summary>cd /root/ketsync</summary><div class="code"><pre>cd /root/ketsync
+./ketsync distribute --list</pre></div></details>
   <p>มันจะพิมพ์ออกมาว่า CT ตัวไหนจะไปเครื่องไหน ลง storage อะไร ใช้เนื้อที่เท่าไหร่
      ตัวไหนที่ไม่มีที่ไปมันจะบอกว่าไม่มีแถวใน <code class="inl">fleet.tsv</code> —
      ไม่เดาให้ ต้องบอกด้วย <code class="inl">--to</code> เอง</p>
 
   <h3>ขั้นที่ 2 — ซ้อมตัวเดียวก่อน</h3>
-  <div class="code"><pre>./ketsync distribute --ctid 300 --dry-run</pre></div>
+  <details class="cmd"><summary>./ketsync distribute --ctid 300 --dry-run</summary><div class="code"><pre>./ketsync distribute --ctid 300 --dry-run</pre></div></details>
   <p>เดินผ่านด่านตรวจครบทุกด่านเหมือนของจริง ต่างกันแค่ไม่จองเนื้อที่ ไม่ก๊อป ไม่เขียน config</p>
 
   <h3>ขั้นที่ 3 — ของจริง ทีละตัวตามลำดับความสำคัญ</h3>
-  <div class="code"><pre>./ketsync distribute --ctid 300
+  <details class="cmd"><summary>./ketsync distribute --ctid 300</summary><div class="code"><pre>./ketsync distribute --ctid 300
 ./ketsync distribute --ctid 300 --to 10.100.1.33          <span class="c"># override the placement</span>
-./ketsync distribute --ctid 300 --to 10.100.1.33 --dst local-zfs</pre></div>
+./ketsync distribute --ctid 300 --to 10.100.1.33 --dst local-zfs</pre></div></details>
   <p>มันจะจองเนื้อที่บนเครื่องปลายทาง ทำ filesystem ก๊อปข้อมูลจากเครื่อง backup
      แล้วเขียน config ให้ — แต่ไม่เปิดให้ มันจะพิมพ์คำสั่งเปิดออกมาให้คนกดเอง</p>
   <div class="out"><pre>[300] placed: CT 9300 on pve01, local-lvm:vm-9300-disk-0, rsync rc=0 in 412s
@@ -344,7 +324,7 @@ ls /sys/class/net/vmbr99/brif/</pre></div>
      <span class="m">would come up UNABLE TO ANSWER</span> — ต้องใส่ bridge จริงเองก่อนเปิด</p></div>
 
   <h3>ขั้นที่ 4 — ทั้งฟลีตทีเดียว เมื่อซ้อมตัวแรกผ่านแล้ว</h3>
-  <div class="code"><pre>./ketsync distribute --all</pre></div>
+  <details class="cmd"><summary>./ketsync distribute --all</summary><div class="code"><pre>./ketsync distribute --all</pre></div></details>
   <p>ตัวไหนพลาดมันข้ามไปตัวถัดไป ไม่หยุดทั้งชุด แล้วสรุปตอนท้ายว่าตัวไหนไม่ผ่านเพราะอะไร</p>
 
   <h3>ด่านที่จะเจอบ่อยที่สุด</h3>
@@ -377,10 +357,10 @@ ls /sys/class/net/vmbr99/brif/</pre></div>
      เครื่องมือที่แก้ปัญหา single point of failure อันหนึ่ง เพิ่งสร้างอันใหม่ขึ้นมา
      <span class="m">ketsync recall</span> คือสิ่งที่ปิดช่องนั้น</p></div>
 
-  <div class="code"><pre><span class="c"># read only, changes nothing</span>
+  <details class="cmd"><summary>./ketsync recall --list</summary><div class="code"><pre><span class="c"># read only, changes nothing</span>
 ./ketsync recall --list
 <span class="c"># 9300 -&gt; 8300, repeatable, run it as often as you like</span>
-./ketsync recall --all</pre></div>
+./ketsync recall --all</pre></div></details>
   <p>มันก๊อปจาก 9300 กลับเข้าสำเนา 8300 บนเครื่อง backup — ทิศทางตรงข้ามกับ
      <span class="m">distribute</span> รอบแรกนานหน่อย รอบต่อๆ ไปย้ายเฉพาะส่วนที่เปลี่ยน
      สั่งได้บ่อยเท่าที่อยากสั่ง ทุกชั่วโมงก็ได้ ลูกค้ายังใช้งานได้ตามปกติระหว่างนั้น</p>
@@ -406,10 +386,10 @@ ls /sys/class/net/vmbr99/brif/</pre></div>
      ไม่ใช่การเดา</p>
 
   <h3>เฝ้าเนื้อที่บนเครื่อง compute ไปด้วย</h3>
-  <div class="code"><pre><span class="c"># on each COMPUTE node running a 9xxx container</span>
+  <details class="cmd"><summary>free -h</summary><div class="code"><pre><span class="c"># on each COMPUTE node running a 9xxx container</span>
 free -h
 lvs pve
-df -h /</pre></div>
+df -h /</pre></div></details>
   <p>RAM ใกล้เต็มแปลว่าย้ายมาเพิ่มไม่ได้แล้ว เนื้อที่ pool ใกล้เต็มอันตรายกว่ามาก:
      thin pool ที่เต็มไม่ได้แค่เขียนไม่ได้ มันทำให้ทั้ง pool กลายเป็น read-only
      ซึ่งลาก CT ทุกตัวบนเครื่องนั้นลงไปด้วย เหลือน้อยกว่า 20% เมื่อไหร่ให้หยุดย้ายเพิ่มทันที</p>
@@ -433,17 +413,17 @@ df -h /</pre></div>
   <h3>ลำดับที่ปลอดภัย</h3>
   <ol class="steps">
     <li>เปิดเครื่อง storage ขึ้นมา แล้วใส่ PAUSE ทันที
-      <div class="code"><pre><span class="c"># on the STORAGE node, immediately after boot</span>
-touch /root/ketsync/engines/tp/PAUSE</pre></div></li>
+      <details class="cmd"><summary>touch /root/ketsync/engines/tp/PAUSE</summary><div class="code"><pre><span class="c"># on the STORAGE node, immediately after boot</span>
+touch /root/ketsync/engines/tp/PAUSE</pre></div></details></li>
     <li>เช็กว่าดิสก์และ storage กลับมาครบ
-      <div class="code"><pre>zpool status
+      <details class="cmd"><summary>zpool status</summary><div class="code"><pre>zpool status
 pvesm status
-./ketsync doctor</pre></div></li>
+./ketsync doctor</pre></div></details></li>
     <li>เริ่มไล่ช่องว่างให้แคบลง ทำสองคำสั่งนี้สลับกันได้เรื่อยๆ ลูกค้ายังใช้งานอยู่
-      <div class="code"><pre><span class="c"># 9300 -&gt; 8300, on the machine driving the DR</span>
+      <details class="cmd"><summary>./ketsync recall --all</summary><div class="code"><pre><span class="c"># 9300 -&gt; 8300, on the machine driving the DR</span>
 ./ketsync recall --all
 <span class="c"># 8300 -&gt; the production image, on the STORAGE node</span>
-./ketsync failback --all</pre></div>
+./ketsync failback --all</pre></div></details>
       <p>ทั้งคู่เป็นเครื่องมือแบบ presync ยิ่งทำหลายรอบ รอบตัดจริงยิ่งสั้น
          ดูตัวเลข <code class="inl">changed=</code> ของทั้งสองคำสั่ง พอมันไม่ลดแล้วก็พร้อมตัด</p></li>
   </ol>
@@ -454,8 +434,8 @@ pvesm status
      และกันได้แน่นกว่า R2 ด้วย</p></div>
 
   <h3>ถ้าเผลอปล่อยให้ cron ทำงานไปก่อน</h3>
-  <div class="code"><pre>grep -l 'GUARD R13' /root/ketsync/logs/replica-*.log
-grep 'ok=' /root/ketsync/logs/replica-*-$(date +%F).log | tail -3</pre></div>
+  <details class="cmd"><summary>grep -l 'GUARD R13' /root/ketsync/logs/replica-*.log</summary><div class="code"><pre>grep -l 'GUARD R13' /root/ketsync/logs/replica-*.log
+grep 'ok=' /root/ketsync/logs/replica-*-$(date +%F).log | tail -3</pre></div></details>
   <p>บรรทัดที่ขึ้น <code class="inl">GUARD R13</code> คือตัวที่รอด เพราะมี 9xxx อยู่
      ตัวที่ขึ้นว่า ok ในรอบนั้นคือตัวที่ไม่มี 9xxx และถูกก๊อปทับไปตามปกติ ซึ่งถูกต้องแล้ว</p>
 </section>
@@ -467,22 +447,22 @@ grep 'ok=' /root/ketsync/logs/replica-*-$(date +%F).log | tail -3</pre></div>
      ซึ่งถ้าทำขั้น 3 กับ 4 มาดีแล้วจะเหลือเป็นวินาที</p>
   <ol class="steps">
     <li>ปิดตัวชั่วคราว
-      <div class="code"><pre><span class="c"># on the COMPUTE node running it</span>
-pct shutdown 9300</pre></div></li>
+      <details class="cmd"><summary>pct shutdown 9300</summary><div class="code"><pre><span class="c"># on the COMPUTE node running it</span>
+pct shutdown 9300</pre></div></details></li>
     <li>ดึงรอบสุดท้ายจาก 9300 เข้าสำเนา
-      <div class="code"><pre>./ketsync recall --ctid 300 --final</pre></div>
+      <details class="cmd"><summary>./ketsync recall --ctid 300 --final</summary><div class="code"><pre>./ketsync recall --ctid 300 --final</pre></div></details>
       <p>ต้องปิด 9300 ก่อนถึงจะสั่ง <code class="inl">--final</code> ได้ และถ้ามันปิดอยู่แล้ว
          แต่ไม่ได้ใส่ <code class="inl">--final</code> มันจะปฏิเสธ — “บังเอิญมันปิดอยู่”
          กับ “เรากำลังตัดกลับ” เป็นคนละเจตนา</p></li>
     <li>ดึงรอบสุดท้ายจากสำเนาเข้าไฟล์ดิสก์ตัวจริง
-      <div class="code"><pre><span class="c"># on the STORAGE node - PAUSE must already exist</span>
-./ketsync failback --ctid 300 --final</pre></div>
+      <details class="cmd"><summary>./ketsync failback --ctid 300 --final</summary><div class="code"><pre><span class="c"># on the STORAGE node - PAUSE must already exist</span>
+./ketsync failback --ctid 300 --final</pre></div></details>
       <p>ด่าน B7 จะ snapshot ไฟล์ดิสก์ตัวจริงก่อนเขียนทับ ถ้า snapshot ไม่สำเร็จมันจะไม่ทำ
          นี่คือทางถอยทางเดียวของขั้นนี้</p></li>
     <li>เปิดตัวจริง แล้วเปิด onboot กลับ
-      <div class="code"><pre><span class="c"># on the COMPUTE node that owns CT 300</span>
+      <details class="cmd"><summary>pct set 300 --onboot 1</summary><div class="code"><pre><span class="c"># on the COMPUTE node that owns CT 300</span>
 pct set 300 --onboot 1
-pct start 300</pre></div></li>
+pct start 300</pre></div></details></li>
   </ol>
   <div class="warn"><p><b>อย่าเพิ่ง destroy 9300</b> ปล่อยไว้จนกว่าจะเช็กแล้วว่าตัวจริงกลับมาถูกต้อง
      ตราบใดที่ 9300 ยังอยู่ R13 ก็ยังกันไม่ให้ cron เขียนทับสำเนา — ทางถอยยังอยู่ครบ</p></div>
@@ -493,21 +473,33 @@ pct start 300</pre></div></li>
   <ol class="steps">
     <li>เช็กก่อนว่าตัวจริงใช้งานได้จริง ไม่ใช่แค่บูตขึ้น — เข้าเว็บ ลองสั่งงาน ดู log ของ CT เอง</li>
     <li>เก็บกวาดตัวชั่วคราวบนเครื่อง compute ให้หมด
-      <div class="code"><pre><span class="c"># on each COMPUTE node - check it is stopped and already recalled first</span>
+      <details class="cmd"><summary>pct status 9300</summary><div class="code"><pre><span class="c"># on each COMPUTE node - check it is stopped and already recalled first</span>
 pct status 9300
-pct destroy 9300</pre></div>
+pct destroy 9300</pre></div></details>
       <p>คำสั่งนี้คือสิ่งที่<b>ปลด R13</b> หลังจากนี้ cron จะกลับมาเขียนทับสำเนา 8300
          ตามปกติ ทำหลังจากมั่นใจแล้วเท่านั้น เครื่องมือในชุดนี้ไม่มีตัวไหนสั่งเองเลย
          ด้วยเหตุผลนี้ข้อเดียว</p></li>
     <li>ลบ <code class="inl">PAUSE</code> เพื่อให้เริ่มก๊อปตามปกติอีกครั้ง
-      <div class="code"><pre><span class="c"># on the STORAGE node</span>
-rm /root/ketsync/engines/tp/PAUSE</pre></div></li>
+      <details class="cmd"><summary>rm /root/ketsync/engines/tp/PAUSE</summary><div class="code"><pre><span class="c"># on the STORAGE node</span>
+rm /root/ketsync/engines/tp/PAUSE</pre></div></details></li>
     <li>ดูรอบแรกหลังเปิดใหม่ว่าเขียวจริง
-      <div class="code"><pre>./ketsync replica --ctid 300
-./ketsync status</pre></div></li>
+      <details class="cmd"><summary>./ketsync replica --ctid 300</summary><div class="code"><pre>./ketsync replica --ctid 300
+./ketsync status</pre></div></details></li>
   </ol>
   <div class="ok"><p><b>จบแล้วจดไว้หน่อย</b> ว่าติดตรงไหน ใช้เวลาเท่าไหร่ อะไรที่หน้านี้ไม่ได้บอก
      ครั้งหน้าจะได้ไม่ต้องคิดใหม่ และเอามาเติมในหน้านี้ได้เลย</p></div>
+
+  <h3>ให้เครื่องมือบอกเองว่าเหลืออะไร</h3>
+  <p>ทุกอย่างที่ DR ทิ้งไว้ ตอนนี้ <span class="m">doctor</span> เห็นหมด และมันเห็นทุกวัน ไม่ใช่เห็นตอนภัยพิบัติครั้งหน้า
+     — ตู้ที่ยังถูกตัดเน็ตอยู่ storage ที่ยังปิดอยู่ 9xxx ที่ยังไม่ถูกลบ และบรรทัด cron ที่จะโดนปฏิเสธเพราะไม่มี
+     <span class="m">-y</span></p>
+  <div class="code"><pre>./ketsync doctor</pre></div>
+  <p>คืนค่าที่เครื่องมือเปลี่ยนไว้ ด้วยของที่มันจดไว้เอง ไม่ต้องจำว่า bridge เดิมชื่ออะไร</p>
+  <div class="code"><pre><span class="c"># bridges and onboot, per container</span>
+./ketsync restore --all
+
+<span class="c"># the storages evacuate switched off, per node</span>
+./ketsync restore --node 10.100.1.32</pre></div>
 </section>
 
 <footer>
@@ -518,5 +510,43 @@ rm /root/ketsync/engines/tp/PAUSE</pre></div></li>
 </footer>
 
 </div>
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp'; btn.type = 'button'; btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.c').forEach(function(el){ el.remove(); });
+      var text = clone.textContent.split('\n').filter(function(l){ return l.trim() !== ''; }).join('\n');
+      var done = function(){ btn.textContent='copied'; setTimeout(function(){ btn.textContent='copy'; },1200); };
+      function fallback(){
+        var ta=document.createElement('textarea'); ta.value=text;
+        ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){ btn.textContent='select manually'; }
+        document.body.removeChild(ta);
+      }
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,fallback);}else{fallback();}
+    });
+    box.appendChild(btn);
+  });
+  var all = document.querySelectorAll('details.cmd');
+  if(all.length){
+    var b=document.createElement('button');
+    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    var open=false;
+    b.addEventListener('click',function(){
+      open=!open;
+      all.forEach(function(d){ d.open=open; });
+      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+    });
+    var first=document.querySelector('header.doc');
+    if(first) first.parentNode.insertBefore(b, first.nextSibling);
+  }
+})();
+</script>
 </body>
 </html>

@@ -143,12 +143,12 @@
     <tr><td class="m">backup</td><td class="m">10.100.1.9</td>
         <td>เก็บสำเนา CT ที่ปิดอยู่ ไว้ใช้ตอนฉุกเฉิน</td><td>ไม่ต้อง</td></tr>
   </table>
-  <div class="code"><pre>          <span class="c">writes</span>            <span class="c">mounts over NFS</span>
+  <details class="cmd"><summary>writes            mounts over NFS</summary><div class="code"><pre>          <span class="c">writes</span>            <span class="c">mounts over NFS</span>
   storage  ---------->  compute      (CT runs here)
      |
      | <span class="c">nightly copy</span>
      v
-  backup                             (a stopped copy waits here)</pre></div>
+  backup                             (a stopped copy waits here)</pre></div></details>
   <p>เครื่อง storage <b>ไม่ได้อยู่ใน cluster ของ Proxmox</b> ตั้งใจให้เป็นแบบนั้น
      มันเลยไม่รู้จักชื่อเครื่องอื่นเลย ทุกอย่างในระบบนี้จึงคุยกันด้วย IP ล้วน</p>
 </section>
@@ -179,49 +179,49 @@
      ข้ามข้อนี้ไปสำหรับเครื่อง storage</p></div>
 
   <h3>สร้าง cluster ที่เครื่อง compute เครื่องแรก</h3>
-  <div class="code"><pre><span class="c"># on the FIRST compute node</span>
-pvecm create tomato</pre></div>
+  <details class="cmd"><summary>pvecm create tomato</summary><div class="code"><pre><span class="c"># on the FIRST compute node</span>
+pvecm create tomato</pre></div></details>
 
   <h3>เอาเครื่องที่เหลือเข้ามา</h3>
-  <div class="code"><pre><span class="c"># on EVERY other compute node, and on the backup node</span>
-pvecm add 10.100.1.32</pre></div>
+  <details class="cmd"><summary>pvecm add 10.100.1.32</summary><div class="code"><pre><span class="c"># on EVERY other compute node, and on the backup node</span>
+pvecm add 10.100.1.32</pre></div></details>
   <p>ใส่ IP ของเครื่องแรกที่สร้าง cluster ไว้ มันจะถามรหัส root ของเครื่องนั้น</p>
 
   <h3>ตัวช่วยโหวต — ข้อนี้อย่าข้าม</h3>
   <p>cluster ตัดสินใจด้วยเสียงข้างมาก ถ้ามีเครื่องเลขคู่แล้วขาดไปครึ่งหนึ่ง จะไม่มีใครได้เสียงข้างมาก
      ทุกเครื่องจะหยุดเขียน config พร้อมกัน ตัวช่วยโหวตคือเสียงที่ 3 ที่ทำให้ไม่เกิดเรื่องนั้น</p>
-  <div class="code"><pre><span class="c"># on a small CT or VM that is NOT a cluster member</span>
+  <details class="cmd"><summary>apt install -y corosync-qnetd</summary><div class="code"><pre><span class="c"># on a small CT or VM that is NOT a cluster member</span>
 apt install -y corosync-qnetd
 
 <span class="c"># on EVERY cluster member - not one may be skipped</span>
 apt install -y corosync-qdevice
 
 <span class="c"># back on one cluster member, pointing at the voter</span>
-pvecm qdevice setup 10.100.1.40</pre></div>
+pvecm qdevice setup 10.100.1.40</pre></div></details>
 
   <h3>เช็กว่าผ่าน</h3>
-  <div class="code"><pre>pvecm status</pre></div>
+  <details class="cmd"><summary>pvecm status</summary><div class="code"><pre>pvecm status</pre></div></details>
   <p>ต้องเห็นคำว่า <code class="inl">Quorate: Yes</code> และเห็นชื่อเครื่องครบทุกตัวที่ join ไป
      ถ้าตั้งตัวช่วยโหวตแล้วต้องเห็น <code class="inl">Qdevice</code> ในรายการด้วย</p>
   <div class="tip"><p>ถ้า qnetd ไม่ยอมขึ้นหลังติดตั้ง มักเป็นเรื่องสิทธิ์ไฟล์ แก้ด้วยสองบรรทัดนี้
      บนเครื่องที่ลง qnetd</p>
-     <div class="code"><pre>chown -R coroqnetd:coroqnetd /etc/corosync/qnetd
-systemctl reset-failed corosync-qnetd &amp;&amp; systemctl restart corosync-qnetd</pre></div></div>
+     <details class="cmd"><summary>chown -R coroqnetd:coroqnetd /etc/corosync/qnetd</summary><div class="code"><pre>chown -R coroqnetd:coroqnetd /etc/corosync/qnetd
+systemctl reset-failed corosync-qnetd &amp;&amp; systemctl restart corosync-qnetd</pre></div></details></div>
 </section>
 
 <section id="s3">
   <div class="eyebrow"><span class="num">3</span><h2>ให้เครื่อง storage เข้าเครื่องอื่นได้โดยไม่ต้องถามรหัส</h2></div>
   <p>ระบบทำงานอัตโนมัติตอนกลางคืน จะมานั่งใส่รหัสไม่ได้ ทำครั้งเดียวจบ</p>
-  <div class="code"><pre><span class="c"># on the storage node</span>
+  <details class="cmd"><summary>ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519   # skip if you have …</summary><div class="code"><pre><span class="c"># on the storage node</span>
 ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519   <span class="c"># skip if you have one</span>
 
 ssh-copy-id root@10.100.1.9     <span class="c"># backup  - REQUIRED</span>
 ssh-copy-id root@10.100.1.32    <span class="c"># compute - one per node</span>
-ssh-copy-id root@10.100.1.33</pre></div>
+ssh-copy-id root@10.100.1.33</pre></div></details>
   <h3>เช็กว่าผ่าน</h3>
-  <div class="code"><pre>for ip in 10.100.1.9 10.100.1.32 10.100.1.33; do
+  <details class="cmd"><summary>for ip in 10.100.1.9 10.100.1.32 10.100.1.33; do</summary><div class="code"><pre>for ip in 10.100.1.9 10.100.1.32 10.100.1.33; do
   printf '%s ' "$ip"; ssh -o BatchMode=yes root@$ip true &amp;&amp; echo OK || echo FAIL
-done</pre></div>
+done</pre></div></details>
   <p>ต้องขึ้น <code class="inl">OK</code> ทุกบรรทัด ถ้ามีบรรทัดไหนขึ้น <code class="inl">FAIL</code>
      ให้ทำ <code class="inl">ssh-copy-id</code> เครื่องนั้นซ้ำ</p>
   <div class="tip"><p><b>เส้นที่ขาดไม่ได้จริงๆ มีเส้นเดียว</b> คือ storage ไปเครื่อง backup
@@ -235,17 +235,17 @@ done</pre></div>
   <p>ตรงนี้คนพลาดบ่อยที่สุด กติกาคือ <b>ชื่อต้องเหมือนกันเป๊ะ แต่ประเภทต้องต่างกัน</b>
      เพราะ config ของ CT จำแค่ชื่อ พอ CT ย้ายไปรันที่ compute มันจะหาจากชื่อเดิม
      แล้วเจอของที่ mount ผ่าน NFS ที่เครื่องนั้นเอง</p>
-  <div class="code"><pre><span class="c"># on the storage node - the real files live here</span>
+  <details class="cmd"><summary>pvesm add dir tank-hdd-nas --path /tank/hosting --is_mountpoint yes \</summary><div class="code"><pre><span class="c"># on the storage node - the real files live here</span>
 pvesm add dir tank-hdd-nas --path /tank/hosting --is_mountpoint yes \
   --content images,rootdir
 
 <span class="c"># on EVERY compute node - same id, reached over NFS</span>
 pvesm add nfs tank-hdd-nas --server 10.100.1.17 --export /tank/hosting \
-  --content images,rootdir</pre></div>
+  --content images,rootdir</pre></div></details>
   <h3>เช็กว่าผ่าน</h3>
-  <div class="code"><pre><span class="c"># must say "active" on BOTH sides, with the SAME id</span>
+  <details class="cmd"><summary>pvesm status | grep tank-hdd-nas</summary><div class="code"><pre><span class="c"># must say "active" on BOTH sides, with the SAME id</span>
 pvesm status | grep tank-hdd-nas
-ssh root@10.100.1.32 "pvesm status | grep tank-hdd-nas"</pre></div>
+ssh root@10.100.1.32 "pvesm status | grep tank-hdd-nas"</pre></div></details>
   <div class="stop"><p><b>ห้ามให้ pool ไปอยู่บน disk ระบบ</b> ถ้า dataset ไม่ได้ mount อยู่จริง
      Linux จะเห็นเป็นแค่โฟลเดอร์ว่างธรรมดา เขียนลงไปได้เรื่อยๆ จนดิสก์ระบบเต็มแล้วเครื่องล่ม
      ตัวโปรแกรมเช็กให้ก่อนเขียนทุกครั้ง (guard G1) แต่ตอนตั้งค่าก็ควรรู้ไว้</p></div>
@@ -255,7 +255,7 @@ ssh root@10.100.1.32 "pvesm status | grep tank-hdd-nas"</pre></div>
   <div class="eyebrow"><span class="num">5</span><h2>สร้าง bridge ปิดตาย ที่เครื่อง backup</h2></div>
   <p>สำเนาที่เก็บไว้ต้องต่ออยู่กับ “เกาะร้าง” — เป็น bridge ที่ไม่มีสายออกไปไหนเลย
      ถ้าวันหนึ่งมีคนเผลอเปิดสำเนาขึ้นมา มันจะออกเน็ตไม่ได้ ไม่ไปชนกับตัวจริง</p>
-  <div class="code"><pre><span class="c"># on the BACKUP node</span>
+  <details class="cmd"><summary>cat >> /etc/network/interfaces <<'EOF'</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
 cat &gt;&gt; /etc/network/interfaces &lt;&lt;'EOF'
 
 auto vmbr99
@@ -265,11 +265,11 @@ iface vmbr99 inet manual
     bridge-fd 0
 EOF
 
-ifup vmbr99</pre></div>
+ifup vmbr99</pre></div></details>
   <h3>เช็กว่าผ่าน</h3>
-  <div class="code"><pre><span class="c"># on the BACKUP node - the second line must print NOTHING</span>
+  <details class="cmd"><summary>ip -br link show vmbr99</summary><div class="code"><pre><span class="c"># on the BACKUP node - the second line must print NOTHING</span>
 ip -br link show vmbr99
-ls /sys/class/net/vmbr99/brif/</pre></div>
+ls /sys/class/net/vmbr99/brif/</pre></div></details>
   <p>บรรทัดแรกต้องเห็น <code class="inl">vmbr99</code> บรรทัดที่สองต้องว่างเปล่า
      ถ้ามีชื่อการ์ดโผล่มาแปลว่ามีสายต่ออยู่ — ต้องเอาออกก่อน ไม่งั้นโปรแกรมจะปฏิเสธไม่ยอมทำงาน (guard R9)
      ซึ่งถูกแล้ว อย่าไปปิด guard</p>
@@ -287,47 +287,47 @@ ls /sys/class/net/vmbr99/brif/</pre></div>
   <p>ของสองอย่างนี้อยู่คนละ pool กันบนเครื่องเดียวกัน ตั้งใจให้ไม่แย่งหัวอ่านดิสก์กัน</p>
 
   <h3>ติดตั้ง</h3>
-  <div class="code"><pre><span class="c"># on the BACKUP node</span>
+  <details class="cmd"><summary>echo "deb http://download.proxmox.com/debian/pbs bookworm pbs-no-subscript…</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
 echo "deb http://download.proxmox.com/debian/pbs bookworm pbs-no-subscription"   &gt; /etc/apt/sources.list.d/pbs.list
-apt update &amp;&amp; apt install -y proxmox-backup-server</pre></div>
+apt update &amp;&amp; apt install -y proxmox-backup-server</pre></div></details>
 
   <h3>ทำที่เก็บ แล้วทำผู้ใช้ให้ PVE เอาไว้ยิงเข้ามา</h3>
-  <div class="code"><pre>zfs create pbsstore-sas/chunks
+  <details class="cmd"><summary>zfs create pbsstore-sas/chunks</summary><div class="code"><pre>zfs create pbsstore-sas/chunks
 proxmox-backup-manager datastore create main /pbsstore-sas/chunks
 
 proxmox-backup-manager user create svc-pve@pbs --password 'CHANGE-ME'
-proxmox-backup-manager acl update /datastore/main DatastoreBackup   --auth-id svc-pve@pbs</pre></div>
+proxmox-backup-manager acl update /datastore/main DatastoreBackup   --auth-id svc-pve@pbs</pre></div></details>
   <p>ผู้ใช้ตัวนี้ได้สิทธิ์แค่ “ฝากของ” ไม่ได้สิทธิ์ลบ ตั้งใจให้เป็นแบบนั้น —
      ถ้าเครื่องใน cluster ถูกเจาะ คนที่เข้ามาจะลบ backup ย้อนหลังทิ้งไม่ได้</p>
 
   <h3>เอาลายนิ้วมือของ certificate ไว้</h3>
-  <div class="code"><pre>proxmox-backup-manager cert info | grep Fingerprint</pre></div>
+  <details class="cmd"><summary>proxmox-backup-manager cert info | grep Fingerprint</summary><div class="code"><pre>proxmox-backup-manager cert info | grep Fingerprint</pre></div></details>
   <p>ก๊อปค่าที่ได้ไว้ ใช้ตอนต่อ PVE เข้ามาในขั้นถัดไป</p>
 
   <h3>ตั้งงานประจำ 3 อย่าง</h3>
-  <div class="code"><pre>proxmox-backup-manager prune-job create daily-prune   --store main --schedule "daily 05:00"   --keep-daily 14 --keep-weekly 8 --keep-monthly 6
+  <details class="cmd"><summary>proxmox-backup-manager prune-job create daily-prune   --store main --sched…</summary><div class="code"><pre>proxmox-backup-manager prune-job create daily-prune   --store main --schedule "daily 05:00"   --keep-daily 14 --keep-weekly 8 --keep-monthly 6
 
 proxmox-backup-manager datastore update main --gc-schedule "sun 06:00"
 
-proxmox-backup-manager verify-job create weekly-verify   --store main --schedule "wed 22:00"   --ignore-verified true --outdated-after 30</pre></div>
+proxmox-backup-manager verify-job create weekly-verify   --store main --schedule "wed 22:00"   --ignore-verified true --outdated-after 30</pre></div></details>
   <p>prune คือตัดรุ่นเก่าทิ้งตามกฎ, GC คือคืนเนื้อที่จริง (prune อย่างเดียวไม่คืนเนื้อที่),
      verify คืออ่านทุก chunk มาเทียบ checksum ว่ายังอ่านได้อยู่จริง
      เวลาที่ตั้งไว้เลี่ยงไม่ให้ทับกับ backup job ตอนตี 2 ครึ่ง</p>
 
   <h3>ต่อ PBS เข้า cluster แล้วตั้ง backup ทุกคืน</h3>
-  <div class="code"><pre><span class="c"># on ANY cluster member</span>
+  <details class="cmd"><summary>pvesm add pbs pbs-main   --server 10.100.1.9 --datastore main   --username…</summary><div class="code"><pre><span class="c"># on ANY cluster member</span>
 pvesm add pbs pbs-main   --server 10.100.1.9 --datastore main   --username svc-pve@pbs --password 'CHANGE-ME'   --fingerprint 'PASTE-THE-FINGERPRINT-HERE'
 
-pvesh create /cluster/backup   --all 1 --storage pbs-main --schedule "02:30"   --mode snapshot --mailnotification failure   --notes-template '{{guestname}}'</pre></div>
+pvesh create /cluster/backup   --all 1 --storage pbs-main --schedule "02:30"   --mode snapshot --mailnotification failure   --notes-template '{{guestname}}'</pre></div></details>
   <p><code class="inl">--all 1</code> แปลว่า guest ที่สร้างทีหลังจะเข้า job นี้เองอัตโนมัติ
      ไม่ต้องมานั่งเพิ่มทีละตัว ซึ่งเป็นวิธีที่ CT ตัวใหม่มักจะหลุดไม่ได้ backup</p>
 
   <h3>เช็กว่าผ่าน</h3>
-  <div class="code"><pre><span class="c"># on any cluster member</span>
+  <details class="cmd"><summary>pvesm status | grep pbs-main</summary><div class="code"><pre><span class="c"># on any cluster member</span>
 pvesm status | grep pbs-main
 
 <span class="c"># on the BACKUP node, after the first night</span>
-proxmox-backup-manager task list | head</pre></div>
+proxmox-backup-manager task list | head</pre></div></details>
   <p>ต้องขึ้น <code class="inl">active</code> และคืนถัดมาต้องเห็น task ที่จบด้วย OK</p>
   <div class="warn"><p><b>สำเนาที่ ct-replica ทำ ไม่ได้เข้า PBS</b> คนละระบบกัน
      ตัวสำเนาปิดอยู่และไม่ได้อยู่ใน backup job — ถ้าอยากให้เข้าด้วยต้องเพิ่มเอง
@@ -337,14 +337,14 @@ proxmox-backup-manager task list | head</pre></div>
 <section id="s6">
   <div class="eyebrow"><span class="num">7</span><h2>ลงตัวโปรแกรม</h2></div>
   <p>ลงที่เครื่อง storage เครื่องเดียว clone ครั้งเดียวได้ครบ ไม่ต้อง clone ซ้ำที่ไหนอีก</p>
-  <div class="code"><pre><span class="c"># on the storage node</span>
+  <details class="cmd"><summary>git clone <this repo> /root/ketsync</summary><div class="code"><pre><span class="c"># on the storage node</span>
 git clone &lt;this repo&gt; /root/ketsync
 cd /root/ketsync
 
 cp ketsync.conf.sample  ketsync.conf
 cp nodes.tsv.sample     nodes.tsv
 cp fleet.tsv.sample     fleet.tsv
-cp engines/tp/inventory-replica.sample.tsv engines/tp/inventory-replica.tsv</pre></div>
+cp engines/tp/inventory-replica.sample.tsv engines/tp/inventory-replica.tsv</pre></div></details>
   <p>ไฟล์ที่ลงท้าย <code class="inl">.sample</code> คือตัวอย่าง ก๊อปแล้วตัดคำว่า sample ออกถึงใช้จริง
      ตัวอย่างจะถูกอัปเดตตอน <code class="inl">git pull</code> ส่วนตัวจริงของคุณจะไม่ถูกทับ</p>
 </section>
@@ -353,26 +353,26 @@ cp engines/tp/inventory-replica.sample.tsv engines/tp/inventory-replica.tsv</pre
   <div class="eyebrow"><span class="num">8</span><h2>กรอก 3 ไฟล์ แค่นี้พอ</h2></div>
 
   <h3>ไฟล์ที่ 1 — ketsync.conf: เครื่องนี้เป็นตัวหลักรึเปล่า</h3>
-  <div class="code"><pre>KS_ROLE=master
-KS_MASTER_IP=10.100.1.17</pre></div>
+  <details class="cmd"><summary>KS_ROLE=master</summary><div class="code"><pre>KS_ROLE=master
+KS_MASTER_IP=10.100.1.17</pre></div></details>
   <p>เครื่อง storage คือ <code class="inl">master</code> เครื่อง backup ใส่
      <code class="inl">slave</code> ตัวหลักเท่านั้นที่แก้ตารางได้ เครื่องอื่นรับมาอย่างเดียว
      ระบบไม่สลับให้เอง — คนเปลี่ยนเองตอนจำเป็น ตั้งใจให้เป็นแบบนั้น</p>
 
   <h3>ไฟล์ที่ 2 — nodes.tsv: ทุกเครื่องที่ระบบจะคุยด้วย</h3>
-  <div class="code"><pre># ip	role
+  <details class="cmd"><summary>10.100.1.17	storage</summary><div class="code"><pre># ip	role
 10.100.1.17	storage
 10.100.1.9	backup
 10.100.1.32	compute
-10.100.1.33	compute</pre></div>
+10.100.1.33	compute</pre></div></details>
   <p>คั่นด้วยปุ่ม Tab ไม่ใช่เว้นวรรค ไม่มีคอลัมน์ชื่อเครื่องนะ ตั้งใจตัดออก
      ชื่อ node ของ Proxmox ระบบจะไปถามมาเองแล้วเก็บไว้ที่ <code class="inl">nodes.map</code>
      ซึ่งห้ามแก้มือ</p>
 
   <h3>ไฟล์ที่ 3 — engines/tp/inventory-replica.tsv: จะก๊อป CT ตัวไหนบ้าง</h3>
-  <div class="code"><pre># src_ctid  [tgt_ctid]  [storage-assert]  dest
+  <details class="cmd"><summary>105                                       replica-ssd</summary><div class="code"><pre># src_ctid  [tgt_ctid]  [storage-assert]  dest
 105                                       replica-ssd
-113                                       replica-hdd</pre></div>
+113                                       replica-hdd</pre></div></details>
   <p>คอลัมน์แรกคือเลข CT ที่จะก๊อป ส่วน <code class="inl">replica-ssd</code> กับ
      <code class="inl">replica-hdd</code> คือจะเก็บลง pool ไหนที่เครื่อง backup
      เริ่มจากใส่แค่ตัวเดียวก่อนก็ได้ แล้วค่อยเพิ่มทีหลัง</p>
@@ -391,8 +391,8 @@ KS_MASTER_IP=10.100.1.17</pre></div>
 <section id="s8">
   <div class="eyebrow"><span class="num">9</span><h2>สั่งตรวจ แล้วแก้จนเขียวหมด</h2></div>
   <p>คำสั่งนี้อ่านอย่างเดียว ไม่แตะข้อมูลอะไรเลย สั่งซ้ำได้ไม่จำกัด</p>
-  <div class="code"><pre>cd /root/ketsync
-./ketsync doctor</pre></div>
+  <details class="cmd"><summary>cd /root/ketsync</summary><div class="code"><pre>cd /root/ketsync
+./ketsync doctor</pre></div></details>
   <p>มันจะไล่บอกทีละบรรทัดว่าอะไรผ่านอะไรไม่ผ่าน อ่านจากบนลงล่างแล้วแก้ทีละอัน
      ที่ต้องผ่านให้ได้ก่อนคือ <b>ssh ไปเครื่อง backup</b> เพราะชื่อ node ทุกตัวมาจากเส้นนั้นเส้นเดียว</p>
   <div class="out">== the backup node, which everything else leans on
@@ -407,23 +407,23 @@ KS_MASTER_IP=10.100.1.17</pre></div>
   <div class="eyebrow"><span class="num">10</span><h2>ซ้อมก่อนของจริง</h2></div>
   <p>เลือก CT ที่ไม่สำคัญมาตัวเดียว แล้วสั่งแบบซ้อม มันจะเดินผ่านด่านตรวจครบทุกด่านเหมือนของจริง
      ต่างกันแค่ไม่เขียนอะไรลงดิสก์เลยสักไบต์</p>
-  <div class="code"><pre>./ketsync replica --dry-run --ctid 105</pre></div>
+  <details class="cmd"><summary>./ketsync replica --dry-run --ctid 105</summary><div class="code"><pre>./ketsync replica --dry-run --ctid 105</pre></div></details>
   <p>อ่านผลว่ามันบอกจะทำอะไรบ้าง ถ้าดูแล้วตรงกับที่คิด ค่อยสั่งของจริงตัวเดียวก่อน</p>
-  <div class="code"><pre>./ketsync replica --ctid 105</pre></div>
+  <details class="cmd"><summary>./ketsync replica --ctid 105</summary><div class="code"><pre>./ketsync replica --ctid 105</pre></div></details>
   <p>รอบแรกจะนานหน่อยเพราะก๊อปทั้งก้อน รอบต่อไปจะเร็วมากเพราะก๊อปเฉพาะส่วนที่เปลี่ยน
      พอตัวแรกผ่านแล้วค่อยสั่งทั้ง lane</p>
-  <div class="code"><pre>./ketsync replica --storage tank-hdd-nas</pre></div>
+  <details class="cmd"><summary>./ketsync replica --storage tank-hdd-nas</summary><div class="code"><pre>./ketsync replica --storage tank-hdd-nas</pre></div></details>
 </section>
 
 <section id="s10">
   <div class="eyebrow"><span class="num">11</span><h2>ตั้งให้ทำเองทุก 15 นาที</h2></div>
   <p>ใส่ทีละ lane อย่าใส่พร้อมกันสองอัน ดูสักรอบสองรอบว่า log ออกมาปกติก่อนค่อยใส่ตัวถัดไป</p>
-  <div class="code"><pre>crontab -e</pre></div>
-  <div class="code"><pre>*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-hdd-nas
-*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-ssd-nas</pre></div>
+  <details class="cmd"><summary>crontab -e</summary><div class="code"><pre>crontab -e</pre></div></details>
+  <details class="cmd"><summary>*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-hdd-nas</summary><div class="code"><pre>*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-hdd-nas
+*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-ssd-nas</pre></div></details>
   <h3>เช็กว่าทำงานอยู่จริง</h3>
-  <div class="code"><pre>./ketsync status
-tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div>
+  <details class="cmd"><summary>./ketsync status</summary><div class="code"><pre>./ketsync status
+tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div></details>
   <div class="warn"><p>ใน cron ต้องใส่ path เต็มเสมอ และเป็น path ของ engine ตรงๆ
      (<code class="inl">engines/tp/ct-replica.sh</code>) ไม่ใช่
      <code class="inl">./ketsync</code> — เพราะ cron ไม่รู้ว่าตอนนี้อยู่โฟลเดอร์ไหน</p></div>
@@ -476,5 +476,43 @@ tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div>
 </footer>
 
 </div>
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp'; btn.type = 'button'; btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.c').forEach(function(el){ el.remove(); });
+      var text = clone.textContent.split('\n').filter(function(l){ return l.trim() !== ''; }).join('\n');
+      var done = function(){ btn.textContent='copied'; setTimeout(function(){ btn.textContent='copy'; },1200); };
+      function fallback(){
+        var ta=document.createElement('textarea'); ta.value=text;
+        ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){ btn.textContent='select manually'; }
+        document.body.removeChild(ta);
+      }
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,fallback);}else{fallback();}
+    });
+    box.appendChild(btn);
+  });
+  var all = document.querySelectorAll('details.cmd');
+  if(all.length){
+    var b=document.createElement('button');
+    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    var open=false;
+    b.addEventListener('click',function(){
+      open=!open;
+      all.forEach(function(d){ d.open=open; });
+      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+    });
+    var first=document.querySelector('header.doc');
+    if(first) first.parentNode.insertBefore(b, first.nextSibling);
+  }
+})();
+</script>
 </body>
 </html>

@@ -161,13 +161,74 @@ cmd_doctor(){
     # ct-distribute.sh was missing from this list, which meant the one engine
     # you reach for while the storage node is dead was the one nobody checked
     # was runnable.
-    for f in tp ct-migrate.sh ct-replica.sh ct-failback.sh ct-distribute.sh ct-recall.sh; do
+    for f in tp ct-migrate.sh ct-replica.sh ct-failback.sh ct-distribute.sh ct-recall.sh ct-prepare.sh; do
       if [[ -x "$KS_BASE/engines/tp/$f" ]]; then say "  $f ok"
       else say "  $f is NOT EXECUTABLE - cron would exit 126. chmod +x engines/tp/$f"; rc=1; fi
     done
 
     echo
     "$KS_BASE/engines/tp/tp" doctor || rc=1
+  fi
+
+  # ---- what a half-finished DR left behind -------------------------------
+  # Every one of these clears itself when the last step of the runbook is
+  # actually done, and every one of them is invisible until the NEXT disaster
+  # if it is not. A container still on the isolated bridge is a customer who
+  # cannot be reached; a storage still disabled is a fleet running on a
+  # storage nobody can see; a 9<id> still in pmxcfs is D3 refusing the next
+  # placement of that container. None of them produce an error today.
+  #
+  # Read-only, and asked of the backup node because it is a cluster member and
+  # this may be running from the storage node, which is deliberately not one.
+  say "== what a disaster left behind"
+  local bkp left=0 f
+  bkp="$(awk '$1!~/^#/ && $2=="backup"{print $1; exit}' "$KS_NODES" 2>/dev/null)"
+  if [[ -z "$bkp" ]]; then
+    say "  no backup node in $(basename "$KS_NODES") - cannot ask the cluster"; rc=1
+  elif ! ks_ssh "$bkp" true 2>/dev/null; then
+    say "  cannot reach the backup node ($bkp) - this is the one check that"
+    say "  needs a cluster member, and unanswered is not the same as clean"; rc=1
+  else
+    for f in $(ks_ssh "$bkp" "ls /etc/pve/ketsync/isolate/ 2>/dev/null" | sed 's/\.tsv$//'); do
+      say "  CT $f is still ISOLATED - it is on the isolation bridge and cannot answer"
+      say "    put it back with:  ./ketsync restore --ctid $f"
+      left=1; rc=1
+    done
+    for f in $(ks_ssh "$bkp" "ls /etc/pve/ketsync/evacuate/ 2>/dev/null" | sed 's/\.tsv$//'); do
+      say "  node $f still has storages DISABLED by an evacuate"
+      say "    switch them back on with:  ./ketsync restore --node <that node's ip>"
+      left=1; rc=1
+    done
+    # A 9<id> that outlived its DR is the one that refuses the next one. It is
+    # asked of pmxcfs rather than of any state file, for the same reason R13
+    # does: it is a fact PVE is holding, not a note somebody left.
+    for f in $(ks_ssh "$bkp" "ls /etc/pve/nodes/*/lxc/9*.conf 2>/dev/null" \
+               | sed 's|.*/||; s|\.conf$||'); do
+      say "  CT $f is still placed - a DR container that outlived its disaster"
+      say "    it also makes D3 refuse the next placement of CT ${f#9}."
+      say "    recall it, then destroy it - the DR guide's last stage says how."
+      left=1; rc=1
+    done
+    (( left )) || say "  nothing left over"
+  fi
+
+  # ---- cron lines that would refuse to run --------------------------------
+  # A command that writes asks first, and a cron line has nobody to ask, so it
+  # refuses with exit 2. That is the correct behaviour and it is also silent
+  # until somebody reads the mail nobody has set up yet. So it is checked here,
+  # on a Tuesday, rather than found at 02:00 on the night it mattered.
+  say "== cron lines that call ketsync without -y"
+  local cronhits
+  cronhits="$( { crontab -l 2>/dev/null; cat /etc/cron.d/* /etc/crontab 2>/dev/null; } \
+               | grep -v '^[[:space:]]*#' | grep 'ketsync' | grep -v -- '-y' || true )"
+  if [[ -n "$cronhits" ]]; then
+    say "  these would REFUSE, because there is nobody there to answer:"
+    while IFS= read -r f; do [[ -n "$f" ]] && say "    $f"; done <<< "$cronhits"
+    say "  add -y to each. It means the decision was already made, and it"
+    say "  skips the question and nothing else."
+    rc=1
+  else
+    say "  none"
   fi
 
   return $rc

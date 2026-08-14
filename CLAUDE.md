@@ -76,6 +76,12 @@ smaller. Do not read it as the new bar. The helper that printed "designed but
 not built" is gone with the last stub; bring it back with the next one rather
 than keeping it warm.
 
+**8a. The guides carry the commands; every command block is collapsible and
+copyable.** A runbook read at 3am is skimmed for the next thing to type, so
+the commands fold away and the prose reads as a flow. `docs/how-it-works.html`
+is the map and deliberately has no commands in it: two files holding the same
+commands is one file going stale.
+
 **8. Nothing that writes to a real machine ships without a simulator.** Read
 `tests/README.md`. `sync` has one - 21 scenarios and 19 mutations - and writing
 it found three bugs that had been live on the fleet, none of which review had
@@ -103,8 +109,14 @@ being separate when they stopped being empty.
 
 ## Layout
 
-    docs/index.html      which of the five guides to open. Every guide links
+    docs/index.html      which of the six guides to open. Every guide links
                          back to it, so a reader who lands anywhere can get out
+    docs/how-it-works.html
+                         the map: normal replication and the six DR stages on
+                         one page, with a table of which step is the tool's and
+                         which is a person's. No commands - that is the
+                         runbook's job, and two files with the same commands in
+                         them is one that goes stale
     docs/infrastructure-setup.html
                          build the whole thing from nothing. Written for a
                          reader who does not do infra for a living: every step
