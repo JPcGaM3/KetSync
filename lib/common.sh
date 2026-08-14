@@ -142,3 +142,41 @@ require_node_name(){   # $1 = ip -> its PVE node name, or refuse
   [[ -n "$n" ]] || die "no PVE node name known for $1 - run 'ketsync doctor' while the cluster is up"
   printf '%s' "$n"
 }
+
+# ---------------------------------------------------------------------------
+#  ks_confirm — the last thing between a person and a command that writes
+# ---------------------------------------------------------------------------
+#  Not "are you sure". A prompt that asks that teaches people to press y
+#  without reading, and then it is worth less than nothing because it looks
+#  like a safety net while being a keystroke. This one states what the command
+#  writes and how to see it first, and defaults to NO.
+#
+#  It lives here, at the dispatcher, and not in the engines. The engines are
+#  what cron calls - `ct-replica.sh --storage tank-hdd-nas` in a crontab is
+#  reviewed once, by somebody awake, and prompting it would mean every existing
+#  cron line silently stopping until a flag was added. A person types
+#  `ketsync`. That is the line where a person is standing.
+#
+#  NO TTY AND NO -y IS A REFUSAL, not a silent no. `read` with nothing on stdin
+#  returns immediately and empty; taking that as "no" and exiting 0 would be a
+#  scheduled run reporting success every night having done nothing at all,
+#  which is the one outcome this repo refuses everywhere else.
+ks_confirm(){   # $1 = one line saying what this writes, $2.. = how to preview
+  local ans
+  if [[ "${KS_ASSUME_YES:-0}" == 1 ]]; then return 0; fi
+  if [[ ! -t 0 ]]; then
+    say "REFUSED: this command writes, and there is nobody here to ask."
+    say "  $1"
+    say "  running from cron or a script? add -y, which means you have already"
+    say "  decided. It skips the question and nothing else - no guard, ever."
+    return 2
+  fi
+  printf '%s\n' "$1"
+  local l; for l in "${@:2}"; do printf '%s\n' "$l"; done
+  printf 'proceed? [y/N] '
+  read -r ans || ans=""
+  case "$ans" in
+    y|Y|yes|YES) return 0;;
+    *) say "nothing was done."; return 1;;
+  esac
+}

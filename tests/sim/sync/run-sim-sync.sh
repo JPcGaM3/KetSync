@@ -138,7 +138,11 @@ run_ks(){
     ssh(){   "$SIMBIN/ssh"   "$@"; }
     rsync(){ "$SIMBIN/rsync" "$@"; }
     export -f ssh rsync
-    "$MASTER/ketsync" "$@" ) > "$SIMROOT/out" 2>&1
+    # -y, because this harness is a machine and sync now asks a person before
+    # it writes. Every scenario here is about what sync DOES; the question
+    # itself has its own simulator, and half of that one runs under a pty
+    # because there is no other way to test a prompt.
+    "$MASTER/ketsync" "$@" -y ) > "$SIMROOT/out" 2>&1
   RC=$?
   OUT="$(cat "$SIMROOT/out")"
   TRACE="$(cat "$SIMROOT/trace")"

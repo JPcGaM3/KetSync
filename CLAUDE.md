@@ -18,6 +18,16 @@ guards and the mutation suite are, or you are about to reintroduce a bug that
 exception is Thai prose in operator guides, and never inside `<pre>` or
 `<code>` — commands get pasted at 2am.
 
+**2a. A command that writes asks first, and a bare one refuses.** `-y` means
+"I have already decided" and skips the question and nothing else; there is no
+`--force` and there must not be, because a flag whose use case has to be
+invented under pressure is a flag that gets used under pressure. No terminal
+and no `-y` is a REFUSAL, not a quiet no: `read` on an empty stdin returns
+immediately, and treating that as "no" would be a nightly cron reporting
+success having done nothing. `--dry-run` and `--list` are never asked about,
+or the answer gets trained. The question lives in the dispatcher because that
+is where a person stands; cron calls the engines directly and is not prompted.
+
 **2. Nothing decides who is master.** `KS_ROLE` is a line in a config file that
 a human edits. Two machines cannot tell "the master is dead" from "I cannot
 reach the master", and being wrong means two machines writing into one dataset.
@@ -71,16 +81,18 @@ than keeping it warm.
 it found three bugs that had been live on the fleet, none of which review had
 caught. `distribute` has one too, 13 and 13, because it is the only verb here
 that composes two engines and every joint between them is invisible from
-inside either one. `role` and `doctor` still do not, and that is the remaining
-debt. A
+inside either one. The confirmation has 15 and 14, and it needs its own
+because its whole behaviour turns on whether there is a person on the other
+end - the prompting half runs under a pty, and a pipe tests the refusal by
+being one. `role` and `doctor` still do not, and that is the remaining debt. A
 mutation that proves the simulator can fail is part of the simulator, not a
 follow-up.
 
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 372 tp scenarios + 34 for ketsync
-    make mutation # 357 known bugs put back. None may survive
+    make test     # both layers: 372 tp scenarios + 49 for ketsync
+    make mutation # 371 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -125,6 +137,8 @@ being separate when they stopped being empty.
                          the composed command: both engines are stubs that
                          record their argv, because the argv is the whole of
                          what the joins can get wrong
+    tests/sim/confirm/   the question before a write, half of it under a pty
+                         because there is no other way to test a prompt
     tests/mutation/      one mutation per guard, each proven to kill a scenario
 
 `engines/tp` came from the standalone `tp` repo at commit `b4ddc0c` and is now

@@ -70,9 +70,10 @@ test: test-tp test-ketsync  ## the real suite: both layers
 test-tp: tp-present  ## engines/tp: every simulator, the dispatcher, c2v, unit tests
 	@$(MAKE) --no-print-directory -C $(TP) test
 
-test-ketsync:    ## the decision layer: the sync and distribute simulators
+test-ketsync:    ## the decision layer: sync, distribute and the confirmation
 	@$(ROOT)/tests/sim/sync/run-sim-sync.sh
 	@$(ROOT)/tests/sim/distribute/run-sim-distribute.sh
+	@$(ROOT)/tests/sim/confirm/run-sim-confirm.sh
 
 mutation: tp-present mutation-ketsync  ## put every known bug back and prove the suites still notice
 	@$(MAKE) --no-print-directory -C $(TP) mutation
@@ -80,6 +81,7 @@ mutation: tp-present mutation-ketsync  ## put every known bug back and prove the
 mutation-ketsync:  ## the decision layer's own mutations
 	@$(ROOT)/tests/mutation/run-mutation-sync.sh
 	@$(ROOT)/tests/mutation/run-mutation-distribute.sh
+	@$(ROOT)/tests/mutation/run-mutation-confirm.sh
 
 clean:           ## remove run leftovers (never touches inventory or config)
 	@rm -rf $(ROOT)/logs/*.log

@@ -81,7 +81,10 @@ no_stub(){ rm -f "$MASTER/engines/tp/$1"; }
 unexec(){  chmod -x "$MASTER/engines/tp/$1"; }
 
 run_ks(){
-  ( cd "$MASTER" && ./ketsync "$@" ) > "$SIMROOT/out" 2>&1
+  # -y, because this harness is a machine and distribute asks a person before
+  # it writes. What is under test here is the composition; the question has its
+  # own simulator.
+  ( cd "$MASTER" && ./ketsync "$@" -y ) > "$SIMROOT/out" 2>&1
   RC=$?
   OUT="$(cat "$SIMROOT/out")"
   TRACE="$(cat "$SIMROOT/trace")"
@@ -222,14 +225,15 @@ if scenario "12: everything else is passed to the engine untouched"; then
   done_scenario
 fi
 
-if scenario "13: bare distribute prepares nothing it would not have prepared"; then
-  # No scope named. The engine refuses with its usage, and the point here is
-  # that the preparer is still asked first with the fleet-wide scope - so the
-  # two halves cannot disagree about what "no arguments" meant.
+if scenario "13: a bare verb reaches neither half - there is nothing to compose"; then
+  # No scope named. The dispatcher refuses with a menu before either engine is
+  # asked, and the reason it is asserted HERE as well is that a composition
+  # which prepared first and refused second would have evacuated a fleet on the
+  # way to printing a usage message.
   run_ks distribute
-  rc_is 0
-  ran "ct-prepare.sh --evacuate --all"
-  ran "tp distribute"
+  rc_is 2
+  never_ran ct-prepare.sh
+  never_ran tp
   done_scenario
 fi
 
