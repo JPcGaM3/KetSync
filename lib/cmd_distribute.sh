@@ -28,13 +28,18 @@
 #
 #  THE SCOPE MAPPING IS NOT COSMETIC:
 #
-#    --all, or nothing   -> prepare --evacuate --all
+#    --all               -> prepare --evacuate --all
 #                           per NODE: disable the dead storage, unmount it,
 #                           restart pvestatd, stop what was on it
 #    --ctid <id>         -> prepare --isolate --ctid <id>
 #                           that container only. Evacuating its node would
 #                           disable a storage and stop its neighbours, and
 #                           nobody asked about the neighbours
+#    no scope at all     -> refused HERE, before the preparer runs. The engine
+#                           refuses a scopeless run too, but it refuses LAST,
+#                           and this command prepares FIRST - so without this
+#                           check a scopeless typo evacuates the fleet on the
+#                           way to a usage message
 #
 #  --list never prepares: it is a read-only question. --dry-run is passed to
 #  BOTH, because a dry distribute that evacuated a live node for real would be
@@ -44,7 +49,7 @@
 #  the first half by hand and wants the second.
 # =============================================================================
 cmd_distribute(){
-  local prep=1 dry=0 list=0 ctid="" a rc
+  local prep=1 dry=0 list=0 all=0 ctid="" a rc
   declare -a ENG=()
   for a in "$@"; do
     case "$a" in
@@ -52,6 +57,7 @@ cmd_distribute(){
                                              # never heard of it
       --dry-run)    dry=1;  ENG+=("$a");;
       --list)       list=1; ENG+=("$a");;
+      --all)        all=1;  ENG+=("$a");;
       *)            ENG+=("$a");;
     esac
   done
@@ -62,6 +68,19 @@ cmd_distribute(){
     [[ "$1" == --ctid && $# -ge 2 ]] && { ctid="$2"; shift 2; continue; }
     shift
   done
+
+  # A scope has to be named BEFORE the preparer runs. The engine refuses a
+  # scopeless run on its own, but it refuses LAST and this command prepares
+  # FIRST: the 2026-08-16 drill ran `distribute --dry-run` and watched a dry
+  # evacuate fire on the way to a usage message - and the non-dry shape of
+  # that typo would have evacuated the fleet for real. A refusal that arrives
+  # after work is not a refusal.
+  if (( ! all && ! list )) && [[ -z "$ctid" ]]; then
+    say "refused: no scope given. Say --all, or name one with --ctid, or ask with --list."
+    say "  --dry-run is a mode, not a scope: a rehearsal still needs --all or --ctid."
+    say "  nothing was prepared and nothing was placed."
+    return 2
+  fi
 
   if (( prep )) && (( ! list )); then
     local TPREP="$KS_BASE/engines/ct-prepare.sh"

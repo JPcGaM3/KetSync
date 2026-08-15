@@ -48,6 +48,17 @@ case "$c" in
   *"dumpe2fs -h"*)
     id="$(sed -n 's/.*pct config \([0-9][0-9]*\).*/\1/p' <<<"$c" | head -1)"
     [[ -n "$id" ]] || { echo NOCONFIG; exit 0; }
+    # <ct>.gone models the mount that has not come back yet: a positive count
+    # answers NOIMAGE that many times and then the image reappears (the mount
+    # returned); -1 answers NOIMAGE forever (it never did).
+    if [[ -f "$SIMROOT/img/$id.gone" ]]; then
+      n="$(cat "$SIMROOT/img/$id.gone")"
+      if (( n != 0 )); then
+        (( n > 0 )) && echo $((n-1)) > "$SIMROOT/img/$id.gone"
+        echo NOIMAGE; exit 0
+      fi
+      rm -f "$SIMROOT/img/$id.gone"
+    fi
     p="$(cat "$SIMROOT/img/$id.path" 2>/dev/null || echo "/mnt/pve/tank-hdd-nas/images/$id/vm-$id-disk-0.raw")"
     printf 'PATH %s\n' "$p"
     printf '%s\n' "$(cat "$SIMROOT/img/$id.state" 2>/dev/null || echo clean)"

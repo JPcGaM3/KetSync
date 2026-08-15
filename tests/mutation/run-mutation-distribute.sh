@@ -119,6 +119,13 @@ mutant "--dry-run is swallowed on the way to the engine instead" \
   3
 
 # ---------- the scope mapping -----------------------------------------------
+# The 2026-08-16 drill bug: the engine refuses a scopeless run LAST, and this
+# command prepares FIRST, so the refusal has to live here and fire before the
+# preparer does anything at all.
+mutant "a scopeless run prepares the fleet on the way to a usage message" \
+  's{\Q  if (( ! all && ! list )) && [[ -z "\E\$ctid\Q" ]]; then\E}{  if false; then}' \
+  14 15
+
 mutant "--ctid evacuates the whole node, stopping containers nobody named" \
   's{\Q      PARGS=(--isolate --ctid "\E\$ctid\Q")\E}{      PARGS=(--evacuate --all)}' \
   2

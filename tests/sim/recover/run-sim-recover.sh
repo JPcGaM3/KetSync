@@ -143,6 +143,8 @@ STUB
 
 # ---------- world knobs ----------
 img_dirty(){    printf 'clean with errors\n' > "$SIMROOT/img/$1.state"; }
+img_missing(){  printf '%s\n' -1  > "$SIMROOT/img/$1.gone"; }   # never comes back
+img_late(){     printf '%s\n' "$2" > "$SIMROOT/img/$1.gone"; }  # back after $2 probes
 e2fsck_fails(){ printf '8\n' > "$SIMROOT/img/e2fsck.rc"; }
 ct_state(){     printf '%s\n' "$2" > "$SIMROOT/ct/$1.status"; }
 fb_fails(){     printf '1\n' > "$SIMROOT/rc.fb.$1"; }
@@ -153,6 +155,9 @@ slave_role(){   printf 'KS_ROLE=slave\nKS_MASTER_IP=%s\n' "$ME" > "$MASTER/conf/
 
 run_ks(){
   ( export SIMROOT SIMBIN="$HERE/bin"
+    # the image-wait knobs exist exactly for this: the simulator must not sit
+    # through a real mount wait. The fleet runs the defaults (8 tries x 3s).
+    export KS_IMG_WAIT_TRIES=3 KS_IMG_WAIT_GAP=0
     ssh(){ "$SIMBIN/ssh" "$@"; }
     export -f ssh
     cd "$MASTER" && ./ketsync "$@" -y ) > "$SIMROOT/out" 2>&1
@@ -409,6 +414,50 @@ if scenario "16: an unreachable backup node stops everything before it starts"; 
   has "Unanswered"
   never_ran "ct-prepare.sh"
   never_ran "ct-failback.sh"
+  done_scenario
+fi
+
+if scenario "17: an image nobody can see is refused, never called clean"; then
+  # The 2026-08-16 drill: restore --node switches the NFS storage back on and
+  # the superblock probe runs seconds later, inside the window where the mount
+  # has not reappeared. The old code read that absence as "clean (NOIMAGE) -
+  # no fsck needed" and carried on toward the failback.
+  img_missing 110
+  run_ks recover --all
+  rc_is 1
+  has "cannot see CT 110's image"
+  has "Absence is not cleanliness"
+  hasnt "image superblock is clean (NOIMAGE)"
+  never_ran "ct-failback.sh --ctid 110"
+  never_ran "ct-prepare.sh --restore --ctid 110"
+  ran "ct-failback.sh --ctid 120"
+  done_scenario
+fi
+
+if scenario "18: a mount that comes back mid-wait is waited for, then judged"; then
+  # Two NOIMAGE answers, then the mount is back. The wait exists so the normal
+  # case - NFS taking a few seconds - ends in a verdict, not a refusal.
+  img_late 110 2
+  run_ks recover --all
+  rc_is 0
+  has "image superblock is clean (clean)"
+  hasnt "cannot see CT 110's image"
+  ran "ct-failback.sh --ctid 110 --final"
+  done_scenario
+fi
+
+if scenario "19: a dry run says WHY it cannot see the image instead of calling it clean"; then
+  # In a dry run step 1 was dry too, so the storage really is still off and
+  # the image really is invisible. That is worth saying honestly - what it is
+  # not worth is a green "clean (NOIMAGE)" that trains people to read absence
+  # as health.
+  img_missing 110
+  run_ks recover --all --dry-run
+  rc_is 0
+  has "DRY: cannot see the image from here"
+  has "refuses this container if the"
+  hasnt "image superblock is clean (NOIMAGE)"
+  ran "ct-failback.sh --ctid 110 --final --dry-run"
   done_scenario
 fi
 

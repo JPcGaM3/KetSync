@@ -237,6 +237,29 @@ if scenario "13: a bare verb reaches neither half - there is nothing to compose"
   done_scenario
 fi
 
+if scenario "14: --dry-run alone is a mode, not a scope - nothing runs, not even dry"; then
+  # The 2026-08-16 drill typed exactly this and watched a dry evacuate fire on
+  # the way to the engine's usage message. Refusal comes first now.
+  run_ks distribute --dry-run
+  rc_is 2
+  never_ran ct-prepare.sh
+  never_ran tp
+  has "refused: no scope given"
+  has "--dry-run is a mode, not a scope"
+  done_scenario
+fi
+
+if scenario "15: a scopeless run with other flags refuses BEFORE the preparer"; then
+  # The dangerous shape of 14: no --dry-run, so the preparer would have
+  # evacuated for real on the way to a usage message.
+  run_ks distribute --dst local-zfs
+  rc_is 2
+  never_ran ct-prepare.sh
+  never_ran tp
+  has "refused: no scope given"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

@@ -89,9 +89,9 @@ commands is one file going stale.
 one command that writes nothing needed one anyway.** Read `tests/README.md`.
 `sync` has one - 21 scenarios and 19 mutations - and writing it found three
 bugs that had been live on the fleet, none of which review had caught.
-`distribute` has one too, 13 and 13, because it composes two engines and
+`distribute` has one too, 15 and 14, because it composes two engines and
 every joint between them is invisible from inside either one; `recover`, the
-other composed verb, has 17 and 17 for the same reason - it is the seven-step
+other composed verb, has 20 and 21 for the same reason - it is the seven-step
 return checklist executed, and what it can get wrong is the order, what a
 failed step may touch, and what may happen only when everything went green.
 The confirmation has 17 and 16, and it needs its own because its whole
@@ -116,8 +116,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 413 tp simulator + 16 dispatcher + 125 c2v, 88 ketsync
-    make mutation # 450 known bugs put back. None may survive
+    make test     # both layers: 413 tp simulator + 16 dispatcher + 125 c2v, 93 ketsync
+    make mutation # 455 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

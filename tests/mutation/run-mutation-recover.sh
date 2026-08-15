@@ -105,6 +105,25 @@ mutant "an image e2fsck could not repair is failed back over anyway" \
   's{\Q        if (( rc >= 4 )); then\E}{        if false; then}' \
   5
 
+# The next four put back the 2026-08-16 drill bug and its cousins: the probe
+# ran inside the window where the NFS mount had not reappeared, and absence
+# was read as cleanliness.
+mutant "an image nobody can see is called clean" \
+  's{\Q  img_unseen(){ [[ -z "\E\$IMG_STATE\Q" || "\E\$IMG_STATE\Q" == NOIMAGE || "\E\$IMG_STATE\Q" == NOCONFIG ]]; }\E}{  img_unseen(){ false; }}' \
+  17 19
+
+mutant "the unseen image is reported but nothing is stranded" \
+  's{\Q          CTBAD[\E\$ct\Q]=1; failed=1; continue\E}{          :}' \
+  17
+
+mutant "the wait gives up without ever asking again" \
+  's{\Q        while (( try < tries )); do\E}{        while false; do}' \
+  18
+
+mutant "a dry run claims the unseen image is clean" \
+  's{\Q    elif ! img_unseen; then\E}{    else}' \
+  19
+
 mutant "a woken production container is written toward anyway" \
   's{\Q    if [[ "\E\$pst\Q" == running ]]; then\E}{    if false; then}' \
   7

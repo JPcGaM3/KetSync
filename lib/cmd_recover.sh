@@ -144,6 +144,11 @@ cmd_recover(){
     IMG_PATH="$(sed -n 's/^PATH //p' <<<"$out")"
     IMG_STATE="$(grep -v '^PATH ' <<<"$out" | tail -1)"
   }
+  # "clean" is an answer dumpe2fs gave; these are the ABSENCE of an answer -
+  # no config, no image file, or nothing came back at all. The guard below
+  # exists because an image nobody can see must never be treated as an image
+  # in good order.
+  img_unseen(){ [[ -z "$IMG_STATE" || "$IMG_STATE" == NOIMAGE || "$IMG_STATE" == NOCONFIG ]]; }
   home_of(){ awk -v c="$1" '$1!~/^#/ && $1==c{print $2; exit}' "$KS_INV" 2>/dev/null; }
   map_ip(){  awk -v n="$1" '$1!~/^#/ && $2==n{print $1; exit}' "$KS_NODEMAP" 2>/dev/null; }
 
@@ -225,6 +230,38 @@ cmd_recover(){
       CTBAD[$ct]=1; failed=1; continue
     fi
     img_state "$ct" "$h"
+    # The storages were switched back on one step ago, and an NFS mount can
+    # take a moment to reappear - the 2026-08-16 drill hit exactly this window
+    # and the answer came back NOIMAGE, which the old line below read as
+    # "clean - no fsck needed". Absence is not cleanliness: a dirty image that
+    # slips past here gets a failback written into it unrepaired. So wait for
+    # the mount, bounded, and refuse the container if the image never shows.
+    # The env knobs exist for the simulator, which must not sit through real
+    # waits; the fleet runs the defaults.
+    if img_unseen; then
+      if (( dry )); then
+        log "[$ct] DRY: cannot see the image from here (${IMG_STATE:-no answer}) - expected in a dry"
+        log "[$ct] DRY:   run: step 1 was dry too, so the storage is likely still off. The real run"
+        log "[$ct] DRY:   asks again once the storages are back, and refuses this container if the"
+        log "[$ct] DRY:   image still does not show."
+      else
+        local try=0 tries="${KS_IMG_WAIT_TRIES:-8}" gap="${KS_IMG_WAIT_GAP:-3}"
+        while (( try < tries )); do
+          sleep "$gap"
+          img_state "$ct" "$h"
+          img_unseen || break
+          try=$((try+1))
+        done
+        if img_unseen; then
+          log "[$ct] ERROR: cannot see CT $ct's image on $h (${IMG_STATE:-no answer}) after $((tries*gap))s."
+          log "[$ct] ERROR:   the storages were switched back on one step ago; an image that still"
+          log "[$ct] ERROR:   does not show is a mount that did not come back, or a config pointing"
+          log "[$ct] ERROR:   at something that is gone. Absence is not cleanliness - nothing more"
+          log "[$ct] ERROR:   runs for this container until a human can see its image."
+          CTBAD[$ct]=1; failed=1; continue
+        fi
+      fi
+    fi
     if [[ "$IMG_STATE" == *"with errors"* ]]; then
       if (( dry )); then
         log "[$ct] DRY: would e2fsck -fy $IMG_PATH on $h (superblock says: $IMG_STATE)"
@@ -242,8 +279,8 @@ cmd_recover(){
           log "[$ct] e2fsck done (rc=$rc) - the image is consistent again"
         fi
       fi
-    else
-      log "[$ct] image superblock is clean (${IMG_STATE:-unreadable from here}) - no fsck needed"
+    elif ! img_unseen; then
+      log "[$ct] image superblock is clean ($IMG_STATE) - no fsck needed"
     fi
   done
 
