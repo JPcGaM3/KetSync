@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# fake ssh for the watch simulator - the fleet the watcher looks at.
+#
+# watch asks four questions: are you there, which stand-ins exist, which
+# evacuate records exist, which isolate records exist. Everything else -
+# doctor's whole conversation during --digest, for one - is deliberately
+# unmodelled and answers 1, because the digest mails doctor's REPORT and a
+# report full of unreachable machines is still a report.
+set -uo pipefail
+PVE="$SIMROOT/pve"
+
+host=""; declare -a cmd=()
+while (( $# )); do
+  case "$1" in
+    -o) shift 2;;
+    -*) shift;;
+    *)  if [[ -z "$host" ]]; then host="${1#root@}"; else cmd+=("$1"); fi; shift;;
+  esac
+done
+c="${cmd[*]:-}"
+
+# A down machine is down for every question, not just "true".
+[[ -f "$SIMROOT/down.$host" ]] && exit 255
+
+case "$c" in
+  true) exit 0;;
+
+  "ls /etc/pve/ketsync/evacuate/"*)
+    ls "$PVE/ketsync/evacuate" 2>/dev/null; exit 0;;
+
+  "ls /etc/pve/ketsync/isolate/"*)
+    ls "$PVE/ketsync/isolate" 2>/dev/null; exit 0;;
+
+  "ls /etc/pve/nodes/"*"9*.conf"*)
+    found=1
+    for f in "$PVE"/nodes/*/lxc/9*.conf; do
+      [[ -e "$f" ]] || continue
+      printf '/etc/pve%s\n' "${f#"$PVE"}"; found=0
+    done
+    exit $found;;
+
+  *)
+    printf 'UNMODELED ssh %s :: %s\n' "$host" "$c" >> "$SIMROOT/trace"
+    exit 1;;
+esac

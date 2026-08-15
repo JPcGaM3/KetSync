@@ -178,6 +178,10 @@ mutant "the -y a cron line already has is not looked for" \
   's{\Q | grep -v -- \E\x27\Q-y\E\x27}{}' \
   18
 
+mutant "a read-only cron verb is nagged about a -y that would mean nothing" \
+  's{\Q               | grep -vE \E\x27\Qketsync[[:space:]]+(watch|doctor|status|role)([[:space:]]|\E\$\Q)\E\x27 \\\n}{}' \
+  21
+
 # ---------- both layers, one exit code ---------------------------------------
 mutant "the execution layer's exit code is dropped on the floor" \
   's{\Q    "\E\$KS_BASE\Q/engines/tp" doctor || rc=1\E}{    "\$KS_BASE/engines/tp" doctor || true}' \

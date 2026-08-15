@@ -398,6 +398,18 @@ if scenario "20: engines/tp missing at all is the end of the report, not a secti
   done_scenario
 fi
 
+if scenario "21: a cron line for a read-only verb needs no -y and is not nagged"; then
+  # watch is DESIGNED to run from cron bare - it never asks, so -y would mean
+  # nothing on it, and a nag here trains people to sprinkle -y everywhere.
+  cron_line "*/10 * * * * /root/ketsync/ketsync watch"
+  cron_line "30 7 * * * /root/ketsync/ketsync watch --digest"
+  cron_line "0 8 * * * /root/ketsync/ketsync doctor"
+  run_ks
+  rc_is 0; clean
+  hasnt "these would REFUSE"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

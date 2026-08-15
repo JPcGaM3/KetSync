@@ -1,7 +1,7 @@
 # Tests
 
-`sync`, `distribute`, the confirmation, `doctor` and `recover` have simulators. `role`
-does not, and that is the remaining debt.
+`sync`, `distribute`, the confirmation, `doctor`, `recover` and `watch` have
+simulators. `role` does not, and that is the remaining debt.
 
 `sync` went first because it is the only command in this layer that WRITES to
 another machine, and because everything it can get wrong is silent: a push that
@@ -38,6 +38,10 @@ its first run.
                      record their argv, because the argv is the whole of what
                      the joins between them can get wrong
     sim/confirm/     the question asked before a write, half of it under a pty
+    sim/watch/       the alerts: fake sendmail and curl record what would have
+                     arrived at three in the morning, because watch's output is
+                     a mail nobody is at a terminal for - the suite asserts on
+                     the mails themselves, their tier, and their absence
     sim/recover/     the second composed command: the whole way back, with the
                      engines as stubs again - what recover can get wrong is the
                      ORDER, what a failed step is allowed to touch, and what

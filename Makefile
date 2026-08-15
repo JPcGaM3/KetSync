@@ -64,8 +64,8 @@ log-sep:         ## every tool that logs also separates its operations
 test: test-engines test-tp test-c2v test-ketsync  ## the real suite: everything
 	@echo
 	@echo "NOTE: ketsync role still has no simulator. sync, distribute, the"
-	@echo "      confirmation, doctor and recover do. See tests/README.md before"
-	@echo "      adding another command that writes to a real machine."
+	@echo "      confirmation, doctor, recover and watch do. See tests/README.md"
+	@echo "      before adding another command that writes to a real machine."
 
 test-engines: test-migrate test-replica test-failback test-distribute test-recall test-prepare  ## every engine against its fake PVE
 
@@ -87,12 +87,13 @@ test-tp:         ## the dispatcher: tp status, tp doctor, argument pass-through
 test-c2v:        ## what both CT-to-VM phase-2 scripts write
 	@$(ROOT)/tests/c2v/run-c2v.sh
 
-test-ketsync:    ## the decision layer: sync, distribute, the confirmation, doctor, recover
+test-ketsync:    ## the decision layer: sync, distribute, the confirmation, doctor, recover, watch
 	@$(ROOT)/tests/sim/sync/run-sim-sync.sh
 	@$(ROOT)/tests/sim/distribute/run-sim-distribute.sh
 	@$(ROOT)/tests/sim/confirm/run-sim-confirm.sh
 	@$(ROOT)/tests/sim/doctor/run-sim-doctor.sh
 	@$(ROOT)/tests/sim/recover/run-sim-recover.sh
+	@$(ROOT)/tests/sim/watch/run-sim-watch.sh
 
 # -- mutations ----------------------------------------------------------------
 mutation: mutation-engines mutation-ketsync  ## put every known bug back, prove the suites notice
@@ -112,6 +113,7 @@ mutation-ketsync:  ## the decision layer's own mutations
 	@$(ROOT)/tests/mutation/run-mutation-confirm.sh
 	@$(ROOT)/tests/mutation/run-mutation-doctor.sh
 	@$(ROOT)/tests/mutation/run-mutation-recover.sh
+	@$(ROOT)/tests/mutation/run-mutation-watch.sh
 
 # The gates assume a Debian userland. On macOS they do not merely fail, they
 # pass wrongly - no flock, bash 3.2 - see the top of the script.

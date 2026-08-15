@@ -282,8 +282,13 @@ cmd_doctor(){
   # on a Tuesday, rather than found at 02:00 on the night it mattered.
   say "== cron lines that call ketsync without -y"
   local cronhits
+  # Read-only verbs never ask, so cron lines for them need no -y: watch is
+  # DESIGNED to run from cron bare, and nagging about it would train people
+  # to sprinkle -y on verbs where it means nothing.
   cronhits="$( { crontab -l 2>/dev/null; cat /etc/cron.d/* /etc/crontab 2>/dev/null; } \
-               | grep -v '^[[:space:]]*#' | grep 'ketsync' | grep -v -- '-y' || true )"
+               | grep -v '^[[:space:]]*#' | grep 'ketsync' \
+               | grep -vE 'ketsync[[:space:]]+(watch|doctor|status|role)([[:space:]]|$)' \
+               | grep -v -- '-y' || true )"
   if [[ -n "$cronhits" ]]; then
     say "  these would REFUSE, because there is nobody there to answer:"
     while IFS= read -r f; do [[ -n "$f" ]] && say "    $f"; done <<< "$cronhits"

@@ -10,7 +10,10 @@
 #    ketsync migrate    old node -> here        ketsync sync    push the tables
 #    ketsync replica    here -> backup node     ketsync role    who is in charge
 #    ketsync failback   copy -> back into prod  ketsync doctor  is this wired up
-#    ketsync status     the last run of every container
+#    ketsync status     the last run of every   ketsync watch   mail when the
+#                       container                               fleet's shape
+#                                                               changes; --digest
+#                                                               mails doctor daily
 #
 #    ketsync distribute DR: a copy on the backup node -> a compute node's own
 #                       storage, so it can run while the storage node is gone
@@ -276,6 +279,9 @@ case "${1:-}" in
   sync)       shift; . "$BASE/lib/cmd_sync.sh";     cmd_sync "$@";;
   role)       shift; . "$BASE/lib/cmd_role.sh";     cmd_role "$@";;
   doctor)     shift; . "$BASE/lib/cmd_doctor.sh";   cmd_doctor "$@";;
+  # watch is read-only toward the fleet and is MEANT for cron, so it is not in
+  # ks_writes and a bare `ketsync watch` runs: the mail is the whole point.
+  watch)      shift; . "$BASE/lib/cmd_watch.sh";    cmd_watch "$@";;
 
   version)    echo "ketsync $(cd "$BASE" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;
   ""|-h|--help|help) usage;;

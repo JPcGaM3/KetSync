@@ -49,6 +49,14 @@ say(){ printf '%s\n' "$*"; printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$KS_LOG"
 # re-delivering the code must never overwrite a calibrated value.
 KS_ROLE=slave                 # master | slave. Changed by hand. See section 2.
 KS_MASTER_IP=""               # the machine that owns the tables
+# watch's addresses. Empty means "not configured" and watch REFUSES to run -
+# an empty default is a refusal waiting to be read, never a guess. The tiers
+# are addresses on purpose: routing lives in the mail system, not in code.
+KS_MAIL_FROM=""               # the From: on everything watch sends
+KS_MAIL_INFRA=""              # immediate: the floor everything stands on
+KS_MAIL_NODE=""               # immediate: one machine's problem
+KS_MAIL_DIGEST=""             # daily: doctor's whole report (watch --digest)
+KS_WATCH_HEALTHCHECK=""       # optional dead-man URL, pinged only by green runs
 KS_SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
 KS_CONF="$KS_BASE/conf/ketsync.conf"
 KS_NODES="$KS_BASE/conf/nodes.tsv"

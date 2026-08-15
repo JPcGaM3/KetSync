@@ -13,3 +13,22 @@ KS_ROLE=slave
 
 # the machine that owns the inventory right now. An IP, never a name.
 KS_MASTER_IP=10.100.1.17
+
+# -----------------------------------------------------------------------------
+# ketsync watch - who gets told, and how the watcher itself is watched.
+# All four addresses are per-site and REQUIRED before watch runs; it refuses
+# without them rather than guessing. The transport is this machine's own
+# sendmail - contrib/mail-satellite.sh sets postfix up as a satellite through
+# SendGrid, and the API key never appears in this repo or in any container.
+#
+# Suggested cron, on the master only:
+#   */10 * * * * /root/ketsync/ketsync watch
+#   30 7 * * *   /root/ketsync/ketsync watch --digest
+# -----------------------------------------------------------------------------
+#KS_MAIL_FROM="ketsync@example.co.th"
+#KS_MAIL_INFRA="infra@example.co.th"     # immediate: backup node, PAUSE, stand-ins live
+#KS_MAIL_NODE="node@example.co.th"       # immediate: a node down, a storage left off
+#KS_MAIL_DIGEST="admin@example.co.th"    # daily: doctor's full report
+# optional dead-man switch (healthchecks.io): green runs ping it, and ONLY
+# green runs - a run whose mail failed stays silent so the silence is heard.
+#KS_WATCH_HEALTHCHECK="https://hc-ping.com/<uuid>"

@@ -35,7 +35,7 @@ rc=0
 for f in engines/ct-migrate.sh engines/ct-replica.sh engines/ct-failback.sh \
          engines/ct-distribute.sh engines/tp \
          contrib/c2v-prepare.sh contrib/c2v-inside.sh contrib/c2v-inside-deb.sh \
-         contrib/bkp02-setup.sh; do
+         contrib/bkp02-setup.sh contrib/mail-satellite.sh; do
   [[ -f "$f" ]] || { echo "  missing: $f"; rc=1; continue; }
   case " $EXEMPT " in *" $f "*) continue;; esac
 

@@ -97,8 +97,14 @@ failed step may touch, and what may happen only when everything went green.
 The confirmation has 17 and 16, and it needs its own because its whole
 behaviour turns on whether there is a person on the other end - the
 prompting half runs under a pty, and a pipe tests the refusal by being one.
+`watch` has 17 and 15, and it is the suite where the assertions are MAILS:
+watch's output arrives while nobody is at a terminal, so what its simulator
+pins down is edge-triggering (a standing problem mails once), tiering (the
+right address), suppression (one story told once), and
+delivered-and-remembered-or-neither (a failed send keeps the state file
+untouched, exits red, and skips the dead-man ping so the silence is heard).
 
-`doctor` has 20 and 19, and it went last for the wrong reason: it writes
+`doctor` has 21 and 20, and it went last for the wrong reason: it writes
 nothing, so nothing it does can corrupt anything. What it can do is stop
 noticing, and a check that stops noticing prints exactly what a healthy fleet
 prints. Writing the simulator found one immediately - a compute node nobody
@@ -116,8 +122,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 413 tp simulator + 16 dispatcher + 125 c2v, 93 ketsync
-    make mutation # 455 known bugs put back. None may survive
+    make test     # both layers: 413 tp simulator + 16 dispatcher + 125 c2v, 111 ketsync
+    make mutation # 471 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
