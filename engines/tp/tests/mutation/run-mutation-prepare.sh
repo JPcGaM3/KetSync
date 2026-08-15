@@ -455,7 +455,7 @@ mutant "a shutdown that never reached the node reads as a container that would n
 # to read, every container reads as never asked, and a whole node's worth of
 # them is skipped in silence.
 mutant "the command stops reporting its own exit code, so nothing can be told apart" \
-  's{\Q    sout="\E\$\Q(rsh "\E\$pip\Q" "timeout \E\$\Q((SHUTDOWN_TIMEOUT+30)) pct shutdown \E\$ct\Q --timeout \E\$SHUTDOWN_TIMEOUT\Q 2>&1; echo __rc=\E\\\$\Q?")"\E}{    sout="\$(rsh "\$pip" "timeout \$((SHUTDOWN_TIMEOUT+30)) pct shutdown \$ct --timeout \$SHUTDOWN_TIMEOUT 2>\&1")"}' \
+  's{\Q    sout="\E\$\Q(rsh "\E\$pip\Q" "timeout \E\$\Q((SHUTDOWN_GRACE+30)) pct shutdown \E\$ct\Q --timeout \E\$SHUTDOWN_GRACE\Q 2>&1; echo __rc=\E\\\$\Q?")"\E}{    sout="\$(rsh "\$pip" "timeout \$((SHUTDOWN_GRACE+30)) pct shutdown \$ct --timeout \$SHUTDOWN_GRACE 2>\&1")"}' \
   39 51c
 
 # pct hands the wait to `lxc-stop --timeout 60` - ITS default - unless told
@@ -464,11 +464,11 @@ mutant "the command stops reporting its own exit code, so nothing can be told ap
 # failure line is what these two scenarios read, so a budget that stops
 # reaching the waiting process is caught by the number in the message.
 mutant "the shutdown budget stops reaching the command doing the waiting" \
-  's{\Qpct shutdown \E\$ct\Q --timeout \E\$SHUTDOWN_TIMEOUT\Q 2>&1; echo __rc=\E\\\$\Q?")"\E\n\Q    sshrc=\E}{pct shutdown \$ct 2>\&1; echo __rc=\\\$?")"\n    sshrc=}' \
+  's{\Qpct shutdown \E\$ct\Q --timeout \E\$SHUTDOWN_GRACE\Q 2>&1; echo __rc=\E\\\$\Q?")"\E\n\Q    sshrc=\E}{pct shutdown \$ct 2>\&1; echo __rc=\\\$?")"\n    sshrc=}' \
   39
 
 mutant "the isolate-path shutdown budget stops reaching it too" \
-  's{\Q  out="\E\$\Q(rsh "\E\$ISO_PIP\Q" "timeout \E\$\Q((SHUTDOWN_TIMEOUT+30)) pct shutdown \E\$ct\Q --timeout \E\$SHUTDOWN_TIMEOUT\Q 2>&1; echo __rc=\E\\\$\Q?")"\E}{  out="\$(rsh "\$ISO_PIP" "timeout \$((SHUTDOWN_TIMEOUT+30)) pct shutdown \$ct 2>\&1; echo __rc=\\\$?")"}' \
+  's{\Q  out="\E\$\Q(rsh "\E\$ISO_PIP\Q" "timeout \E\$\Q((SHUTDOWN_GRACE+30)) pct shutdown \E\$ct\Q --timeout \E\$SHUTDOWN_GRACE\Q 2>&1; echo __rc=\E\\\$\Q?")"\E}{  out="\$(rsh "\$ISO_PIP" "timeout \$((SHUTDOWN_GRACE+30)) pct shutdown \$ct 2>\&1; echo __rc=\\\$?")"}' \
   10f
 
 # 124 is the OUTER timeout killing a pct that never said anything - a different

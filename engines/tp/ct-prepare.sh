@@ -182,29 +182,39 @@ fi
 BKP_SSH="root@100.100.100.35"
 MOCKNET_BRIDGE=vmbr99            # the isolated bridge. Same knob, same file,
                                  # as ct-replica R9 and ct-distribute D1
-SHUTDOWN_TIMEOUT=180             # seconds to wait for one container to come
-                                 # down before falling back to isolating it. At
-                                 # two hundred containers, waiting the PVE
-                                 # default each time is a night.
-                                 #
-                                 # 180 and not 90, and the number comes off this
-                                 # fleet's own dmesg. A container on a dead NFS
-                                 # comes down when its outstanding I/O finally
-                                 # ERRORS, not when it is asked - and how long
-                                 # that takes is the mount's own schedule, not
-                                 # ours. PVE mounts NFS `hard,timeo=600,
-                                 # retrans=2`: 60s per try, twice, and only then
-                                 # does the write fail, ext4 abort its journal
-                                 # and the kill land. Measured on pve-r33: the
-                                 # unmount at 15:47:11, the I/O error at
-                                 # 15:49:18, the container gone at 15:49:23 -
-                                 # 132 seconds. At 90 this engine gave up 40
-                                 # seconds early and isolated a container that
-                                 # was already on its way down.
-                                 #
-                                 # If your mounts use a shorter timeo, shorten
-                                 # this with them: it is that schedule plus a
-                                 # margin, and nothing else.
+SHUTDOWN_TIMEOUT=180             # cleanup's patience: seconds to wait for a
+                                 # 9<id> on HEALTHY storage to shut down. That
+                                 # path is after the disaster, nothing is
+                                 # waiting on it, and a database flushing for
+                                 # two minutes deserves its two minutes.
+SHUTDOWN_GRACE=30                # the DISASTER path's patience - evacuate and
+                                 # the stop after an isolate - and it is short
+                                 # on purpose. This engine used to wait 180
+                                 # here too, sized against the fleet's measured
+                                 # I/O-error horizon (hard,timeo=600,retrans=2:
+                                 # the write fails at ~132s, ext4 aborts, the
+                                 # kill lands - measured 15:47:11 unmount,
+                                 # 15:49:18 error, 15:49:23 gone). The
+                                 # 2026-08-15 drill showed what that patience
+                                 # actually buys during a real outage: nothing.
+                                 # Whether the EIO ever comes is a race with
+                                 # the RPCs in flight at unmount time, and the
+                                 # drill lost it on every container, 210
+                                 # seconds each. What the DR needs is OFF THE
+                                 # WIRE, which isolate delivers in about three
+                                 # seconds and D1 accepts; and the shutdown
+                                 # request is a SIGNAL, delivered in the first
+                                 # second, that OUTLIVES the wait - the same
+                                 # drill watched both containers shut
+                                 # themselves down hours later, the moment the
+                                 # storage returned, on the strength of that
+                                 # queued signal. So the ask is made, a guest
+                                 # whose writes already fail fast gets long
+                                 # enough to run an orderly shutdown, and
+                                 # everything else is isolated instead of
+                                 # waited on. At two hundred containers the
+                                 # difference is eleven hours of customer
+                                 # downtime against two.
 STAT_TIMEOUT=5                   # seconds to wait for a storage to answer. A
                                  # live mount answers in microseconds; this is
                                  # not a tuning knob, it is the difference
@@ -288,7 +298,7 @@ if [[ -f "$CONF" ]]; then
   # shellcheck source=/dev/null
   . "$CONF" || { echo "failed to read $CONF" >&2; exit 2; }
 fi
-for _v in STAT_TIMEOUT SHUTDOWN_TIMEOUT LOG_KEEP_DAYS DR_OFFSET; do
+for _v in STAT_TIMEOUT SHUTDOWN_TIMEOUT SHUTDOWN_GRACE LOG_KEEP_DAYS DR_OFFSET; do
   [[ "${!_v}" =~ ^[0-9]+$ ]] || { echo "$CONF: $_v must be a plain integer, got '${!_v}'" >&2; exit 2; }
 done
 (( STAT_TIMEOUT >= 1 )) || { echo "$CONF: STAT_TIMEOUT must be at least 1 second" >&2; exit 2; }
@@ -830,9 +840,9 @@ stop_after_isolate(){   # $1 = ctid. Uses what do_isolate just found out.
   log "[$ct] its dead mount is already gone, so a shutdown can return: asking CT $ct to stop"
   # Its own exit code on its own line, for the same reason as evacuate above:
   # pct exits 255 when it dies and so does ssh when it cannot connect. And the
-  # same --timeout, for the same reason: pct's own default is sixty seconds,
-  # which is shorter than the I/O-error horizon this budget was sized against.
-  out="$(rsh "$ISO_PIP" "timeout $((SHUTDOWN_TIMEOUT+30)) pct shutdown $ct --timeout $SHUTDOWN_TIMEOUT 2>&1; echo __rc=\$?")"
+  # short grace, for the reason on SHUTDOWN_GRACE itself: the request is a
+  # signal that outlives the wait, and off the wire is already done.
+  out="$(rsh "$ISO_PIP" "timeout $((SHUTDOWN_GRACE+30)) pct shutdown $ct --timeout $SHUTDOWN_GRACE 2>&1; echo __rc=\$?")"
   rc="$(sed -n 's/^__rc=//p' <<<"$out" | tail -1)"
   while IFS= read -r _l; do
     [[ -n "$_l" && "$_l" != __rc=* ]] && log "[$ct]   pct: $_l"
@@ -1337,16 +1347,16 @@ do_evacuate(){   # $1 = node ip
     # isolation that is the entire fallback. It was reading pct's own words
     # out of the same run while it said so. Two facts that need different
     # answers cannot share one number.
-    # pct hands the actual stopping to `lxc-stop --nokill --timeout 60` -
-    # SIXTY SECONDS, ITS OWN DEFAULT - unless it is told otherwise. On the
-    # 2026-08-15 drill this engine stood ready to wait three minutes while
-    # lxc-stop had already given up at one: the I/O error that lets a guest on
-    # a forced-off mount finally die was measured at ~132s on this fleet, and
-    # the budget sized for that number never reached the command doing the
-    # waiting. So pct gets the budget, and the outer timeout is thirty seconds
+    # pct hands the actual stopping to `lxc-stop --nokill --timeout 60` - its
+    # own default - unless told otherwise, so the grace is passed down or it
+    # never reaches the command doing the waiting. The grace is SHORT, and why
+    # is written on SHUTDOWN_GRACE itself: the request is a signal that
+    # outlives the wait, off the wire is what the DR needs and isolate
+    # delivers it in seconds, and every minute spent standing here is a minute
+    # the customer's service is down. The outer timeout is thirty seconds
     # longer: it exists only for a pct that never returns at all, and must not
     # fire first and shadow pct's own answer.
-    sout="$(rsh "$pip" "timeout $((SHUTDOWN_TIMEOUT+30)) pct shutdown $ct --timeout $SHUTDOWN_TIMEOUT 2>&1; echo __rc=\$?")"
+    sout="$(rsh "$pip" "timeout $((SHUTDOWN_GRACE+30)) pct shutdown $ct --timeout $SHUTDOWN_GRACE 2>&1; echo __rc=\$?")"
     sshrc=$?
     rc="$(sed -n 's/^__rc=//p' <<<"$sout" | tail -1)"
     while IFS= read -r _l; do
@@ -1369,13 +1379,13 @@ do_evacuate(){   # $1 = node ip
     fi
     if [[ "$rc" == 124 ]]; then
       log "[$ct] pct itself never returned (rc=124) - isolating CT $ct instead"
-      log "[$ct]   it was given ${SHUTDOWN_TIMEOUT}s to run the shutdown and 30 more to say"
+      log "[$ct]   it was given ${SHUTDOWN_GRACE}s to run the shutdown and 30 more to say"
       log "[$ct]   how that went, and said nothing. A guest refusing looks different: pct"
       log "[$ct]   reports that in its own words, with an exit code of its own."
     else
       log "[$ct] pct itself failed (rc=$rc) and CT $ct is still running - isolating it instead"
       log "[$ct]   what pct said is above. On this fleet that is usually lxc-stop giving up"
-      log "[$ct]   after the ${SHUTDOWN_TIMEOUT}s it was given, on a container whose rootfs is"
+      log "[$ct]   after the ${SHUTDOWN_GRACE}s it was given, on a container whose rootfs is"
       log "[$ct]   a loop device with nothing behind it - and 'pct stop', which kills rather"
       log "[$ct]   than asks, does not return either: the wait is in the block layer, where"
       log "[$ct]   SIGKILL does not go. It may still come down on its own, when the mount's"

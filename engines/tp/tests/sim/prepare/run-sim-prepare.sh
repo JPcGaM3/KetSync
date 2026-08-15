@@ -525,7 +525,7 @@ if scenario "10f: a container that will not come down stays isolated, never forc
   # the proof the engine's budget reached the process doing the waiting - pct's
   # own default is sixty, and for one drill the engine stood ready to wait
   # three minutes while lxc-stop had already given up at one.
-  has "pct: command 'lxc-stop -n 300 --nokill --timeout 180' failed: exit code 1"
+  has "pct: command 'lxc-stop -n 300 --nokill --timeout 30' failed: exit code 1"
   has "pct itself failed (rc=255) and CT 300 is still running - it stays isolated"
   has "nothing here forces a stop"
   ct_status_is 300 pve01 running
@@ -557,7 +557,7 @@ if scenario "10h: pct dying is not the node failing, even where it costs nothing
   ct_pct_fails 300 pve01
   run_engine --isolate --ctid 300
   rc_is 0; clean
-  has "pct: command 'lxc-stop -n 300 --nokill --timeout 180' failed: exit code 1"
+  has "pct: command 'lxc-stop -n 300 --nokill --timeout 30' failed: exit code 1"
   has "pct: container did not stop"
   has "pct itself failed (rc=255) and CT 300 is still running - it stays isolated"
   hasnt "ssh to pve01 FAILED"
@@ -924,7 +924,7 @@ if scenario "39: a container that still will not stop is isolated, never forced"
   # The 180 in lxc-stop's line is the engine's budget arriving where the
   # waiting happens - see 10f. And the sentence after it names the way this
   # ends without anyone forcing it: the blocked I/O erroring out.
-  has "pct: command 'lxc-stop -n 300 --nokill --timeout 180' failed: exit code 1"
+  has "pct: command 'lxc-stop -n 300 --nokill --timeout 30' failed: exit code 1"
   has "pct itself failed (rc=255) and CT 300 is still running - isolating it instead"
   has "and 'pct stop', which kills rather"
   has "nothing here forces a stop"
@@ -1149,7 +1149,7 @@ if scenario "51c: pct failing is not ssh failing, and the container is isolated"
   ct_pct_fails 300 pve01
   run_engine --evacuate --node "$N1"
   rc_is 0; clean
-  has "pct: command 'lxc-stop -n 300 --nokill --timeout 180' failed: exit code 1"
+  has "pct: command 'lxc-stop -n 300 --nokill --timeout 30' failed: exit code 1"
   has "pct: container did not stop"
   has "pct itself failed (rc=255) and CT 300 is still running - isolating it instead"
   hasnt "ssh to pve01 FAILED"

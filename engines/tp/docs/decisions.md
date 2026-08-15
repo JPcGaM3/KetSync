@@ -314,19 +314,44 @@ never a mount, and condemning it for that would isolate every container on a
 healthy local-path storage.
 
 **The three-minute budget that never reached the command doing the waiting.**
-Same drill, one line earlier. SHUTDOWN_TIMEOUT is 180 because the I/O error
+Same drill, one line earlier. The evacuate wait was 180s because the I/O error
 that lets a guest on a forced-off mount finally die was measured at ~132s -
 but `pct shutdown` hands the wait to `lxc-stop --nokill --timeout 60`, its own
 default, and nothing passed the budget down. lxc-stop gave up at sixty every
 time; the outer `timeout 180` never fired and never helped. → every shutdown
-here passes `--timeout $SHUTDOWN_TIMEOUT`, and the outer timeout is thirty
+here passes its budget with `--timeout`, and the outer timeout is thirty
 seconds longer, existing only for a pct that never returns at all. The fake
 reproduces pct's real failure line with the timeout number in it, so a budget
 that stops reaching lxc-stop turns a scenario red by the number in the
 message.
 
+**Then the drill showed what the patience was buying, and the answer was
+nothing.** With the budget finally reaching lxc-stop, both containers were
+waited on for the full 180s and neither came down - whether the EIO that kills
+a blocked guest ever arrives is a race with the RPCs in flight at unmount
+time, and a real total outage loses it. Two facts decided what replaced the
+waiting. The DR's critical path needs OFF THE WIRE, which isolate delivers in
+about three seconds and D1 accepts. And the shutdown request is a SIGNAL that
+outlives the wait: the same drill watched both containers, asked to stop
+during the outage, shut themselves down hours later the moment the storage
+returned, on the strength of that queued signal - so cutting the wait loses
+nothing that was ever going to happen inside it. → SHUTDOWN_GRACE, 30s, on
+the evacuate and isolate paths: long enough for a guest whose writes already
+fail fast to run an orderly shutdown, an order of magnitude shorter than the
+horizon it used to wait for. At two hundred containers the difference is
+eleven hours of customer downtime against two. SHUTDOWN_TIMEOUT stays 180 for
+`--cleanup` alone: that path runs after the disaster on healthy storage,
+nothing is waiting on it, and a database flushing for two minutes deserves
+its two minutes.
+
 ## 6. Numbers calibrated on the real fleet
 
+    SHUTDOWN_GRACE     30s     evacuate/isolate: ask, give a fast-failing
+                               guest room for an orderly shutdown, isolate the
+                               rest. The signal outlives the wait - see the
+                               2026-08-15 entries in section 5
+    SHUTDOWN_TIMEOUT   180s    cleanup only: a 9<id> on healthy storage may
+                               really need its two minutes to flush
     BW_TOTAL_MB        230     divided statically by LANES
     USAGE_FACTOR_PCT   185     image size from the container's used bytes
     OFFSET             8000    copy VMID = source VMID + 8000
