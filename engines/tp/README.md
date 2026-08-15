@@ -102,18 +102,18 @@ from a healthy run.
 
 ```bash
 make lint        # bash -n + shellcheck + the language and separator rules
-make test        # 372 simulator + 16 dispatcher scenarios, 125 c2v
-make mutation    # 268 known bugs reintroduced: 259 in the engines, 9 in the dispatcher, all must be caught
+make test        # 407 simulator + 16 dispatcher scenarios, 125 c2v
+make mutation    # 353 known bugs reintroduced: 344 in the engines, 9 in the dispatcher, all must be caught
 ```
 
 `make mutation` is the target that matters. A green suite means nothing until
 you have watched it go red for the right reason, so everything executable
-here has a runner that breaks it on purpose — forty-five ways for migrate,
-fifty-seven for replica, fifty-nine for failback, fifty-one for distribute,
-forty-seven for recall and nine for the `tp` dispatcher — and fails if the
-suites let any of them through. Every one of those two hundred and sixty-eight
-is a bug somebody could really write, and several are bugs that were really
-written here.
+here has a runner that breaks it on purpose — forty-six ways for migrate,
+fifty-eight for replica, fifty-nine for failback, sixty-eight for distribute,
+forty-seven for recall, sixty-six for prepare and nine for the `tp`
+dispatcher — and fails if the suites let any of them through. Every one of
+those three hundred and fifty-three is a bug somebody could really write, and
+several are bugs that were really written here.
 
 Those three need a Debian userland. On a Mac run `make gates` instead, which
 runs all three in a container with the repo mounted read-only. Do not run them

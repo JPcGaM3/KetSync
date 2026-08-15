@@ -93,6 +93,25 @@ fi
 NODE="$(basename "$N")"
 D="$N/ct"
 
+# What the far side sends back, and how much of it, is decided by the COMMAND
+# and not by the scenario - because on a real node it is decided by the remote
+# shell, which only ever sees the command.
+#
+# Two callers ask for two different shapes. --evacuate and the isolate stop
+# append `; echo __rc=$?` and merge stderr, because `pct` is perl and a perl
+# program that dies exits 255 - and so does ssh when it cannot reach the host,
+# so the number on its own settles nothing and what pct SAID is half the
+# diagnosis. --cleanup appends neither: it re-probes and decides on what it
+# finds. A fake that emitted the line unasked would model a shell nobody ran,
+# and would hide the exact bug these two exist for.
+pct_says(){   # pct's own words, merged only if the command merged them
+  if [[ "$c" == *"2>&1"* ]]; then printf '%s\n' "$@"; else printf '%s\n' "$@" >&2; fi
+}
+pct_exit(){   # $1 = what the command itself exited with
+  if [[ "$c" == *'echo __rc=$?'* ]]; then printf '__rc=%s\n' "$1"; exit 0; fi
+  exit "$1"
+}
+
 case "$c" in
   true) exit 0;;
 
@@ -201,7 +220,7 @@ case "$c" in
       sleep 1
     fi
     id="${c##*pct shutdown }"; id="${id%% *}"
-    [[ -f "$D/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
+    [[ -f "$D/$id.status" ]] || { pct_says "Configuration file 'lxc/$id.conf' does not exist"; pct_exit 2; }
     # A 9<id> is the container standing in for production, on local storage
     # that is alive by definition - the rules below are about the production
     # container whose disk has gone, and they do not fit it. Its own rule is
@@ -216,11 +235,22 @@ case "$c" in
         violation "stopped CT $id while production CT $_prod was '${_pst:-nowhere}'"
         exit 1
       fi
-      printf 'stopped\n' > "$D/$id.status"; : > "$D/$id.veth"; exit 0
+      printf 'stopped\n' > "$D/$id.status"; : > "$D/$id.veth"; pct_exit 0
     fi
     # ssh failing, which is a different fact from anything about the container:
-    # nothing was asked of it at all.
+    # nothing was asked of it at all. It is also the one answer that carries NO
+    # __rc= line whatever the command asked for - the shell that would have
+    # printed it never ran - and that silence is what the engine reads.
     [[ -f "$D/$id.sshdies" ]] && { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+    # pct dying on its own. Its rootfs is a loop device with nothing behind it,
+    # lxc-stop gives up after its own timeout, and perl exits 255 - the same
+    # number ssh uses above, from a machine that answered perfectly well. This
+    # is the case the fleet hit.
+    if [[ -f "$D/$id.pctfails" ]]; then
+      pct_says "Job for lxc@$id.service failed because a timeout was exceeded." \
+               "See \"systemctl status lxc@$id.service\" and \"journalctl -xeu lxc@$id.service\" for details."
+      pct_exit 255
+    fi
     sid="$(cat "$D/$id.rootsid" 2>/dev/null)"
     if [[ "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
       violation "shut down CT $id while its storage '$sid' was ALIVE"
@@ -232,11 +262,11 @@ case "$c" in
     # IS. Modelling only the first made a shutdown against an already-unmounted
     # storage hang in the fake and return in reality.
     if [[ ! -f "$N/storage/$sid.unmounted" \
-       && "$(storage_verdict_of "$NODE" "$sid")" != gone ]]; then exit 124; fi
-    [[ -f "$D/$id.stubborn" ]] && exit 124
+       && "$(storage_verdict_of "$NODE" "$sid")" != gone ]]; then pct_exit 124; fi
+    [[ -f "$D/$id.stubborn" ]] && pct_exit 124
     printf 'stopped\n' > "$D/$id.status"
     : > "$D/$id.veth"
-    exit 0;;
+    pct_exit 0;;
 
   "mkdir -p /etc/pve/ketsync/evacuate && cat > "*)
     dry_forbids "wrote the evacuate record" || exit 1

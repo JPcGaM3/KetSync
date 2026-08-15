@@ -108,6 +108,10 @@ interrupt_at_shutdown(){ : > "$SIMROOT/.interrupt"; }
 # is what ssh exits with, and it is the code an interrupted connection leaves
 # behind too.
 ct_ssh_dies(){ : > "$(node_d "$2")/ct/$1.sshdies"; }
+# pct dying on a node that answered. It exits 255 too - it is perl - so this
+# and ct_ssh_dies produce the SAME NUMBER from opposite ends of the run, and
+# the pair of them is the only way to prove the engine tells them apart.
+ct_pct_fails(){ : > "$(node_d "$2")/ct/$1.pctfails"; }
 storage_disabled(){ [[ -f "$PVE/storage-$1.disabled" ]] \
   || _err "storage $1 should be disabled cluster-wide"; }
 storage_enabled(){  [[ -f "$PVE/storage-$1.disabled" ]] \
@@ -487,6 +491,40 @@ if scenario "10f: a container that will not come down stays isolated, never forc
   has "did not come down within"
   has "nothing here forces a stop"
   ct_status_is 300 pve01 running
+  done_scenario
+fi
+
+if scenario "10h: pct dying is not the node failing, even where it costs nothing"; then
+  # The same 255 collision as 51c, on the path where the container is already
+  # off the wire and there is no fallback left to skip. Nothing here changes
+  # what the engine DOES - which is exactly why it is worth a scenario: the
+  # only thing at stake is whether the log sends somebody to the container or
+  # to the connection, and a message nobody checks is a message that rots.
+  storage pve01 tank-hdd-nas gone
+  ct_pct_fails 300 pve01
+  run_engine --isolate --ctid 300
+  rc_is 0; clean
+  has "pct: Job for lxc@300.service failed because a timeout was exceeded."
+  has "pct itself failed (rc=255) and CT 300 is still running - it stays isolated"
+  hasnt "ssh to pve01 FAILED"
+  hasnt "did not come down within"
+  ct_status_is 300 pve01 running
+  done_scenario
+fi
+
+if scenario "10i: an ssh that failed after the isolate says so, and says whose"; then
+  # The container IS isolated - that happened before the stop was attempted -
+  # so this run is a success with one thing unfinished, and what is unfinished
+  # is a node that stopped answering. Blaming CT 300 hides that entirely.
+  storage pve01 tank-hdd-nas gone
+  ct_ssh_dies 300 pve01
+  run_engine --isolate --ctid 300
+  rc_is 0; clean
+  has "ssh to pve01 FAILED while asking it to stop - not CT 300"
+  has "not even the exit code the command was told to print"
+  hasnt "did not come down within"
+  hasnt "pct itself failed"
+  cfg_net pve01 300 net0 vmbr99
   done_scenario
 fi
 
@@ -941,17 +979,52 @@ if scenario "49b: an interrupt stops the run and says so, rather than blaming th
 fi
 
 if scenario "51b: an ssh that failed is not a container that refused to stop"; then
-  # rc=255 is ssh. The container was never asked, so "it did not come down
-  # within 90s" is a slander on a machine that may be perfectly fine - and it
-  # sends somebody to look at the container instead of at the connection. This
-  # is what the fleet's first drill printed about CT 120 after an operator
-  # interrupted the run and killed its ssh.
+  # The container was never asked, so "it did not come down within 180s" is a
+  # slander on a machine that may be perfectly fine - and it sends somebody to
+  # look at the container instead of at the connection. This is what the
+  # fleet's first drill printed about CT 120 after an operator interrupted the
+  # run and killed its ssh.
+  #
+  # What proves the connection failed is a SILENCE, not a number: the remote
+  # command was told to print its own exit code on its own line, and no line
+  # came back, so the shell that would have printed it never ran. See 51c for
+  # the other half of the pair.
   ct_ssh_dies 300 pve01
   run_engine --evacuate --node "$N1"
   rc_is 1; clean
-  has "ssh to pve01 FAILED while asking it to stop (rc=255)"
+  has "ssh to pve01 FAILED while asking it to stop"
   has "not CT 300"
+  has "not even the exit code the command was told to print"
   hasnt "did not come down within"
+  # The fallback needs the same connection, so it is not attempted - and
+  # saying so is the difference between a container nobody isolated and a
+  # container somebody thinks was isolated.
+  hasnt "isolating it instead"
+  done_scenario
+fi
+
+if scenario "51c: pct failing is not ssh failing, and the container is isolated"; then
+  # The other half of 51b, and the reason this engine stopped reading exit
+  # codes on their own. `pct` is perl; a perl program that dies exits 255 -
+  # the SAME number ssh uses when it cannot reach the host. This engine read
+  # the first as the second on a live drill: it announced that pve01 had not
+  # answered, said CT 300 was never asked, and skipped the isolation - while
+  # printing pct's own words from that same run three lines above.
+  #
+  # The container is up, on a node that answers, with a rootfs on a storage
+  # that is gone. There is no rung above asking it to stop, so what is left is
+  # taking it off the wire - which needs nothing from the dead storage.
+  ct_pct_fails 300 pve01
+  run_engine --evacuate --node "$N1"
+  rc_is 0; clean
+  has "pct: Job for lxc@300.service failed because a timeout was exceeded."
+  has "pct itself failed (rc=255) and CT 300 is still running - isolating it instead"
+  hasnt "ssh to pve01 FAILED"
+  hasnt "was never asked"
+  # Isolated for real, not merely announced.
+  ct_status_is 300 pve01 running
+  cfg_net pve01 300 net0 vmbr99
+  rec_has 300 net0 vmbr0
   done_scenario
 fi
 

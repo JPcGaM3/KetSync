@@ -784,7 +784,7 @@ do_isolate(){   # $1 = ctid
 # It never forces. There is no rung above asking, and being off the wire is
 # already the thing the DR needs.
 stop_after_isolate(){   # $1 = ctid. Uses what do_isolate just found out.
-  local ct="$1" rc out st
+  local ct="$1" rc out st _l
   [[ -n "$ISO_PIP" ]] || return 0
   # A dry run reaches here with everything else pretended, and stopping a
   # customer's container is not something to pretend at.
@@ -801,14 +801,36 @@ stop_after_isolate(){   # $1 = ctid. Uses what do_isolate just found out.
     return 0
   fi
   log "[$ct] its dead mount is already gone, so a shutdown can return: asking CT $ct to stop"
-  rsh "$ISO_PIP" "timeout $SHUTDOWN_TIMEOUT pct shutdown $ct"; rc=$?
+  # Its own exit code on its own line, for the same reason as evacuate above:
+  # pct exits 255 when it dies and so does ssh when it cannot connect.
+  out="$(rsh "$ISO_PIP" "timeout $SHUTDOWN_TIMEOUT pct shutdown $ct 2>&1; echo __rc=\$?")"
+  rc="$(sed -n 's/^__rc=//p' <<<"$out" | tail -1)"
+  while IFS= read -r _l; do
+    [[ -n "$_l" && "$_l" != __rc=* ]] && log "[$ct]   pct: $_l"
+  done <<< "$out"
   out="$(probe "$ISO_PIP" "$ct")"
   st="$(awk '$1=="STATUS"{print $2; exit}' <<<"$out")"
   if [[ "$st" != running ]]; then
     log "[$ct] STOPPED on $ISO_PN - off the wire and no longer writing"
     return 0
   fi
-  log "[$ct] did not come down within ${SHUTDOWN_TIMEOUT}s (rc=$rc) - it stays isolated"
+  # Same three answers as evacuate, and they are worth telling apart even here
+  # where the container is already isolated and there is no fallback left to
+  # skip: a wrong one sends somebody to look at a container when the thing that
+  # broke was the connection to its node.
+  if [[ -z "$rc" ]]; then
+    log "[$ct] ssh to $ISO_PN FAILED while asking it to stop - not CT $ct"
+    log "[$ct]   nothing came back, not even the exit code the command was told to print,"
+    log "[$ct]   so the container was never asked and nothing here knows its state. It is"
+    log "[$ct]   already off the wire; what is left is why that node stopped answering."
+    return 0
+  fi
+  if [[ "$rc" == 124 ]]; then
+    log "[$ct] did not come down within ${SHUTDOWN_TIMEOUT}s (rc=124) - it stays isolated"
+  else
+    log "[$ct] pct itself failed (rc=$rc) and CT $ct is still running - it stays isolated"
+    log "[$ct]   what pct said is above."
+  fi
   log "[$ct]   nothing here forces a stop. A container that will not go is one whose"
   log "[$ct]   processes are still waiting on something, and off the wire is what the"
   log "[$ct]   DR actually needs. B1 will refuse the failback until it is down."
@@ -1239,7 +1261,7 @@ do_evacuate(){   # $1 = node ip
     || log "[$pip] WARN: could not restart pvestatd - the GUI will stay grey"
 
   # ---- E4/E5: stop what can be stopped, isolate what cannot ---------------
-  local rc sout=""
+  local rc sshrc sout=""
   for ct in "${TOSTOP[@]}"; do
     # What `pct shutdown` SAYS is the difference between "the guest ignored
     # us" and "lxc-stop could not even run", and it says it on stdout. It used
@@ -1247,9 +1269,21 @@ do_evacuate(){   # $1 = node ip
     # next to it - one bare line in the middle of a fleet-wide run, which on
     # the night this was written read as a message about the run rather than
     # about CT 110.
-    sout="$(rsh "$pip" "timeout $SHUTDOWN_TIMEOUT pct shutdown $ct 2>&1")"; rc=$?
+    #
+    # THE REMOTE COMMAND REPORTS ITS OWN EXIT CODE ON ITS OWN LINE, which is
+    # the shape ct-recall and ct-distribute already use, and this is why: on
+    # PVE, `pct` is a perl program that dies, and a perl program that dies
+    # exits 255. So does ssh when it cannot reach the host - and for one drill
+    # this engine read the first as the second, announced that the node had
+    # not answered and that the container "was never asked", and skipped the
+    # isolation that is the entire fallback. It was reading pct's own words
+    # out of the same run while it said so. Two facts that need different
+    # answers cannot share one number.
+    sout="$(rsh "$pip" "timeout $SHUTDOWN_TIMEOUT pct shutdown $ct 2>&1; echo __rc=\$?")"
+    sshrc=$?
+    rc="$(sed -n 's/^__rc=//p' <<<"$sout" | tail -1)"
     while IFS= read -r _l; do
-      [[ -n "$_l" ]] && log "[$ct]   pct: $_l"
+      [[ -n "$_l" && "$_l" != __rc=* ]] && log "[$ct]   pct: $_l"
     done <<< "$sout"
     out="$(probe "$pip" "$ct")"
     st="$(awk '$1=="STATUS"{print $2; exit}' <<<"$out")"
@@ -1257,28 +1291,30 @@ do_evacuate(){   # $1 = node ip
       log "[$ct] STOPPED on $pn - it can no longer answer and no longer writes"
       st_ok "$ct"; continue
     fi
-    # The exit code says WHICH failure this was, and they need different
-    # things done about them. 255 is ssh: the node was not reached at all, so
-    # nothing was asked of the container and "it would not stop" is a slander.
-    # 124 is the timeout: it was asked and did not come. Anything else is pct
-    # refusing, and its own words are above.
-    case "$rc" in
-      255) log "[$ct] ssh to $pn FAILED while asking it to stop (rc=255) - the container was"
-           log "[$ct]   never asked. This is the node or the connection to it, not CT $ct."
-           log "[$ct]   isolating needs the same connection, so it is not attempted either.";;
-      124) log "[$ct] did not come down within ${SHUTDOWN_TIMEOUT}s (rc=124) - isolating it instead"
-           log "[$ct]   nothing here forces a stop. A container that will not go is one whose"
-           log "[$ct]   processes are still waiting on something, and taking it off the wire"
-           log "[$ct]   removes the hazard the DR actually cares about."
-           log "[$ct]   it may still come down on its own: the kill lands when the container's"
-           log "[$ct]   outstanding I/O gives up, and the mount decides when that is. Read its"
-           log "[$ct]   schedule, and if timeo x retrans is longer than SHUTDOWN_TIMEOUT, that"
-           log "[$ct]   is the whole answer:  ssh root@$pip grep $sid /proc/mounts";;
-      *)   log "[$ct] pct shutdown returned rc=$rc and CT $ct is still running - isolating it instead"
-           log "[$ct]   what pct said is above. Taking it off the wire removes the hazard the"
-           log "[$ct]   DR actually cares about, and needs nothing from the dead storage.";;
-    esac
-    [[ "$rc" == 255 ]] && { st_fail "$ct"; continue; }
+    # No line of our own back from the far side is the only thing that means
+    # the far side was never reached. Not a number - a silence.
+    if [[ -z "$rc" ]]; then
+      log "[$ct] ssh to $pn FAILED while asking it to stop (ssh rc=$sshrc) - not CT $ct"
+      log "[$ct]   nothing came back, not even the exit code the command was told to print,"
+      log "[$ct]   so the container was never asked and nothing here knows its state."
+      log "[$ct]   isolating needs the same connection, so it is not attempted either."
+      st_fail "$ct"; continue
+    fi
+    if [[ "$rc" == 124 ]]; then
+      log "[$ct] did not come down within ${SHUTDOWN_TIMEOUT}s (rc=124) - isolating it instead"
+      log "[$ct]   it may still come down on its own: the kill lands when the container's"
+      log "[$ct]   outstanding I/O gives up, and the mount decides when that is. Read its"
+      log "[$ct]   schedule, and if timeo x retrans is longer than SHUTDOWN_TIMEOUT, that"
+      log "[$ct]   is the whole answer:  ssh root@$pip grep $sid /proc/mounts"
+    else
+      log "[$ct] pct itself failed (rc=$rc) and CT $ct is still running - isolating it instead"
+      log "[$ct]   what pct said is above. On this fleet that is usually lxc-stop giving up"
+      log "[$ct]   after its own timeout, on a container whose rootfs is a loop device with"
+      log "[$ct]   nothing behind it - and `pct stop`, which kills rather than asks, does not"
+      log "[$ct]   return either: the wait is in the block layer, where SIGKILL does not go."
+    fi
+    log "[$ct]   nothing here forces a stop. Taking it off the wire removes the hazard the"
+    log "[$ct]   DR actually cares about, and needs nothing from the dead storage."
     do_isolate "$ct" || true
   done
   st_ok "$pip"; return 0

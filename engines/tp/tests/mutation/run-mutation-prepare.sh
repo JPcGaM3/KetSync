@@ -392,9 +392,40 @@ mutant "the record forgets which containers it was about to stop" \
 # Each of these ends with a run that reads as a fleet problem when it is not
 # one, which on the night this matters sends somebody to check machines that
 # were never broken.
+# This is the bug itself, put back exactly as it shipped. `pct` is perl, a
+# perl program that dies exits 255, and so does ssh when it cannot reach the
+# host - so the engine read pct dying as the node being gone, said the
+# container had never been asked, and skipped the isolation that is the whole
+# fallback. It printed pct's own words three lines above while it said so.
+#
+# It takes BOTH scenarios to catch, which is the point of writing them as a
+# pair: with the number back, 51b's failed connection falls through to "pct
+# itself failed" and isolates a container on a node nobody can reach, and
+# 51c's failed pct is announced as a node that did not answer.
 mutant "a shutdown that never reached the node reads as a container that would not stop" \
-  's{\Q      255) log "[\E\$ct\Q] ssh to \E}{      254) log "[\$ct] ssh to }' \
-  51b
+  's{\Q    if [[ -z "\E\$rc\Q" ]]; then\E}{    if [[ "\$rc" == 255 ]]; then}' \
+  51b 51c
+
+# The far side is asked to report its own exit code because ssh's cannot say
+# anything about the command it carried. Without the line there is no answer
+# to read, every container reads as never asked, and a whole node's worth of
+# them is skipped in silence.
+mutant "the command stops reporting its own exit code, so nothing can be told apart" \
+  's{\Q    sout="\E\$\Q(rsh "\E\$pip\Q" "timeout \E\$SHUTDOWN_TIMEOUT\Q pct shutdown \E\$ct\Q 2>&1; echo __rc=\E\\\$\Q?")"\E}{    sout="\$(rsh "\$pip" "timeout \$SHUTDOWN_TIMEOUT pct shutdown \$ct 2>\&1")"}' \
+  39 51c
+
+# What pct SAYS is the other half of the diagnosis: "the guest ignored us" and
+# "lxc-stop could not even run" are the same exit code and different problems.
+mutant "pct's own words are dropped, leaving only a number" \
+  's{\Q    while IFS= read -r _l; do\E\n\Q      [[ -n "\E\$_l\Q" && "\E\$_l\Q" != __rc=* ]] && log "[\E\$ct\Q]   pct: \E\$_l\Q"\E\n\Q    done <<< "\E\$sout\Q"\E}{    :}' \
+  51c
+
+# Same collision on the isolate path. Nothing it decides changes what the
+# engine DOES there - which is why it is the one most likely to be "tidied"
+# back into a single message.
+mutant "isolate blames the container when it was the connection that failed" \
+  's{\Q  if [[ -z "\E\$rc\Q" ]]; then\E}{  if [[ "\$rc" == 255 ]]; then}' \
+  10h 10i
 
 mutant "an interrupt is swallowed and the run carries on to the next container" \
   's{\Qtrap \E\x27\Qon_signal INT 2\E\x27\Q INT\E}{trap \x27:\x27 INT}' \
