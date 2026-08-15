@@ -48,11 +48,17 @@ cmd_doctor(){
       row="$(printf '  %-15s %-8s %-12s' "$ip" "${role:-?}" "${name:-<name unknown>}")"
       if ks_ssh "$ip" true 2>/dev/null; then verdict="ssh ok"
       elif [[ "$role" == compute ]]; then
-        # Not a fault. The storage node is outside the cluster and has no key
-        # to a compute node - ct-failback.sh stopped needing one when B1 moved
-        # to the cluster API. Say so, so nobody goes and "fixes" it by opening
-        # a path that does not need to exist.
-        verdict="no ssh (expected - asked through the cluster API instead)"
+        # This used to read "expected - asked through the cluster API instead",
+        # and it was true for about a week. B1 went back to ssh because
+        # `pvesh get /nodes/X` can only answer for a member of its own cluster
+        # and this machine is deliberately not one; and everything built since
+        # runs over that same connection. evacuate disables a storage and
+        # unmounts it THERE, isolate writes a net line THERE, distribute issues
+        # its transfer THERE, recall reads the 9<id> THERE, cleanup stops it
+        # THERE. A compute node this machine cannot reach is a compute node the
+        # whole DR cannot use, and doctor calling that expected is doctor
+        # reporting a fleet that cannot be recovered as a fleet that is fine.
+        verdict="SSH FAILS - no DR can run on this node"; rc=1
       else
         verdict="SSH FAILS"; rc=1
       fi
@@ -213,6 +219,61 @@ cmd_doctor(){
     done
     (( left )) || say "  nothing left over"
   fi
+
+  # ---- images whose filesystem has already recorded an error --------------
+  # A container on a storage that died is not shut down, it is stopped by its
+  # own writes failing - that is what forcing a dead mount to fail does, and it
+  # is the only thing that gets a container down at all while its rootfs is
+  # gone. ext4 aborts the journal, remounts read-only, and writes the error
+  # into the image's superblock. The NEXT mount says so once, in dmesg, and
+  # then mounts it anyway:
+  #
+  #   EXT4-fs warning: Filesystem error recorded from previous mount: IO failure
+  #   EXT4-fs warning: Marked fs in need of filesystem check.
+  #   EXT4-fs (loop0): warning: mounting fs with errors, running e2fsck is recommended
+  #
+  # Nobody reads dmesg on a Tuesday, and a failback writes INTO that image. So
+  # it is asked here instead, of the node the container lives on, and it is
+  # read-only: dumpe2fs touches the superblock and nothing else.
+  #
+  # The word to look for is "with errors", NOT "not clean". A mounted
+  # filesystem always reports not clean - that is what mounted MEANS - and a
+  # check that reported every running container would be a check nobody reads.
+  # The error bit is independent of the mount state, which is exactly why it is
+  # the one worth asking about.
+  say "== images whose filesystem recorded an error"
+  local imgs=0 img_bad=0 state
+  if [[ -f "$KS_INV" ]]; then
+    while read -r ct home _ _ _; do
+      [[ "$ct" =~ ^# || -z "${ct:-}" ]] && continue
+      [[ "$home" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+      imgs=1
+      # One round trip: the rootfs volume out of the config, the path out of
+      # the storage layer, the state out of the superblock. Asking in three
+      # calls would be three times the round trips on a fleet where this runs
+      # against every container.
+      state="$(ks_ssh "$home" "
+        v=\$(pct config $ct 2>/dev/null | sed -n 's/^rootfs: \([^,]*\).*/\1/p')
+        [ -n \"\$v\" ] || { echo NOCONFIG; exit 0; }
+        p=\$(pvesm path \"\$v\" 2>/dev/null)
+        [ -n \"\$p\" ] && [ -f \"\$p\" ] || { echo NOIMAGE; exit 0; }
+        echo \"PATH \$p\"
+        dumpe2fs -h \"\$p\" 2>/dev/null | sed -n 's/^Filesystem state: *//p'
+      " 2>/dev/null)"
+      if [[ -z "$state" ]]; then
+        say "  CT $ct: could not ask $home - unanswered is not the same as clean"; rc=1; img_bad=1
+      elif [[ "$state" == *"with errors"* ]]; then
+        say "  CT $ct: its image says \"$(sed -n 's/^Filesystem state: *//p;$p' <<<"$state" | tail -1)\""
+        say "    $(sed -n 's/^PATH //p' <<<"$state")"
+        say "    it mounts anyway and says so only in dmesg. Check it while the container"
+        say "    is STOPPED, before anything writes into it again:"
+        say "      e2fsck -fy $(sed -n 's/^PATH //p' <<<"$state")"
+        rc=1; img_bad=1
+      fi
+    done < "$KS_INV"
+  fi
+  (( imgs )) || say "  no rows in $(basename "$KS_INV") to ask about"
+  (( imgs && ! img_bad )) && say "  none - no image reports an error in its superblock"
 
   # ---- cron lines that would refuse to run --------------------------------
   # A command that writes asks first, and a cron line has nobody to ask, so it

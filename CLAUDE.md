@@ -82,23 +82,36 @@ the commands fold away and the prose reads as a flow. `docs/how-it-works.html`
 is the map and deliberately has no commands in it: two files holding the same
 commands is one file going stale.
 
-**8. Nothing that writes to a real machine ships without a simulator.** Read
-`tests/README.md`. `sync` has one - 21 scenarios and 19 mutations - and writing
-it found three bugs that had been live on the fleet, none of which review had
-caught. `distribute` has one too, 13 and 13, because it is the only verb here
-that composes two engines and every joint between them is invisible from
-inside either one. The confirmation has 17 and 16, and it needs its own
-because its whole behaviour turns on whether there is a person on the other
-end - the prompting half runs under a pty, and a pipe tests the refusal by
-being one. `role` and `doctor` still do not, and that is the remaining debt. A
+**8. Nothing that writes to a real machine ships without a simulator, and the
+one command that writes nothing needed one anyway.** Read `tests/README.md`.
+`sync` has one - 21 scenarios and 19 mutations - and writing it found three
+bugs that had been live on the fleet, none of which review had caught.
+`distribute` has one too, 13 and 13, because it is the only verb here that
+composes two engines and every joint between them is invisible from inside
+either one. The confirmation has 17 and 16, and it needs its own because its
+whole behaviour turns on whether there is a person on the other end - the
+prompting half runs under a pty, and a pipe tests the refusal by being one.
+
+`doctor` has 20 and 19, and it went last for the wrong reason: it writes
+nothing, so nothing it does can corrupt anything. What it can do is stop
+noticing, and a check that stops noticing prints exactly what a healthy fleet
+prints. Writing the simulator found one immediately - a compute node nobody
+could ssh to was reported as expected, months after evacuate, isolate,
+distribute, recall and cleanup all started running over that connection. Its
+mutations are the ones to copy from if you add a section: every assertion in
+that suite is a line of output, which makes it the easiest suite here to write
+badly, so each mutation silences exactly one check and requires the scenario
+for it to notice.
+
+`role` is the last one without a simulator, and that is the remaining debt. A
 mutation that proves the simulator can fail is part of the simulator, not a
 follow-up.
 
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 405 tp scenarios + 51 for ketsync
-    make mutation # 398 known bugs put back. None may survive
+    make test     # both layers: 405 tp scenarios + 71 for ketsync
+    make mutation # 417 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -151,6 +164,9 @@ being separate when they stopped being empty.
                          what the joins can get wrong
     tests/sim/confirm/   the question before a write, half of it under a pty
                          because there is no other way to test a prompt
+    tests/sim/doctor/    every check doctor makes, one wrong thing at a time
+                         against a fleet that is otherwise fine. It writes
+                         nothing, so what it can get wrong is silence
     tests/mutation/      one mutation per guard, each proven to kill a scenario
 
 `engines/tp` came from the standalone `tp` repo at commit `b4ddc0c` and is now

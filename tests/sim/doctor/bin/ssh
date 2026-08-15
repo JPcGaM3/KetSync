@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  fake ssh — every question `ketsync doctor` asks another machine.
+# -----------------------------------------------------------------------------
+#  Real ssh exits 255 when it cannot connect, and doctor's whole job is to tell
+#  "the machine did not answer" apart from "the machine answered no". A fake
+#  that returned an empty string for both would let a check pass while it was
+#  reporting a fleet nobody had actually asked about.
+#
+#  An unmodelled command is a VIOLATION rather than a shrug: doctor grew a new
+#  question the day it grew a new section, and a fake that quietly answered
+#  nothing would report a clean fleet for a check that never ran.
+# =============================================================================
+set -uo pipefail
+# shellcheck source=../lib.sh disable=SC1090
+. "$SIMLIB"
+
+host=""; declare -a cmd=()
+while (( $# )); do
+  case "$1" in
+    -o|-c|-i|-p) shift 2;;
+    -*) shift;;
+    *) if [[ -z "$host" ]]; then host="${1#root@}"; shift
+       else cmd+=("$1"); shift; fi;;
+  esac
+done
+c="${cmd[*]:-}"
+trace "ssh $host :: $(printf '%s' "$c" | tr '\n' ' ')"
+
+host_up "$host" || { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
+H="$(host_dir "$host")"
+
+case "$c" in
+  true|"") exit 0;;
+
+  # ---- node names, discovered rather than typed --------------------------
+  # The cluster's own answer, in the shape pvesh really prints it: one record
+  # per node plus a record for the cluster itself, which has a name and no ip.
+  # That last one is why the engine's awk filters on type.
+  *"pvesh get /cluster/status"*)
+    [[ -f "$H/nostatus" ]] && exit 1
+    printf -- '- name: %s\n  type: cluster\n  quorate: 1\n' "ketcluster"
+    while read -r _ip _name; do
+      [[ -n "${_ip:-}" ]] || continue
+      printf -- '- id: node/%s\n  ip: %s\n  name: %s\n  type: node\n' "$_name" "$_ip" "$_name"
+    done < "$SIMROOT/cluster.tsv"
+    exit 0;;
+
+  # ---- what a half-finished DR left behind -------------------------------
+  "ls /etc/pve/ketsync/isolate/"*|"ls /etc/pve/ketsync/evacuate/"*)
+    d="${c#ls }"; d="${d%% *}"
+    p="$(remote_path "$host" "$d")"
+    [[ -d "$p" ]] || exit 2
+    ls "$p" 2>/dev/null; exit 0;;
+
+  "ls /etc/pve/nodes/"*)
+    # A glob, expanded on the far side, which is the point: pmxcfs is shared,
+    # so one node can answer for every node's guest configs.
+    shopt -s nullglob
+    hits=( "$(remote_path "$host" "")"/etc/pve/nodes/*/lxc/9*.conf )
+    shopt -u nullglob
+    (( ${#hits[@]} )) || exit 2
+    for f in "${hits[@]}"; do printf '%s\n' "${f#"$(remote_path "$host" "")"}"; done
+    exit 0;;
+
+  # ---- the image check ---------------------------------------------------
+  # One round trip that reads three things: the rootfs volume out of the guest
+  # config, the path out of the storage layer, and the state out of the
+  # superblock. The fake answers it as one command because the engine asks it
+  # as one command - and because a fake that answered each half separately
+  # could not model the case that matters, which is a node that answers for
+  # the config and has no image behind it.
+  *"dumpe2fs -h"*)
+    id="$(sed -n 's/.*pct config \([0-9][0-9]*\).*/\1/p' <<<"$(printf '%s' "$c" | tr '\n' ' ')")"
+    [[ -n "$id" ]] || { violation "image probe with no container id on $host: $c"; exit 1; }
+    [[ -f "$H/ct/$id.rootfs" ]] || { echo NOCONFIG; exit 0; }
+    [[ -f "$H/ct/$id.path"   ]] || { echo NOIMAGE;  exit 0; }
+    printf 'PATH %s\n' "$(cat "$H/ct/$id.path")"
+    # No state file at all means dumpe2fs printed nothing - an image that is
+    # not ext4, or a dumpe2fs that is not installed. The engine must not read
+    # silence as "clean", so the fake can produce silence.
+    [[ -f "$H/ct/$id.fsstate" ]] && cat "$H/ct/$id.fsstate"
+    exit 0;;
+
+  *) violation "unmodelled ssh command on $host: $c"; exit 127;;
+esac

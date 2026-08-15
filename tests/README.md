@@ -1,7 +1,7 @@
 # Tests
 
-`sync` has a simulator. `role` and `doctor` do not, and that is the remaining
-debt.
+`sync`, `distribute`, the confirmation and `doctor` have simulators. `role`
+does not, and that is the remaining debt.
 
 `sync` went first because it is the only command in this layer that WRITES to
 another machine, and because everything it can get wrong is silent: a push that
@@ -32,13 +32,30 @@ its first run.
                      green suite means nothing until you have watched it go red
                      for the right reason
 
-    make test-ketsync       21 scenarios
-    make mutation-ketsync   19 mutations
+    sim/doctor/      every check doctor makes, one wrong thing at a time
+                     against a fleet that is otherwise fine
+    sim/distribute/  the one composed command: both engines are stubs that
+                     record their argv, because the argv is the whole of what
+                     the joins between them can get wrong
+    sim/confirm/     the question asked before a write, half of it under a pty
 
-`role` and `doctor` are next. Neither writes to another machine, which is why
-they are second rather than first - but `doctor` refreshes `nodes.map`, and a
-`nodes.map` written from a cluster that answered strangely is a config written
-into another member's directory.
+    make test-ketsync       21 + 13 + 17 + 20 scenarios
+    make mutation-ketsync   19 + 13 + 16 + 19 mutations
+
+`doctor` went last because it writes nothing, and that turned out to be the
+wrong reason to leave it. A command that writes can be caught by looking at
+what arrived; a command that only reads is caught by nothing at all when a
+check stops firing, because a check that stops firing prints what a healthy
+fleet prints. The simulator found one on its first run: a compute node nobody
+could ssh to was reported as expected, months after every DR verb started
+running over that connection.
+
+Its mutations are the pattern to copy if you add a section to doctor. Every
+assertion in that suite is a line of output - `has "== nodes.tsv"` passes
+forever, whatever the section under it decided - so each mutation silences
+exactly one check and names the scenario that has to notice.
+
+`role` is next, and it is the only one left.
 
 Copy the harness rather than inventing one: `sim/sync/run-sim-sync.sh` is the
 pattern here, and `tp/tests/sim/run-sim.sh` is the older one it came from.

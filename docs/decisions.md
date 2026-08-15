@@ -609,7 +609,18 @@ doctor` says so on the next good day.
     ketsync evacuate
     ketsync cleanup
 
-Nothing here is a stub any more. ketsync's own `tests/` covers `sync` and not
-`role` or `doctor`, and that is the remaining debt: see `tests/README.md`.
+Nothing here is a stub any more. ketsync's own `tests/` covers `sync`,
+`distribute`, the confirmation and `doctor`; `role` is the only command left
+without a simulator, and that is the remaining debt - see `tests/README.md`.
+
+`doctor` was written last, on the argument that a command which writes nothing
+cannot break anything. That argument is wrong in a way worth writing down: a
+read-only check does not fail loudly when it stops working, it reports the same
+clean fleet a clean fleet reports. Its simulator found one on the first run - a
+compute node this machine could not ssh to was being reported as expected,
+which had been true for about a week and then stopped being true the moment
+`evacuate`, `isolate`, `distribute`, `recall` and `cleanup` all started running
+over exactly that connection. doctor was reporting a fleet that could not be
+recovered as a fleet that was fine.
 Nothing in `lib/` should write to a real machine before it has a simulator,
 for the same reason `tp` has five.
