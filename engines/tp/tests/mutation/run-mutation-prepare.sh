@@ -377,6 +377,22 @@ mutant "cleanup leaves onboot alone, so the next reboot starts the stand-in" \
   's{\Q  rsh "\E\$dip\Q" "pct set \E\$dr\Q --onboot 0"\E}{  :}' \
   51
 
+# ---------- what the log says when a step does not work ---------------------
+# Each of these ends with a run that reads as a fleet problem when it is not
+# one, which on the night this matters sends somebody to check machines that
+# were never broken.
+mutant "a shutdown that never reached the node reads as a container that would not stop" \
+  's{\Q      255) log "[\E\$ct\Q] ssh to \E}{      254) log "[\$ct] ssh to }' \
+  51b
+
+mutant "an interrupt is swallowed and the run carries on to the next container" \
+  's{\Qtrap \E\x27\Qon_signal INT 2\E\x27\Q INT\E}{trap \x27:\x27 INT}' \
+  49b
+
+mutant "an interrupt stops the run without saying that is what happened" \
+  's{\Q  log "INTERRUPTED by SIG\E\$1\Q - stopping here.\E.*?\n}{}' \
+  49b
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

@@ -58,6 +58,11 @@ new_world(){
   mkdir -p "$WORK/state" "$WORK/logs" "$BKP/ct" "$BKP/data" "$PVE/nodes" "$SIMROOT/nodes"
   : > "$SIMROOT/violations"; : > "$SIMROOT/trace"; : > "$BKP/zfs.tsv"
   echo 0 > "$SIMROOT/rsync.rc"
+  # What the fake rsync reports out of its --stats block, with the thousands
+  # separators a real one prints. The traffic is on the RECEIVED line: this
+  # engine's rsync runs on the target and pulls.
+  printf 'Number of regular files transferred: 161\nTotal file size: 118,111,600,640 bytes\nLiteral data: 2,469,606,195 bytes\nTotal bytes sent: 3,271\nTotal bytes received: 2,470,127,483 bytes\n' \
+    > "$SIMROOT/rsync.stats"
 
   printf 'bkp02\n' > "$BKP/node"
 
@@ -247,6 +252,15 @@ inventory(){ printf '%s\n' "$@" > "$WORK/inventory-replica.tsv"; }
 fleet(){     { printf '# ct\thome\tdr\tdst\n'; printf '%s\n' "$@"; } > "$WORK/fleet.tsv"; }
 no_fleet(){  rm -f "$WORK/fleet.tsv"; }
 rsync_rc(){  printf '%s\n' "$1" > "$SIMROOT/rsync.rc"; }
+# The state file's "last" object, without a JSON parser: the engine writes it
+# one field per printf with no spaces, and the sim has no business depending on
+# python to read four integers.
+st_file(){ printf '%s/state/distribute-%s.json' "$WORK" "$1"; }
+st_is(){ # $1=ctid $2=last.<field> $3=expected
+  local f k got; f="$(st_file "$1")"; k="${2#last.}"
+  got="$(sed -n "s/.*\"$k\":\([^,}]*\).*/\1/p" "$f" 2>/dev/null | head -1 | tr -d '\"')"
+  [[ "$got" == "$3" ]] || _err "state $1: $2 = '${got:-<none>}', expected '$3'"; }
+no_rsync_stats(){ : > "$SIMROOT/rsync.stats"; }
 truncate_cfg(){ : > "$SIMROOT/cfgwrite.trunc"; }
 
 run_engine(){
@@ -680,6 +694,43 @@ if scenario "13: GUARD D6 - a failed transfer leaves NO config behind"; then
   has "pvesm free local-lvm:vm-9300-disk-0"
   no_cfg pve01 9300
   nothing_mounted
+  done_scenario
+fi
+
+if scenario "13b: a failed transfer carries rsync's own message back"; then
+  # rc=23 and nothing else is a run nobody can diagnose without repeating it by
+  # hand at four in the morning. The whole transfer used to go to /dev/null -
+  # both what it copied and what it said when it could not.
+  rsync_rc 23
+  run_engine --ctid 300
+  rc_is 1; clean
+  has "rsync: rsync: [receiver] mkstemp"
+  has "No space left on device"
+  done_scenario
+fi
+
+if scenario "13c: the numbers reach the log and the state file"; then
+  # The only evidence anybody gets that this container's rootfs arrived rather
+  # than an empty directory. This engine filed files=0, literal_bytes=0 and
+  # bytes_received=0 for every placement it ever made, because its rsync ran
+  # with --stats off and its output thrown away.
+  run_engine --ctid 300
+  rc_is 0; clean
+  has "stats: files=161 changed=2.2GiB wire=2.3GiB of 110.0GiB"
+  st_is 300 last.files          161
+  st_is 300 last.literal_bytes  2469606195
+  st_is 300 last.bytes_received 2470127483
+  done_scenario
+fi
+
+if scenario "13d: a transfer that reported nothing is not dressed up as one that did"; then
+  # An rsync that copied an empty source exits 0. The numbers are the only
+  # thing that tells those two apart, so they are printed as they came back -
+  # zeros included - rather than left out when they are unflattering.
+  no_rsync_stats
+  run_engine --ctid 300
+  rc_is 0; clean
+  has "stats: files=0 changed=0B wire=0B of 0B"
   done_scenario
 fi
 

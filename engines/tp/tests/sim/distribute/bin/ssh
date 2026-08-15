@@ -270,6 +270,18 @@ case "$c" in
     # running one, so it prints it - and ssh itself exits 0, because the far
     # side ran and reported.
     printf 'rc=%s\n' "$rc"
+    # --stats, when the engine asks for it. The big number is on the RECEIVED
+    # line because this rsync runs on the TARGET and pulls: the target's own
+    # "sent" is the file list. A fake that put the traffic on the sent line
+    # would let an engine reading the wrong one stay green, which is exactly
+    # how ct-migrate.sh logged three kilobytes for every migration it ever ran.
+    if [[ "$c" == *--stats* && ( "$rc" == 0 || "$rc" == 24 ) ]]; then
+      cat "$SIMROOT/rsync.stats" 2>/dev/null
+    fi
+    # A failure has to say WHY. rsync writes that on stderr and the engine
+    # keeps it now, so the fake has something to keep.
+    [[ "$rc" != 0 && "$rc" != 24 ]] && \
+      printf 'rsync: [receiver] mkstemp "%s/.x" failed: No space left on device (28)\n' "$dst"
     exit 0;;
 
   "cat > "*)

@@ -638,12 +638,13 @@ run_back(){   # -> rsync rc; fills RS_*
     rsync "${opts[@]}" "$BKP_SSH:$CT_SRCMNT/" "$mnt/" >>"$LOG" 2>&1
   fi
   rc=$?
-  RS_SECS=$(( SECONDS - t0 )); RS_FILES=0; RS_LITERAL=0; RS_RECV=0
+  RS_SECS=$(( SECONDS - t0 )); RS_FILES=0; RS_LITERAL=0; RS_RECV=0; RS_TOTAL=0
   if [[ -n "$sf" && -s "$sf" ]]; then
     RS_FILES=$(_rs_num 'Number of .*files transferred' "$sf")
     RS_LITERAL=$(_rs_num 'Literal data' "$sf")
     RS_RECV=$(_rs_num 'Total bytes received' "$sf")     # we are the receiver now
-    local n; for n in RS_FILES RS_LITERAL RS_RECV; do [[ "${!n}" =~ ^[0-9]+$ ]] || printf -v "$n" 0; done
+    RS_TOTAL=$(_rs_num 'Total file size' "$sf")
+    local n; for n in RS_FILES RS_LITERAL RS_RECV RS_TOTAL; do [[ "${!n}" =~ ^[0-9]+$ ]] || printf -v "$n" 0; done
   fi
   [[ -n "$sf" ]] && rm -f "$sf"
   return $rc
@@ -826,7 +827,7 @@ failback_one(){
     log "[$ct] NOTE:   rootfs: $CT_SID:$CT_VOL,size=$newsize"
   fi
 
-  log "[$ct] stats: files=${RS_FILES:-0} changed=$(hsize "${RS_LITERAL:-0}") wire=$(hsize "${RS_RECV:-0}") time=${RS_SECS:-0}s"
+  log "[$ct] stats: files=${RS_FILES:-0} changed=$(hsize "${RS_LITERAL:-0}") wire=$(hsize "${RS_RECV:-0}") of $(hsize "${RS_TOTAL:-0}") time=${RS_SECS:-0}s avg=$(hsize "$(( ${RS_RECV:-0} / (${RS_SECS:-0} > 0 ? ${RS_SECS:-0} : 1) ))")/s"
 
   if (( DRY )); then log "[$ct] dry-run - nothing was written"; return 0; fi
   if [[ $rc -ne 0 && $rc -ne 24 ]]; then
@@ -964,11 +965,28 @@ fi
 if (( DRY )); then
   log "dry-run only - nothing was written"
 elif (( FINAL )) && (( ok )); then
-  log "next, by hand, for: ${DONE_IDS[*]}"
-  log "  1) start each production CT:   ssh root@<its node> pct start <ctid>"
-  log "  2) put each copy's network back on the mock bridge (ct-replica R11 nags until you do)"
-  log "  3) rm $BASE/PAUSE"
-  log "  4) $BASE/ct-replica.sh          # first round back, must end failed=0"
+  log "next, for: ${DONE_IDS[*]}"
+  # The order is the point, and the first step is the one that used to be
+  # missing. If the outage was handled with `ketsync evacuate` - and the whole
+  # runbook says to - then the containers' storage is still DISABLED
+  # cluster-wide and still unmounted on the compute nodes. `pct start` there
+  # fails with a storage that is not active, which reads like a broken
+  # failback and is nothing of the kind. Nothing in THIS engine switched it
+  # off, so nothing in this engine switches it back on: the record of what was
+  # disabled belongs to ct-prepare.sh, and so does the command.
+  log "  1) switch the storages back on, per node, from what evacuate wrote down:"
+  log "       $BASE/ct-prepare.sh --restore --node <ip>       # ketsync restore --node <ip>"
+  log "     doctor lists every node that still has a record. Skip this and step 3 fails"
+  log "     with 'storage is not active', which is not a failback problem."
+  log "  2) put each production CT's own network and onboot back:"
+  log "       $BASE/ct-prepare.sh --restore --ctid <ctid>     # ketsync restore --ctid <id>"
+  log "  3) start each production CT:   ssh root@<its node> pct start <ctid>"
+  log "     nothing here starts a container, ever - that decision has a customer on it"
+  log "  4) put the 9<id> that stood in for it away, once you have checked the real one:"
+  log "       $BASE/ct-prepare.sh --cleanup --ctid <ctid>     # add --destroy to release R13"
+  log "  5) if a COPY was promoted, put its network back on the mock bridge (R11 nags until you do)"
+  log "  6) rm $BASE/PAUSE"
+  log "  7) $BASE/ct-replica.sh          # first round back, must end failed=0"
 elif (( ok )); then
   log "presync done. run it again until 'changed=' stops shrinking, then cut over:"
   log "  1) touch $BASE/PAUSE"

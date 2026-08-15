@@ -1385,7 +1385,7 @@ for CT in "${CTS[@]}"; do
       [[ "${!_n}" =~ ^[0-9]+$ ]] || printf -v "$_n" 0
     done
     avg=0; (( RS_SECS > 0 )) && avg=$(( RS_SENT / RS_SECS ))
-    log "[$CT] stats: files=$RS_FILES changed=$(hsize "$RS_LITERAL") wire=$(hsize "$RS_SENT") time=${RS_SECS}s avg=$(hsize "$avg")/s"
+    log "[$CT] stats: files=$RS_FILES changed=$(hsize "$RS_LITERAL") wire=$(hsize "$RS_SENT") of $(hsize "$RS_TOTAL") time=${RS_SECS}s avg=$(hsize "$avg")/s"
   fi
   [[ -n "$SF" ]] && rm -f "$SF"
 

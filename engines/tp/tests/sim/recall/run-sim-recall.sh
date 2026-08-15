@@ -86,7 +86,7 @@ new_world(){
   echo 0 > "$SIMROOT/rsync.rc"
   # files, literal, sent - what the fake rsync reports out of its --stats block,
   # with the thousands separators PVE's rsync really prints
-  printf 'Number of regular files transferred: 161\nLiteral data: 2,469,606,195 bytes\nTotal bytes sent: 2,470,127,483 bytes\n' \
+  printf 'Number of regular files transferred: 161\nTotal file size: 118,111,600,640 bytes\nLiteral data: 2,469,606,195 bytes\nTotal bytes sent: 2,470,127,483 bytes\nTotal bytes received: 3,271\n' \
     > "$SIMROOT/rsync.stats"
 
   printf 'bkp02\n' > "$BKP/node"
@@ -483,8 +483,11 @@ if scenario "13: C4 --final on a stopped 9<id> runs, and prints the unwind for a
   rc_is 0; clean
   has "[300] OK -> 8300"
   has "FINAL round done. Copy 8300 on bkp02 now holds the newest data."
-  has "pct destroy 9300"
-  has "pct set 300 --onboot 1"
+  # The unwind is one command of this toolchain's own now, not two pct lines
+  # for somebody to retype: it puts the production network and onboot back and
+  # takes the 9<id> off the wire, and --destroy is the separate decision.
+  has "ct-prepare.sh --cleanup --ctid 300"
+  has "Add --destroy when you no longer want it as a fallback"
   copy_has 8300 replica-hdd "generation 9"
   done_scenario
 fi
@@ -651,7 +654,9 @@ fi
 if scenario "28: the stats rsync printed reach the log and the state file"; then
   run_engine --ctid 300
   rc_is 0; clean
-  has "changed=2.2GiB files=161"
+  # The same line, the same fields, the same order as every other engine here:
+  # during a DR somebody greps `stats:` across five logs at once.
+  has "stats: files=161 changed=2.2GiB wire=2.3GiB of 110.0GiB"
   state_says 300 status ok
   state_says 300 tool recall
   done_scenario
@@ -662,8 +667,8 @@ if scenario "29: C7 nothing is started, stopped or destroyed - the commands are 
   dr_state 300 "$S1" stopped
   run_engine --ctid 300 --final
   rc_is 0; clean          # the fake records a violation for any pct lifecycle call
-  has "pct destroy 9300"
-  has "Nothing here does either"
+  has "ct-prepare.sh --cleanup --ctid 300"
+  has "Nothing here does either by itself"
   done_scenario
 fi
 

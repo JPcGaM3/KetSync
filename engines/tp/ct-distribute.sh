@@ -336,7 +336,7 @@ st_write(){   # $1=ctid $2=status $3=reason $4=rc
       "$(json_str "$(date '+%FT%T%z')")" "$(json_num "$(date +%s)")" \
       "$(json_str "$MODE")" "$(json_str "$2")" "$(json_str "$3")" \
       "$(json_num "$4")" "$(json_num "${RS_SECS:-0}")" "$(json_num "${RS_FILES:-0}")" \
-      "$(json_num "${RS_LITERAL:-0}")" "$(json_num "${RS_RECV:-0}")"
+      "$(json_num "${RS_LITERAL:-0}")" "$(json_num "${RS_WIRE:-0}")"
     printf '}\n'
   } > "$t" 2>/dev/null && mv -f "$t" "$f" 2>/dev/null && { st_history "$id"; return 0; }
   rm -f "$t" 2>/dev/null
@@ -559,7 +559,25 @@ cleanup(){
   [[ -n "$RUN_LOCK" ]] && exec 9>&-
   return 0
 }
-trap cleanup EXIT INT TERM
+
+# A signal is not a fleet problem, and it used to look like one. `trap cleanup
+# EXIT INT TERM` runs the handler and then CARRIES ON from wherever the signal
+# landed - and almost every remote call in this engine happens inside a command
+# substitution, where SIGINT kills the subshell and leaves the parent to read
+# an empty answer. So one Ctrl-C during a slow step produced a run that
+# continued with "the node did not answer" for every machine it touched
+# afterwards, on a night when that sentence means something specific and
+# alarming. It is the operator's own keystroke, and the log has to say so.
+on_signal(){   # $1 = the signal's name
+  log "INTERRUPTED by SIG$1 - stopping here. Nothing after this line was attempted."
+  log "  what has already been done stands: read the log above, and ./ketsync doctor"
+  log "  lists anything this run left behind (records, disabled storages, stray 9<id>s)."
+  cleanup
+  exit $(( 128 + ${2:-2} ))
+}
+trap cleanup EXIT
+trap 'on_signal INT 2' INT
+trap 'on_signal TERM 15' TERM
 
 # ---------- who the backup node actually is ---------------------------------
 # Nobody types a pmxcfs name. /etc/pve/local is a symlink to nodes/<this node>,
@@ -641,6 +659,42 @@ st_skip(){ SKIPPED=$(( SKIPPED + 1 )); SKIPPED_IDS+=("$1"); st_write "$1" skippe
 CT_SRC=""; CT_DR=""; CT_TO=""; CT_TONODE=""; CT_DST=""; CT_DSTTYPE=""
 CT_SIZE=""; CT_SRCMNT=""; CT_CFG=""; CUR_MNT=""; CUR_HOST=""
 CT_PNET=""; CT_PNET_ISO=""; CT_PNET_REC=""
+
+# What the transfer actually did. These are written into state/<ctid>.json and
+# read by `tp status`, and for a long time this engine set none of them: every
+# DR placement filed files=0, literal_bytes=0, bytes_received=0, on the one
+# operation where "how much actually moved" is the question. The rsync ran with
+# its output sent to /dev/null, so there was nothing to file even if somebody
+# had asked - and a transfer that copied an empty source produced a log
+# indistinguishable from one that copied sixty gigabytes.
+RS_SECS=0; RS_FILES=0; RS_LITERAL=0; RS_WIRE=0; RS_TOTAL=0
+
+# rsync --stats, parsed out of whatever the far side sent back. It prints the
+# numbers with thousands separators and a trailing " bytes", on STDOUT - which
+# is why the remote command keeps stdout instead of throwing it away. A missing
+# field stays 0 rather than empty: these go into JSON, and "files": is not a
+# number.
+rs_parse(){   # $1 = the remote command's whole output
+  local _n
+  RS_FILES=$(printf   '%s\n' "$1" | sed -n 's/^Number of regular files transferred: *\([0-9,]*\).*/\1/p' | tr -d ',' | head -1)
+  RS_LITERAL=$(printf '%s\n' "$1" | sed -n 's/^Literal data: *\([0-9,]*\).*/\1/p'                        | tr -d ',' | head -1)
+  # RECEIVED, because the rsync runs ON THE TARGET and pulls from the backup
+  # node: the target is the receiver, and its "sent" line is the file list and
+  # the checksums. Every engine here reads whichever line its own direction
+  # puts the traffic on, and getting that backwards logs kilobytes for a
+  # sixty-gigabyte rootfs.
+  RS_WIRE=$(printf    '%s\n' "$1" | sed -n 's/^Total bytes received: *\([0-9,]*\).*/\1/p'                | tr -d ',' | head -1)
+  RS_TOTAL=$(printf   '%s\n' "$1" | sed -n 's/^Total file size: *\([0-9,]*\).*/\1/p'                     | tr -d ',' | head -1)
+  for _n in RS_FILES RS_LITERAL RS_WIRE RS_TOTAL; do
+    [[ "${!_n}" =~ ^[0-9]+$ ]] || printf -v "$_n" 0
+  done
+}
+# One line, the same fields in the same order as every other engine here,
+# because during a DR somebody greps `stats:` across five logs at once.
+rs_stats_line(){   # $1 = ctid
+  local avg=$(( RS_WIRE / (RS_SECS > 0 ? RS_SECS : 1) ))
+  log "[$1] stats: files=$RS_FILES changed=$(hsize "$RS_LITERAL") wire=$(hsize "$RS_WIRE") of $(hsize "$RS_TOTAL") time=${RS_SECS}s avg=$(hsize "$avg")/s"
+}
 
 # Where ct-prepare.sh keeps the record of which bridge each interface came
 # from, in pmxcfs so every member of the cluster sees the same bytes. The two
@@ -1139,26 +1193,42 @@ do_ct(){   # $1 = production ctid
   # target pulls; this engine only watches the exit code.
   local bw=$(( BW_TOTAL_MB / (LANES > 0 ? LANES : 1) ))
   (( bw < BW_MIN_MB )) && bw=$BW_MIN_MB
-  local t0 t1
+  # --stats on, and stdout and stderr both kept. The numbers are the only
+  # evidence anybody gets that this container's rootfs arrived rather than an
+  # empty directory, and rsync's own message is the only evidence of WHY when
+  # it does not - both used to go to /dev/null, leaving `rc=23` and a run
+  # nobody could diagnose without repeating it by hand at four in the morning.
+  # The rc comes back on its own line, the way ct-recall does it, so there is
+  # no temporary file to leave behind on a machine this engine is only
+  # visiting.
+  local t0 t1 out
   t0=$(date +%s)
-  rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --bwlimit=${bw}m \
+  out=$(rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --bwlimit=${bw}m --stats \
       -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
-      '$BKP_SSH:$CT_SRCMNT/' '$mnt/' >/dev/null 2>&1; echo rc=\$?" \
-    | sed -n 's/^rc=//p' > "$BASE/.dist-rc.$$" 2>/dev/null
-  rc=$(cat "$BASE/.dist-rc.$$" 2>/dev/null); rm -f "$BASE/.dist-rc.$$"
+      '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?")
   t1=$(date +%s); RS_SECS=$(( t1 - t0 ))
+  rc=$(printf '%s\n' "$out" | sed -n 's/^rc=//p' | head -1)
   [[ "$rc" =~ ^[0-9]+$ ]] || rc=1
+  rs_parse "$out"
 
   # 24 is "files vanished while copying", which is normal even on a stopped
   # rootfs because ct-replica may have been mid-round when the world ended.
   if [[ "$rc" != 0 && "$rc" != 24 ]]; then
     log "[$ct] ERROR: transfer failed rc=$rc - the volume is allocated but the config was NOT written"
+    # rsync said something. Whatever it was is the difference between "retry
+    # this" and "the copy on the backup node is damaged", and it costs four
+    # lines to carry it back to the person reading the log.
+    printf '%s\n' "$out" | grep -v '^rc=' | grep -v '^ *$' | tail -4 | while IFS= read -r _l; do
+      log "[$ct] ERROR:   rsync: $_l"
+    done
     log "[$ct] ERROR:   nothing will use $CT_DST:$volname until you either retry or remove it:"
     log "[$ct] ERROR:     ssh root@$CT_TO pvesm free $CT_DST:$volname"
+    rs_stats_line "$ct"
     cleanup_ct
     st_fail "$ct" xfer "$rc"; return 1
   fi
   cleanup_ct
+  rs_stats_line "$ct"
 
   # ---- GUARD D6: the config, only now, and read back ----------------------
   # The copy's own config is the source: it already carries the production IP,

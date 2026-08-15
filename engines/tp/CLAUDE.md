@@ -38,12 +38,12 @@ must be mirrored in its mutation file in the same change. Never "fix" a broken
 anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
-    ct-migrate.sh    tests/mutation/run-mutation.sh             45 mutations
+    ct-migrate.sh    tests/mutation/run-mutation.sh             46 mutations
     ct-replica.sh    tests/mutation/run-mutation-replica.sh     58 mutations
     ct-failback.sh   tests/mutation/run-mutation-failback.sh    59 mutations
     ct-distribute.sh tests/mutation/run-mutation-distribute.sh  68 mutations
     ct-recall.sh     tests/mutation/run-mutation-recall.sh      47 mutations
-    ct-prepare.sh    tests/mutation/run-mutation-prepare.sh     58 mutations
+    ct-prepare.sh    tests/mutation/run-mutation-prepare.sh     61 mutations
     tp               tests/mutation/run-mutation-tp.sh           9 mutations
 
 A mutation the runner could not apply is not the only way this goes quiet.
@@ -180,8 +180,8 @@ not being a compute node.
 ## Before you say you are done
 
     make lint       # bash -n + shellcheck + the language and separator rules
-    make test       # 66 + 76 + 70 + 64 + 53 + 69 simulator, 16 dispatcher, 125 c2v
-    make mutation   # 45 + 58 + 59 + 68 + 47 + 58 engine + 9 dispatcher, all caught
+    make test       # 66 + 76 + 70 + 67 + 53 + 71 simulator, 16 dispatcher, 125 c2v
+    make mutation   # 46 + 58 + 59 + 68 + 47 + 61 engine + 9 dispatcher, all caught
 
 All three, every time, even for a documentation change — `make test` runs the
 real engines, so it is also how you find out that you broke something you did

@@ -257,8 +257,8 @@ mutant "rsync 24 is treated as a failure, so every live presync round fails" \
 # `pct destroy 9<id>` is what releases ct-replica's R13. Releasing that shield
 # on data nobody has checked is the one thing this engine cannot undo, so it
 # prints the command and stops.
-mutant "C7 runs the pct destroy it is supposed to print" \
-  's!    log "\[\$ct\]     ssh root\@\$CT_FROM pct destroy \$CT_DR"!    rsh "\$CT_FROM" "pct destroy \$CT_DR"!' \
+mutant "C7 runs the destroy it is supposed to hand to another engine" \
+  's!    log "\[\$ct\]     ct-prepare.sh --cleanup --ctid \$ct"!    rsh "\$CT_FROM" "pct destroy \$CT_DR"!' \
   29
 
 # ---------- C8: both ends, locked where they live, in a fixed order ----------

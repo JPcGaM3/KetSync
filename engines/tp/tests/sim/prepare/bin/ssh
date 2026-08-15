@@ -190,6 +190,16 @@ case "$c" in
   # and modelling it here is what makes the order testable.
   *"pct shutdown "*)
     dry_forbids "stopped a container" || exit 1
+    # A real Ctrl-C, at a known moment. The engine's own PID is in engine.pid
+    # because the harness starts it in the background for exactly this: from
+    # inside a command substitution the fake cannot work out which process up
+    # the chain is the engine, and signalling the wrong one would prove
+    # nothing. One scenario arms this; every other run never reads the file.
+    if [[ -f "$SIMROOT/.interrupt" ]]; then
+      rm -f "$SIMROOT/.interrupt"
+      kill -INT "$(cat "$SIMROOT/engine.pid" 2>/dev/null)" 2>/dev/null
+      sleep 1
+    fi
     id="${c##*pct shutdown }"; id="${id%% *}"
     [[ -f "$D/$id.status" ]] || { echo "Configuration file 'lxc/$id.conf' does not exist" >&2; exit 2; }
     # A 9<id> is the container standing in for production, on local storage
@@ -208,6 +218,9 @@ case "$c" in
       fi
       printf 'stopped\n' > "$D/$id.status"; : > "$D/$id.veth"; exit 0
     fi
+    # ssh failing, which is a different fact from anything about the container:
+    # nothing was asked of it at all.
+    [[ -f "$D/$id.sshdies" ]] && { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
     sid="$(cat "$D/$id.rootsid" 2>/dev/null)"
     if [[ "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
       violation "shut down CT $id while its storage '$sid' was ALIVE"

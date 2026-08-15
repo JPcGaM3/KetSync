@@ -479,7 +479,25 @@ cleanup(){
   [[ -n "$RUN_LOCK" ]] && exec 9>&-
   return 0
 }
-trap cleanup EXIT INT TERM
+
+# A signal is not a fleet problem, and it used to look like one. `trap cleanup
+# EXIT INT TERM` runs the handler and then CARRIES ON from wherever the signal
+# landed - and almost every remote call in this engine happens inside a command
+# substitution, where SIGINT kills the subshell and leaves the parent to read
+# an empty answer. So one Ctrl-C during a slow step produced a run that
+# continued with "the node did not answer" for every machine it touched
+# afterwards, on a night when that sentence means something specific and
+# alarming. It is the operator's own keystroke, and the log has to say so.
+on_signal(){   # $1 = the signal's name
+  log "INTERRUPTED by SIG$1 - stopping here. Nothing after this line was attempted."
+  log "  what has already been done stands: read the log above, and ./ketsync doctor"
+  log "  lists anything this run left behind (records, disabled storages, stray 9<id>s)."
+  cleanup
+  exit $(( 128 + ${2:-2} ))
+}
+trap cleanup EXIT
+trap 'on_signal INT 2' INT
+trap 'on_signal TERM 15' TERM
 
 # ---------- remote helpers, all against ONE machine at a time ---------------
 rsh(){ ssh $SSH_OPT "root@$1" "${@:2}" </dev/null 2>/dev/null; }
@@ -557,7 +575,7 @@ st_skip(){ SKIPPED=$(( SKIPPED + 1 )); SKIPPED_IDS+=("$1"); st_write "$1" skippe
 CT_DR=""; CT_TGT=""; CT_FROM=""; CT_FROMNODE=""; CT_SID=""; CT_SIDTYPE=""
 CT_DSTDS=""; CT_DSTMNT=""
 CUR_MNT=""; CUR_HOST=""
-RS_SECS=0; RS_FILES=0; RS_LITERAL=0; RS_SENT=0
+RS_SECS=0; RS_FILES=0; RS_LITERAL=0; RS_SENT=0; RS_TOTAL=0
 
 # The mount is on the COMPUTE node, not here, so cleaning it up is a remote
 # call. It is done in the per-CT path rather than only in the exit trap: the
@@ -577,7 +595,7 @@ do_ct(){   # $1 = production ctid
   CT_DR=$(( ct + DR_OFFSET )); CT_TGT="${TGT_MAP[$ct]}"
   CT_FROM=""; CT_FROMNODE=""; CT_SID=""; CT_SIDTYPE=""
   CT_DSTDS=""; CT_DSTMNT=""
-  RS_SECS=0; RS_FILES=0; RS_LITERAL=0; RS_SENT=0
+  RS_SECS=0; RS_FILES=0; RS_LITERAL=0; RS_SENT=0; RS_TOTAL=0
 
   # ---- GUARD C1: find the 9<id>, by asking the cluster --------------------
   # pmxcfs is shared, so the backup node can see a config that lives on a
@@ -906,8 +924,12 @@ do_ct(){   # $1 = production ctid
   # rsync prints these with thousands separators and a trailing " bytes".
   RS_FILES=$(printf   '%s\n' "$out" | sed -n 's/^Number of regular files transferred: *\([0-9,]*\).*/\1/p' | tr -d ',' | head -1)
   RS_LITERAL=$(printf '%s\n' "$out" | sed -n 's/^Literal data: *\([0-9,]*\).*/\1/p'                        | tr -d ',' | head -1)
+  # SENT, because this rsync runs on the compute node and PUSHES to the backup
+  # node - it is the sender, and its "received" line is the acknowledgements.
+  # Each engine reads whichever line its own direction puts the traffic on.
   RS_SENT=$(printf    '%s\n' "$out" | sed -n 's/^Total bytes sent: *\([0-9,]*\).*/\1/p'                     | tr -d ',' | head -1)
-  for _n in RS_FILES RS_LITERAL RS_SENT; do [[ "${!_n}" =~ ^[0-9]+$ ]] || printf -v "$_n" 0; done
+  RS_TOTAL=$(printf   '%s\n' "$out" | sed -n 's/^Total file size: *\([0-9,]*\).*/\1/p'                      | tr -d ',' | head -1)
+  for _n in RS_FILES RS_LITERAL RS_SENT RS_TOTAL; do [[ "${!_n}" =~ ^[0-9]+$ ]] || printf -v "$_n" 0; done
 
   cleanup_ct
 
@@ -920,17 +942,19 @@ do_ct(){   # $1 = production ctid
     st_fail "$ct" xfer "$rc"; return 1
   fi
 
-  log "[$ct] OK -> $CT_TGT (rc=$rc) changed=$(hsize "$RS_LITERAL") files=$RS_FILES in ${RS_SECS}s"
+  log "[$ct] stats: files=$RS_FILES changed=$(hsize "$RS_LITERAL") wire=$(hsize "$RS_SENT") of $(hsize "$RS_TOTAL") time=${RS_SECS}s avg=$(hsize "$(( RS_SENT / (RS_SECS > 0 ? RS_SECS : 1) ))")/s"
+  log "[$ct] OK -> $CT_TGT (rc=$rc)"
   if (( FINAL )); then
     # ---- GUARD C7: a human unwinds it -----------------------------------
     log "[$ct] FINAL round done. Copy $CT_TGT on $BKP_NODE now holds the newest data."
     log "[$ct]   ct-replica still leaves it alone, because R13 keys on CT $CT_DR's config"
     log "[$ct]   existing - not on it running. That holds until somebody destroys it."
     log "[$ct]   When the production image is back (ct-failback --ctid $ct --final):"
-    log "[$ct]     ssh root@$CT_FROM pct destroy $CT_DR"
-    log "[$ct]     ssh root@$CT_FROM pct set $ct --onboot 1"
-    log "[$ct]   Nothing here does either. Destroying $CT_DR is what releases R13, and"
-    log "[$ct]   releasing it on data nobody has checked is the one thing this cannot undo."
+    log "[$ct]     ct-prepare.sh --cleanup --ctid $ct"
+    log "[$ct]   puts CT $ct's own network and onboot back, stops CT $CT_DR and takes it off"
+    log "[$ct]   the wire. Add --destroy when you no longer want it as a fallback: that is"
+    log "[$ct]   what releases R13, and releasing it on data nobody has checked is the one"
+    log "[$ct]   thing this cannot undo. Nothing here does either by itself."
   fi
   st_ok "$ct" recalled
   return 0

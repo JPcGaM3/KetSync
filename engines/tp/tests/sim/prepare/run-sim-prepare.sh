@@ -61,6 +61,10 @@ new_world(){
   storage pve02 tank-ssd-nas dead
 
   ln -s "$ENGINE" "$WORK/ct-prepare.sh"
+  { printf '#!/usr/bin/env bash\n'
+    printf 'echo $$ > "%s/engine.pid"\n' "$SIMROOT"
+    printf 'exec "%s/ct-prepare.sh" "$@"\n' "$WORK"
+  } > "$SIMROOT/run-engine.sh"; chmod +x "$SIMROOT/run-engine.sh"
   write_conf
   write_nodemap
   inventory "300	replica-hdd" "310	replica-hdd" "320	replica-ssd"
@@ -98,6 +102,12 @@ node_rec_trunc(){ : > "$(node_d "$1")/.rectrunc"; }
 # A container that will not come down even once its dead mount has been forced
 # to fail. There is no rung above asking politely, so evacuate isolates it.
 ct_stubborn(){ : > "$(node_d "$2")/ct/$1.stubborn"; }
+# An operator pressing Ctrl-C, delivered for real at the first `pct shutdown`.
+interrupt_at_shutdown(){ : > "$SIMROOT/.interrupt"; }
+# ssh itself failing on the shutdown - the connection, not the container. 255
+# is what ssh exits with, and it is the code an interrupted connection leaves
+# behind too.
+ct_ssh_dies(){ : > "$(node_d "$2")/ct/$1.sshdies"; }
 storage_disabled(){ [[ -f "$PVE/storage-$1.disabled" ]] \
   || _err "storage $1 should be disabled cluster-wide"; }
 storage_enabled(){  [[ -f "$PVE/storage-$1.disabled" ]] \
@@ -212,7 +222,14 @@ run_engine(){
     # An exported function is resolved before PATH and survives the exec.
     ssh(){ "$SIMBIN/ssh" "$@"; }
     export -f ssh
-    "$WORK/ct-prepare.sh" "$@" ) > "$SIMROOT/out" 2>&1
+    # Through a wrapper that records its own pid and then EXECS the engine, so
+    # the number in engine.pid is the engine's. One scenario sends it a real
+    # SIGINT, and from inside a command substitution the fake cannot tell the
+    # engine from the subshell that called it - they share a command line.
+    # Backgrounding it would have been easier and would have proved nothing: a
+    # shell without job control sets SIGINT to ignore for background commands,
+    # and a signal that is ignored on entry cannot be trapped at all.
+    "$SIMROOT/run-engine.sh" "$@" ) > "$SIMROOT/out" 2>&1
   RC=$?
   OUT="$(cat "$SIMROOT/out")"
   TRACE="$(cat "$SIMROOT/trace")"
@@ -882,6 +899,40 @@ if scenario "49: evacuate --all does every node that holds one, one at a time"; 
   storage_disabled tank-ssd-nas
   ct_status_is 300 pve01 stopped
   ct_status_is 320 pve02 stopped
+  done_scenario
+fi
+
+if scenario "49b: an interrupt stops the run and says so, rather than blaming the fleet"; then
+  # This is what a real Ctrl-C did. `trap cleanup EXIT INT TERM` ran the
+  # handler and then CARRIED ON from wherever the signal landed - and almost
+  # every remote call here happens inside a command substitution, where SIGINT
+  # kills the subshell and leaves the parent reading an empty answer. So one
+  # keystroke produced a run that continued, reported "the node did not
+  # answer" for every machine it touched afterwards, and left an operator
+  # reading a fleet-wide outage that was their own hand.
+  interrupt_at_shutdown
+  run_engine --evacuate --node "$N1"
+  rc_is 130
+  has "INTERRUPTED by SIGINT - stopping here"
+  has "Nothing after this line was attempted"
+  hasnt "did not answer"
+  # 310 is the second container on that node. The run must not have reached it.
+  untraced "pct shutdown 310"
+  done_scenario
+fi
+
+if scenario "51b: an ssh that failed is not a container that refused to stop"; then
+  # rc=255 is ssh. The container was never asked, so "it did not come down
+  # within 90s" is a slander on a machine that may be perfectly fine - and it
+  # sends somebody to look at the container instead of at the connection. This
+  # is what the fleet's first drill printed about CT 120 after an operator
+  # interrupted the run and killed its ssh.
+  ct_ssh_dies 300 pve01
+  run_engine --evacuate --node "$N1"
+  rc_is 1; clean
+  has "ssh to pve01 FAILED while asking it to stop (rc=255)"
+  has "not CT 300"
+  hasnt "did not come down within"
   done_scenario
 fi
 

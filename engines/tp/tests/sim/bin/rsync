@@ -56,6 +56,13 @@ echo $(( n + 1 )) > "$SIMROOT/rsync.n"
 # Real rsync writes its --stats block with THOUSANDS SEPARATORS in the numbers.
 # The fake keeps them, so a parser that forgets to strip commas is caught here
 # instead of on a live CT.
+#
+# The big number goes on "Total bytes RECEIVED", because ct-migrate.sh PULLS:
+# its source is root@<old node>:/..., so the local rsync is the receiver and
+# the sent line carries the file list and the checksums - a few kilobytes,
+# whatever the size of the container. This fake had it the other way round for
+# months, which is exactly why the engine reading the wrong line stayed green:
+# a fake that is wrong in the same direction as the engine tests nothing.
 if [[ -n "$logfile" ]]; then
   read -r f_files f_lit f_sent f_total < <(cat "$SIMROOT/rsync.stats" 2>/dev/null \
     || echo "161 2469606195 2470127483 118111600640")
@@ -72,8 +79,8 @@ Matched data: 0 bytes
 File list size: 0
 File list generation time: 0.001 seconds
 File list transfer time: 0.000 seconds
-Total bytes sent: $(commafy "$f_sent")
-Total bytes received: 3,271
+Total bytes sent: 3,271
+Total bytes received: $(commafy "$f_sent")
 EOF
 fi
 exit "$rc"

@@ -225,7 +225,7 @@ feel temporary - a 9xxx container is one somebody has to deliberately unwind.
 Stage 1 of the DR runbook - get the production containers out of the way -
 was four or five raw `pvesm`, `umount` and `pct` commands per node, in an
 order almost everybody gets wrong. It is `isolate`, `restore` and `evacuate`
-now. 69 scenarios, 58 mutations.
+now. 71 scenarios, 61 mutations.
 
 **What makes it safe is a proof, not an intention.** P2 and E2 refuse unless
 the container's rootfs storage is provably dead, and the proof is not an
@@ -383,7 +383,7 @@ resolves the target from `fleet.tsv`'s `dr` column (`--to` overrides, and a
 container with neither is refused rather than placed somewhere reasonable),
 checks `9<id>` is free across the whole cluster, allocates on the target's own
 storage, transfers, writes the config carrying the production network, and then
-prints the `pct start` for a human. 64 scenarios, 68 mutations.
+prints the `pct start` for a human. 67 scenarios, 68 mutations.
 
 Three things about it are new to this repo.
 
@@ -599,13 +599,13 @@ doctor` says so on the next good day.
     ketsync migrate      tp's, passed through untouched
     ketsync replica      tp's
     ketsync failback     tp's
-    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 64 scenarios,
+    ketsync distribute   tp's - engines/tp/ct-distribute.sh, 67 scenarios,
                          68 mutations. See section 5
     ketsync recall       tp's - engines/tp/ct-recall.sh, 53 scenarios,
                          47 mutations. See section 6
     ketsync status       tp's
-    ketsync isolate      tp's - engines/tp/ct-prepare.sh, 69 scenarios,
-    ketsync restore      58 mutations, shared by all four. See section 4b
+    ketsync isolate      tp's - engines/tp/ct-prepare.sh, 71 scenarios,
+    ketsync restore      61 mutations, shared by all four. See section 4b
     ketsync evacuate
     ketsync cleanup
 

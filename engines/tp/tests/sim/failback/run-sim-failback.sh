@@ -636,9 +636,14 @@ if scenario "21: B2 --final with PAUSE and stopped copies is the case that works
   has "ok=3 skipped=0 failed=0"
   image_has 105 "generation 7"
   # cutover is a human's job, and the engine hands it over rather than doing it
-  has "next, by hand, for: 105 113 121"
-  has "1) start each production CT"
-  has "3) rm "
+  # The order is the point. Step 1 used to be `pct start`, on nodes whose
+  # storage evacuate had disabled cluster-wide - which fails with "storage is
+  # not active" and reads like a broken failback.
+  has "next, for: 105 113 121"
+  has "1) switch the storages back on, per node"
+  has "restore --node"
+  has "3) start each production CT"
+  has "6) rm "
   done_scenario
 fi
 

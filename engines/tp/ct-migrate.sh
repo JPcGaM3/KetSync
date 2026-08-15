@@ -432,8 +432,15 @@ to_gib(){
 # Filled by run_rsync, consumed by the state file. All bytes, all integers.
 #   RS_LITERAL is the one that answers "has the delta converged yet" - it is the
 #   data rsync actually had to invent, i.e. what a final --stopped run will cost.
-#   RS_SENT is wire bytes, which is what the bandwidth ceiling is about.
-RS_FILES=0; RS_LITERAL=0; RS_SENT=0; RS_TOTAL=0; RS_SECS=0
+#   RS_WIRE is wire bytes, which is what the bandwidth ceiling is about. It
+#   comes off rsync's "Total bytes received" line because THIS ENGINE PULLS:
+#   the source is root@<old node>:/..., so the local rsync is the receiver and
+#   "Total bytes sent" is the file list and the checksums - a few kilobytes,
+#   whatever the size of the container. It read that line for months, so every
+#   migration logged wire=3KiB and filed the same into bytes_sent, on the
+#   number the bandwidth ceiling is set from. The simulator's fake rsync put
+#   the big number on the sent line too, which is how a wrong reading stayed
+#   green: the fake was wrong in the same direction as the engine.
 
 _rs_num(){  # $1=BRE for the label, $2=stats file -> the number, commas stripped
   sed -n "s/^$1: *\([0-9,][0-9,]*\).*/\1/p" "$2" 2>/dev/null | tr -d ',' | tail -1
@@ -468,19 +475,19 @@ run_rsync(){  # $1=src $2=mnt  -> returns rsync rc; progress bar on tty, quiet u
   fi
   rc=$?
   RS_SECS=$(( SECONDS - t0 ))
-  RS_FILES=0; RS_LITERAL=0; RS_SENT=0; RS_TOTAL=0
+  RS_FILES=0; RS_LITERAL=0; RS_WIRE=0; RS_TOTAL=0
   if [[ -n "$sf" && -s "$sf" ]]; then
     # '.*' and not '\(regular \)\{0,1\}': a group here would become \1 in
     # _rs_num's sed and steal the capture from the number. rsync <3.1 says
     # "Number of files transferred", >=3.1 says "regular files transferred".
     RS_FILES=$(_rs_num 'Number of .*files transferred' "$sf")
     RS_LITERAL=$(_rs_num 'Literal data' "$sf")
-    RS_SENT=$(_rs_num 'Total bytes sent' "$sf")
+    RS_WIRE=$(_rs_num 'Total bytes received' "$sf")   # this engine PULLS
     RS_TOTAL=$(_rs_num 'Total file size' "$sf")
   fi
   [[ -n "$sf" ]] && rm -f "$sf"
   local _n
-  for _n in RS_FILES RS_LITERAL RS_SENT RS_TOTAL; do
+  for _n in RS_FILES RS_LITERAL RS_WIRE RS_TOTAL; do
     [[ "${!_n}" =~ ^[0-9]+$ ]] || printf -v "$_n" '%s' 0
   done
   return $rc
@@ -642,7 +649,7 @@ st_reset(){
   ST_CTID=""; ST_OLD_CTID=""; ST_OLD_NODE=""; ST_NEW_NODE=""; ST_STORAGE=""
   ST_IMG=""; ST_IMG_GIB=0; ST_CFG_PRESENT=0; ST_CFG_SIZE=""; ST_DRIFT=0
   ST_STATUS=""; ST_REASON=""; ST_RC=-1; ST_GROW=0; ST_MSG=""; ST_MP=()
-  RS_FILES=0; RS_LITERAL=0; RS_SENT=0; RS_TOTAL=0; RS_SECS=0
+  RS_FILES=0; RS_LITERAL=0; RS_WIRE=0; RS_TOTAL=0; RS_SECS=0
 }
 
 _st_run_json(){   # one run; goes into .runs.jsonl verbatim and into "last"
@@ -652,7 +659,7 @@ _st_run_json(){   # one run; goes into .runs.jsonl verbatim and into "last"
     "$(json_str "$ST_STATUS")" "$(json_str "$ST_REASON")" "$(json_str "$ST_MSG")"
   printf '"rc":%s,"secs":%s,"files":%s,"literal_bytes":%s,"bytes_sent":%s,"total_bytes":%s,"grow_attempts":%s}' \
     "$(json_num "$ST_RC")"     "$(json_num "$RS_SECS")"  "$(json_num "$RS_FILES")" \
-    "$(json_num "$RS_LITERAL")" "$(json_num "$RS_SENT")" "$(json_num "$RS_TOTAL")" \
+    "$(json_num "$RS_LITERAL")" "$(json_num "$RS_WIRE")" "$(json_num "$RS_TOTAL")" \
     "$(json_num "$ST_GROW")"
 }
 
@@ -1049,7 +1056,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
 
   # a grow-retry is still one run, so its transfers add up rather than replace
   # each other; total_bytes is a property of the dataset, so it does not.
-  acc_files=$RS_FILES; acc_lit=$RS_LITERAL; acc_sent=$RS_SENT; acc_secs=$RS_SECS
+  acc_files=$RS_FILES; acc_lit=$RS_LITERAL; acc_wire=$RS_WIRE; acc_secs=$RS_SECS
 
   # --- G4: ENOSPC (rc=11) -> grow by GROW_PCT and retry, bounded ---
   attempt=0; umount_broke=0
@@ -1068,7 +1075,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
     run_rsync "$SRC" "$MNT/"; rc=$?
     ST_RC=$rc
     acc_files=$(( acc_files + RS_FILES )); acc_lit=$(( acc_lit + RS_LITERAL ))
-    acc_sent=$(( acc_sent + RS_SENT ));    acc_secs=$(( acc_secs + RS_SECS ))
+    acc_wire=$(( acc_wire + RS_WIRE ));    acc_secs=$(( acc_secs + RS_SECS ))
     safe_umount "$MNT" "$IMG"; um=$?
     disarm_mnt
     if (( um )); then
@@ -1078,7 +1085,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
     fi
   done
   ST_GROW=$attempt
-  RS_FILES=$acc_files; RS_LITERAL=$acc_lit; RS_SENT=$acc_sent; RS_SECS=$acc_secs
+  RS_FILES=$acc_files; RS_LITERAL=$acc_lit; RS_WIRE=$acc_wire; RS_SECS=$acc_secs
   ST_IMG_GIB=$(( ( $(stat -c%s "$IMG" 2>/dev/null || echo 0) + 1073741823 ) / 1073741824 ))
   if [[ $umount_broke -eq 1 ]]; then
     log "[$new_ctid] skipping this CT entirely (no further resize, no config)"
@@ -1094,7 +1101,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   # changed= is the convergence metric: it should fall round over round, and
   # when it stops falling the CT is ready to cut over. It was only ever
   # written to state/<ctid>.json, where nobody watching a migration looks.
-  log "[$new_ctid] stats: files=${RS_FILES:-0} changed=$(hsize "${RS_LITERAL:-0}") wire=$(hsize "${RS_SENT:-0}") of $(hsize "${RS_TOTAL:-0}") time=${RS_SECS:-0}s$( (( ST_GROW )) && echo " grow=$ST_GROW" )"
+  log "[$new_ctid] stats: files=${RS_FILES:-0} changed=$(hsize "${RS_LITERAL:-0}") wire=$(hsize "${RS_WIRE:-0}") of $(hsize "${RS_TOTAL:-0}") time=${RS_SECS:-0}s avg=$(hsize "$(( RS_WIRE / (RS_SECS > 0 ? RS_SECS : 1) ))")/s$( (( ST_GROW )) && echo " grow=$ST_GROW" )"
 
   # --- G5: config only after a GOOD sync (0 = ok, 24 = files vanished: ok) ---
   if [[ $rc -ne 0 && $rc -ne 24 ]]; then

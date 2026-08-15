@@ -263,6 +263,14 @@ mutant "the operation separator is dropped from the log" \
 # ct-migrate's whole workflow is "run it again until the delta stops shrinking,
 # then cut over". changed= is that delta. It was computed, filed into
 # state/<ctid>.json, and never shown to the person doing the deciding.
+# The wire number comes off the RECEIVED line because this engine pulls. Read
+# the sent line instead and every migration reports a few kilobytes: the log
+# says wire=3KiB for sixty gigabytes, the state file files the same, and the
+# bandwidth ceiling is set from a number that was never the traffic.
+mutant "the wire bytes are read off the sending side of a transfer that pulls" \
+  's{\Q    RS_WIRE=\E\$\Q(_rs_num \E\x27\QTotal bytes received\E\x27}{    RS_WIRE=\$(_rs_num \x27Total bytes sent\x27}' \
+  29
+
 mutant "the per-CT transfer numbers stop being logged" \
   's{\Q  log "[\E\$new_ctid\Q] stats: files=\E.*?\n}{}' \
   1

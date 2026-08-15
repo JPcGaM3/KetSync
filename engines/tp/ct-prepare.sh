@@ -428,7 +428,25 @@ cleanup(){
   [[ -n "$RUN_LOCK" ]] && exec 9>&-
   return 0
 }
-trap cleanup EXIT INT TERM
+
+# A signal is not a fleet problem, and it used to look like one. `trap cleanup
+# EXIT INT TERM` runs the handler and then CARRIES ON from wherever the signal
+# landed - and almost every remote call in this engine happens inside a command
+# substitution, where SIGINT kills the subshell and leaves the parent to read
+# an empty answer. So one Ctrl-C during a slow step produced a run that
+# continued with "the node did not answer" for every machine it touched
+# afterwards, on a night when that sentence means something specific and
+# alarming. It is the operator's own keystroke, and the log has to say so.
+on_signal(){   # $1 = the signal's name
+  log "INTERRUPTED by SIG$1 - stopping here. Nothing after this line was attempted."
+  log "  what has already been done stands: read the log above, and ./ketsync doctor"
+  log "  lists anything this run left behind (records, disabled storages, stray 9<id>s)."
+  cleanup
+  exit $(( 128 + ${2:-2} ))
+}
+trap cleanup EXIT
+trap 'on_signal INT 2' INT
+trap 'on_signal TERM 15' TERM
 
 # ---------- the record ------------------------------------------------------
 REC_DIR=/etc/pve/ketsync/isolate
@@ -1101,7 +1119,7 @@ evac_path(){ printf '%s/%s.tsv' "$EVAC_DIR" "$1"; }
 evac_read(){ rsh "$1" "cat '$(evac_path "$2")' 2>/dev/null"; }
 
 do_evacuate(){   # $1 = node ip
-  local pip="$1" pn out ct sid verdict st _s
+  local pip="$1" pn out ct sid verdict st _s _l
   declare -a MINE=() DEADSIDS=() DEADPATHS=() TOSTOP=()
   declare -A SEEN_SID=()
 
@@ -1195,19 +1213,42 @@ do_evacuate(){   # $1 = node ip
     || log "[$pip] WARN: could not restart pvestatd - the GUI will stay grey"
 
   # ---- E4/E5: stop what can be stopped, isolate what cannot ---------------
-  local rc
+  local rc sout=""
   for ct in "${TOSTOP[@]}"; do
-    rsh "$pip" "timeout $SHUTDOWN_TIMEOUT pct shutdown $ct"; rc=$?
+    # What `pct shutdown` SAYS is the difference between "the guest ignored
+    # us" and "lxc-stop could not even run", and it says it on stdout. It used
+    # to go straight to the terminal with no timestamp and no container id
+    # next to it - one bare line in the middle of a fleet-wide run, which on
+    # the night this was written read as a message about the run rather than
+    # about CT 110.
+    sout="$(rsh "$pip" "timeout $SHUTDOWN_TIMEOUT pct shutdown $ct 2>&1")"; rc=$?
+    while IFS= read -r _l; do
+      [[ -n "$_l" ]] && log "[$ct]   pct: $_l"
+    done <<< "$sout"
     out="$(probe "$pip" "$ct")"
     st="$(awk '$1=="STATUS"{print $2; exit}' <<<"$out")"
     if [[ "$st" != running ]]; then
       log "[$ct] STOPPED on $pn - it can no longer answer and no longer writes"
       st_ok "$ct"; continue
     fi
-    log "[$ct] did not come down within ${SHUTDOWN_TIMEOUT}s (rc=$rc) - isolating it instead"
-    log "[$ct]   nothing here forces a stop. A container that will not go is one whose"
-    log "[$ct]   processes are still waiting on something, and taking it off the wire"
-    log "[$ct]   removes the hazard the DR actually cares about."
+    # The exit code says WHICH failure this was, and they need different
+    # things done about them. 255 is ssh: the node was not reached at all, so
+    # nothing was asked of the container and "it would not stop" is a slander.
+    # 124 is the timeout: it was asked and did not come. Anything else is pct
+    # refusing, and its own words are above.
+    case "$rc" in
+      255) log "[$ct] ssh to $pn FAILED while asking it to stop (rc=255) - the container was"
+           log "[$ct]   never asked. This is the node or the connection to it, not CT $ct."
+           log "[$ct]   isolating needs the same connection, so it is not attempted either.";;
+      124) log "[$ct] did not come down within ${SHUTDOWN_TIMEOUT}s (rc=124) - isolating it instead"
+           log "[$ct]   nothing here forces a stop. A container that will not go is one whose"
+           log "[$ct]   processes are still waiting on something, and taking it off the wire"
+           log "[$ct]   removes the hazard the DR actually cares about.";;
+      *)   log "[$ct] pct shutdown returned rc=$rc and CT $ct is still running - isolating it instead"
+           log "[$ct]   what pct said is above. Taking it off the wire removes the hazard the"
+           log "[$ct]   DR actually cares about, and needs nothing from the dead storage.";;
+    esac
+    [[ "$rc" == 255 ]] && { st_fail "$ct"; continue; }
     do_isolate "$ct" || true
   done
   st_ok "$pip"; return 0
