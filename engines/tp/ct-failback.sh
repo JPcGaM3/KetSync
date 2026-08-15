@@ -987,6 +987,9 @@ elif (( FINAL )) && (( ok )); then
   log "  5) if a COPY was promoted, put its network back on the mock bridge (R11 nags until you do)"
   log "  6) rm $BASE/PAUSE"
   log "  7) $BASE/ct-replica.sh          # first round back, must end failed=0"
+  log "  or all of it, state-driven and re-runnable:  ketsync recover --all"
+  log "     (it re-runs this failback too - a no-op when nothing changed - and"
+  log "      with --destroy it finishes 4, 6 and 7 as well. 3 stays yours.)"
 elif (( ok )); then
   log "presync done. run it again until 'changed=' stops shrinking, then cut over:"
   log "  1) touch $BASE/PAUSE"

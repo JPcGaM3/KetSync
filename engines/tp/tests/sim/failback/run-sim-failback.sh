@@ -644,6 +644,9 @@ if scenario "21: B2 --final with PAUSE and stopped copies is the case that works
   has "restore --node"
   has "3) start each production CT"
   has "6) rm "
+  # The checklist exists as a command now, and the night this list is read is
+  # the night nobody should be typing seven commands from a log.
+  has "or all of it, state-driven and re-runnable:  ketsync recover --all"
   done_scenario
 fi
 

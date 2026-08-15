@@ -485,6 +485,24 @@ pct start 300</pre></div></details>
   <div class="warn"><p><b>อย่าเพิ่ง destroy 9300</b> ปล่อยไว้จนกว่าจะเช็กแล้วว่าตัวจริงกลับมาถูกต้อง
      ตราบใดที่ 9300 ยังอยู่ R13 ก็ยังกันไม่ให้ cron เขียนทับสำเนา — ทางถอยยังอยู่ครบ
      ขั้นถัดไปเป็นคนเก็บให้ด้วยคำสั่งเดียว ไม่ต้องไปพิมพ์ <span class="m">pct</span> เอง</p></div>
+  <div class="tip"><p><b>ตั้งแต่ failback เป็นต้นไป ย่อเหลือคำสั่งเดียวได้</b>
+     พอปิด 9xxx และสั่ง <span class="m">recall --final</span> ครบทุกตัวแล้ว
+     ขั้น 3 ของหน้านี้กับขั้น 6 ทั้งขั้นรวมอยู่ใน <span class="m">recover</span> คำสั่งเดียว:
+     เปิด storage คืนจากบันทึกของ evacuate, สั่ง e2fsck ให้ image ที่ superblock มีแผล,
+     failback ทุกตัวที่มี 9xxx ค้างอยู่, คืน network จากบันทึกของ isolate, แล้วเก็บ 9xxx
+     — มันอ่านจากบันทึกจริงในคลัสเตอร์ว่าเหลืออะไร ขั้นที่ทำไปแล้วมันข้ามพร้อมบอกว่าข้ามทำไม
+     เพราะฉะนั้นสั่งซ้ำกี่รอบก็ได้ และรอบที่ทุกอย่างเสร็จแล้วมันบอกว่าไม่เหลืออะไร</p>
+  <details class="cmd"><summary>./ketsync recover --list</summary><div class="code"><pre><span class="c"># read only - the checklist, with what is already done</span>
+./ketsync recover --list</pre></div></details>
+  <details class="cmd"><summary>./ketsync recover --all</summary><div class="code"><pre><span class="c"># on the STORAGE node. Keeps each 9xxx as a fallback</span>
+./ketsync recover --all</pre></div></details>
+  <details class="cmd"><summary>./ketsync recover --all --destroy</summary><div class="code"><pre><span class="c"># the complete return: also destroys each 9xxx, removes PAUSE,
+# and runs the first replica round - decide this AFTER checking the real ones</span>
+./ketsync recover --all --destroy</pre></div></details>
+  <p>สองอย่างที่มันไม่มีวันทำแทนคน: <code class="inl">pct start</code> ของตัวจริง
+     (มันพิมพ์คำสั่งให้ท้ายรัน) กับการตัดสินใจปิด 9xxx — ตัวไหนยังรันอยู่มันปฏิเสธ
+     แล้วชี้ไปที่ <span class="m">recall --final</span> เพราะการหยุดเครื่องที่กำลังตอบลูกค้า
+     เป็นการตัดสินใจของคน ไม่ใช่ของสคริปต์</p></div>
 </section>
 
 <section id="s7">

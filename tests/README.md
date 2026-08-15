@@ -1,6 +1,6 @@
 # Tests
 
-`sync`, `distribute`, the confirmation and `doctor` have simulators. `role`
+`sync`, `distribute`, the confirmation, `doctor` and `recover` have simulators. `role`
 does not, and that is the remaining debt.
 
 `sync` went first because it is the only command in this layer that WRITES to
@@ -38,9 +38,13 @@ its first run.
                      record their argv, because the argv is the whole of what
                      the joins between them can get wrong
     sim/confirm/     the question asked before a write, half of it under a pty
+    sim/recover/     the second composed command: the whole way back, with the
+                     engines as stubs again - what recover can get wrong is the
+                     ORDER, what a failed step is allowed to touch, and what
+                     may happen only when everything went green
 
-    make test-ketsync       21 + 13 + 17 + 20 scenarios
-    make mutation-ketsync   19 + 13 + 16 + 19 mutations
+    make test-ketsync       21 + 13 + 17 + 20 + 17 scenarios
+    make mutation-ketsync   19 + 13 + 16 + 19 + 17 mutations
 
 `doctor` went last because it writes nothing, and that turned out to be the
 wrong reason to leave it. A command that writes can be caught by looking at

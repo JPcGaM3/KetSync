@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# fake ssh for the recover simulator - the cluster the way back reads it.
+#
+# recover asks few questions and every one is listed here. An unmodelled
+# command is an error, not a shrug: a new read added to cmd_recover.sh must
+# arrive together with the answer it gets, or the scenario exercising it
+# tests a conversation that never happened.
+set -uo pipefail
+PVE="$SIMROOT/pve"
+
+host=""; declare -a cmd=()
+while (( $# )); do
+  case "$1" in
+    -o) shift 2;;
+    -*) shift;;
+    *)  if [[ -z "$host" ]]; then host="${1#root@}"; else cmd+=("$1"); fi; shift;;
+  esac
+done
+c="${cmd[*]:-}"
+
+case "$c" in
+  true)
+    [[ -f "$SIMROOT/bkp.down" ]] && exit 255
+    exit 0;;
+
+  "ls /etc/pve/ketsync/evacuate/"*)
+    ls "$PVE/ketsync/evacuate" 2>/dev/null; exit 0;;
+
+  "ls /etc/pve/ketsync/isolate/"*)
+    ls "$PVE/ketsync/isolate" 2>/dev/null; exit 0;;
+
+  "ls /etc/pve/nodes/"*"9*.conf"*)
+    found=1
+    for f in "$PVE"/nodes/*/lxc/9*.conf; do
+      [[ -e "$f" ]] || continue
+      printf '/etc/pve%s\n' "${f#"$PVE"}"; found=0
+    done
+    exit $found;;
+
+  "pct status "*)
+    id="${c#pct status }"; id="${id%% *}"
+    st="$(cat "$SIMROOT/ct/$id.status" 2>/dev/null)"
+    [[ -n "$st" ]] || exit 2
+    printf 'status: %s\n' "$st"; exit 0;;
+
+  # The one-round-trip image probe: config -> path -> superblock state. The
+  # ctid is inside the snippet, in its `pct config` line.
+  *"dumpe2fs -h"*)
+    id="$(sed -n 's/.*pct config \([0-9][0-9]*\).*/\1/p' <<<"$c" | head -1)"
+    [[ -n "$id" ]] || { echo NOCONFIG; exit 0; }
+    p="$(cat "$SIMROOT/img/$id.path" 2>/dev/null || echo "/mnt/pve/tank-hdd-nas/images/$id/vm-$id-disk-0.raw")"
+    printf 'PATH %s\n' "$p"
+    printf '%s\n' "$(cat "$SIMROOT/img/$id.state" 2>/dev/null || echo clean)"
+    exit 0;;
+
+  "e2fsck -fy "*)
+    p="${c#e2fsck -fy }"; p="${p//\'/}"
+    printf 'e2fsck %s %s\n' "$host" "$p" >> "$SIMROOT/trace"
+    rc="$(cat "$SIMROOT/img/e2fsck.rc" 2>/dev/null || echo 1)"
+    # A repair that worked leaves a clean superblock - which is what makes a
+    # re-run of recover report nothing to fsck instead of fscking again.
+    if (( rc < 4 )); then
+      for s in "$SIMROOT"/img/*.state; do
+        [[ -e "$s" ]] || continue
+        grep -q "with errors" "$s" && printf 'clean\n' > "$s"
+      done
+    fi
+    exit "$rc";;
+
+  *)
+    printf 'UNMODELED ssh %s :: %s\n' "$host" "$c" >> "$SIMROOT/trace"
+    exit 1;;
+esac

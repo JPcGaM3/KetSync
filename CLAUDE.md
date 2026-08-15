@@ -86,10 +86,13 @@ commands is one file going stale.
 one command that writes nothing needed one anyway.** Read `tests/README.md`.
 `sync` has one - 21 scenarios and 19 mutations - and writing it found three
 bugs that had been live on the fleet, none of which review had caught.
-`distribute` has one too, 13 and 13, because it is the only verb here that
-composes two engines and every joint between them is invisible from inside
-either one. The confirmation has 17 and 16, and it needs its own because its
-whole behaviour turns on whether there is a person on the other end - the
+`distribute` has one too, 13 and 13, because it composes two engines and
+every joint between them is invisible from inside either one; `recover`, the
+other composed verb, has 17 and 17 for the same reason - it is the seven-step
+return checklist executed, and what it can get wrong is the order, what a
+failed step may touch, and what may happen only when everything went green.
+The confirmation has 17 and 16, and it needs its own because its whole
+behaviour turns on whether there is a person on the other end - the
 prompting half runs under a pty, and a pipe tests the refusal by being one.
 
 `doctor` has 20 and 19, and it went last for the wrong reason: it writes
@@ -110,8 +113,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 413 tp simulator + 16 dispatcher + 125 c2v, 71 ketsync
-    make mutation # 432 known bugs put back. None may survive
+    make test     # both layers: 413 tp simulator + 16 dispatcher + 125 c2v, 88 ketsync
+    make mutation # 450 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -146,9 +149,10 @@ being separate when they stopped being empty.
     docs/c2v-debian.html CT to VM, the Debian/Ubuntu path
     ketsync              the dispatcher. Contains no logic of its own
     lib/common.sh        log, config, and the two tables everything reads
-    lib/cmd_*.sh         one file per subcommand. cmd_distribute.sh is the
-                         only one that composes engines rather than passing
-                         through - the sequencing IS this layer's job
+    lib/cmd_*.sh         one file per subcommand. cmd_distribute.sh and
+                         cmd_recover.sh compose engines rather than passing
+                         through - the way into a disaster and the way back
+                         out - because the sequencing IS this layer's job
     ketsync.conf.sample  this machine's role and the master's address
     nodes.tsv.sample     ip -> role. No name column, on purpose
     nodes.map            ip -> PVE node name. GENERATED. Never hand-edited
@@ -164,6 +168,8 @@ being separate when they stopped being empty.
                          what the joins can get wrong
     tests/sim/confirm/   the question before a write, half of it under a pty
                          because there is no other way to test a prompt
+    tests/sim/recover/   the way back, composed: engines as stubs, the order
+                         and the failure gating as the thing under test
     tests/sim/doctor/    every check doctor makes, one wrong thing at a time
                          against a fleet that is otherwise fine. It writes
                          nothing, so what it can get wrong is silence

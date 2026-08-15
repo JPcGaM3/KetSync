@@ -23,6 +23,11 @@
 #    ketsync cleanup      after the failback: put the production network back,
 #                         stop the 9<id> that stood in for it and take that one
 #                         off the wire. --destroy removes it as well
+#    ketsync recover      the whole way back in one command: fsck the killed
+#                         images, failback --final, both restores, cleanup -
+#                         and with --destroy, unpause and replicate again.
+#                         State-driven, so re-running it finishes an
+#                         interrupted one. It never starts a container
 #
 #    ketsync tp <anything>   pass straight through to the engines, for a flag
 #                            this dispatcher has not been taught
@@ -148,6 +153,18 @@ cleanup: the disaster is over - put the 9<id> away
   --dry-run              every guard runs, nothing is written
 MENU
 ;;
+    recover) cat <<'MENU'
+recover: the whole way back - what the failback log's checklist says, executed
+         assumes recall --final already ran for every 9<id>. It refuses a
+         9<id> that is still RUNNING: stopping it is the cutover decision
+
+  --list                 the checklist, with what is already done. writes nothing
+  --all                  everything the disaster's own records name
+  --destroy              also destroy each 9<id>, then rm PAUSE and run the
+                         first replica round - the complete return
+  --dry-run              every guard runs, nothing is written
+MENU
+;;
     prepare|isolate|restore|evacuate) cat <<'MENU'
 prepare: get a production container out of the way, and put it back
          moves no data. Refuses unless its storage is provably dead
@@ -188,7 +205,7 @@ ks_writes(){   # $1 = verb, rest = its arguments
     [[ "$a" == --dry-run || "$a" == --list ]] && return 1
   done
   case "$1" in
-    migrate|replica|failback|distribute|recall|prepare|isolate|restore|evacuate|cleanup|sync) return 0;;
+    migrate|replica|failback|distribute|recall|prepare|isolate|restore|evacuate|cleanup|recover|sync) return 0;;
     *) return 1;;
   esac
 }
@@ -204,6 +221,7 @@ ks_what(){   # $1 = verb -> one line, in the present tense, about customer data
     isolate)    echo "this takes RUNNING production containers off the network.";;
     restore)    echo "this puts bridges, onboot and storages back the way they were.";;
     cleanup)    echo "this STOPS each 9<id> that stood in during the outage and takes it off the wire. With --destroy it removes them for good.";;
+    recover)    echo "this runs the WHOLE way back: fsck, failback --final, restores, cleanup. It assumes recall --final already ran - the copies must hold what the 9<id>s were serving.";;
     sync)       echo "this OVERWRITES the fleet tables on every other node.";;
     *)          echo "this writes.";;
   esac
@@ -241,9 +259,11 @@ case "${1:-}" in
   # --- tp's, passed through untouched ---
   migrate|replica|failback|status|recall|prepare|isolate|restore|evacuate|cleanup)
               run_tp "$@";;
-  # The one verb this layer does not pass through. It composes two engines,
-  # because deciding the ORDER is what this layer is for - see the file.
+  # The two verbs this layer does not pass through. Each composes engines,
+  # because deciding the ORDER is what this layer is for - see each file.
+  # distribute is the way IN to a disaster, recover is the way back OUT.
   distribute) shift; . "$BASE/lib/cmd_distribute.sh"; cmd_distribute "$@";;
+  recover)    shift; . "$BASE/lib/cmd_recover.sh";    cmd_recover "$@";;
   tp)         shift; run_tp "$@";;
 
   # --- this layer's own ---

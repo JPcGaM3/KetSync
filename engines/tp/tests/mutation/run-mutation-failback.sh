@@ -484,6 +484,14 @@ mutant "the OLD key=dataset:storage-id map is read as though it worked" \
   's{\Q  if [[ "\E\$_kv\Q" == *=* ]]; then\E}{  if false; then}' \
   70
 
+# ---------- the way out of the checklist --------------------------------------
+# The seven-step tail is where an operator stands at the end of the worst day,
+# and `ketsync recover --all` is that list as one command. A refactor that
+# tidies the pointer away sends them back to typing seven commands from a log.
+mutant "the pointer to the one-command return is tidied away" \
+  's{\Q  log "  or all of it, state-driven and re-runnable:  ketsync recover --all"\E\n}{}' \
+  21
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi
