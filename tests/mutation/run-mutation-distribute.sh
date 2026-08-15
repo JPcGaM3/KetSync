@@ -44,7 +44,7 @@ mutant(){
   tree="$(mktemp -d /tmp/ksdist-mutant.XXXXXX)"
   m="$tree/lib/cmd_distribute.sh"
   echo "  [$name]"
-  mkdir -p "$tree/lib" "$tree/engines/tp"
+  mkdir -p "$tree/lib" "$tree/engines"
   cp "$ROOT/ketsync" "$tree/ketsync"; chmod +x "$tree/ketsync"
   cp "$ROOT"/lib/*.sh "$tree/lib/"
   # A zero-byte mutant is not a mutant. perl refusing the program - an

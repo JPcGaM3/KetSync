@@ -29,7 +29,7 @@ mutant(){
   local m ok=1 s tree
   tree="$(mktemp -d /tmp/ksrec-mutant.XXXXXX)"
   echo "  [$name]"
-  mkdir -p "$tree/lib" "$tree/engines/tp"
+  mkdir -p "$tree/lib" "$tree/engines"
   cp "$ROOT/ketsync" "$tree/ketsync"; chmod +x "$tree/ketsync"
   cp "$ROOT"/lib/*.sh "$tree/lib/"
   m="$tree/lib/cmd_recover.sh"

@@ -50,10 +50,10 @@ say(){ printf '%s\n' "$*"; printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$KS_LOG"
 KS_ROLE=slave                 # master | slave. Changed by hand. See section 2.
 KS_MASTER_IP=""               # the machine that owns the tables
 KS_SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
-KS_CONF="$KS_BASE/ketsync.conf"
-KS_NODES="$KS_BASE/nodes.tsv"
-KS_INV="$KS_BASE/fleet.tsv"
-KS_NODEMAP="$KS_BASE/nodes.map"     # generated, never edited by hand
+KS_CONF="$KS_BASE/conf/ketsync.conf"
+KS_NODES="$KS_BASE/conf/nodes.tsv"
+KS_INV="$KS_BASE/conf/fleet.tsv"
+KS_NODEMAP="$KS_BASE/conf/nodes.map"     # generated, never edited by hand
 [[ -f "$KS_CONF" ]] && . "$KS_CONF"
 
 # ---------- nodes.tsv --------------------------------------------------------

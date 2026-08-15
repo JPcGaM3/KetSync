@@ -1,0 +1,283 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  ketsync — one command for the whole system. It decides WHO does WHAT and
+#  WHERE, and hands the moving to tp, which lives inside this repo.
+# -----------------------------------------------------------------------------
+#  You should not have to know that engines/tp exists to run a replica round.
+#  Everything is reachable from here:
+#
+#    the work                          the decisions
+#    ketsync migrate    old node -> here        ketsync sync    push the tables
+#    ketsync replica    here -> backup node     ketsync role    who is in charge
+#    ketsync failback   copy -> back into prod  ketsync doctor  is this wired up
+#    ketsync status     the last run of every container
+#
+#    ketsync distribute DR: a copy on the backup node -> a compute node's own
+#                       storage, so it can run while the storage node is gone
+#    ketsync recall       a 9<id> on a compute node -> back into its DR copy
+#    ketsync isolate      take a production CT off the wire so its copy can
+#                         answer for it, recording which bridge it came from
+#    ketsync restore      put that bridge, and onboot, back afterwards
+#    ketsync evacuate     a whole node: disable the dead storage, unmount it,
+#                         then stop the containers that were on it
+#    ketsync cleanup      after the failback: put the production network back,
+#                         stop the 9<id> that stood in for it and take that one
+#                         off the wire. --destroy removes it as well
+#    ketsync recover      the whole way back in one command: fsck the killed
+#                         images, failback --final, both restores, cleanup -
+#                         and with --destroy, unpause and replicate again.
+#                         State-driven, so re-running it finishes an
+#                         interrupted one. It never starts a container
+#
+#    ketsync tp <anything>   pass straight through to the engines, for a flag
+#                            this dispatcher has not been taught
+#
+#  migrate, replica, failback and status are tp's. They are passed through
+#  untouched, flags and all, so every guard and every exit code is tp's too -
+#  this file adds nothing to them and must never start doing so.
+#
+#  Everything a human types here is an IP. PVE node NAMES exist because configs
+#  live under /etc/pve/nodes/<name>/, but nobody types one: they are discovered
+#  from the cluster and cached in nodes.map. See docs/decisions.md section 9.
+#
+#  exit code: 0 = nothing needs attention, 1 = something does,
+#             2 = refused before touching anything.
+# =============================================================================
+set -uo pipefail
+
+# cron hands a script PATH=/usr/bin:/bin, and pvesm, zfs and losetup all live
+# in sbin. Same reason as every engine in tp - see its CLAUDE.md rule 8.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+# The dispatcher lives in bin/ and is also reachable through the ./ketsync
+# symlink at the root, so the path bash was invoked with says nothing about
+# where the repo is. Resolve the file itself, then decide: lib/ sitting beside
+# means a flat tree (the simulators build one), otherwise the repo root is one
+# level up.
+BASE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+[[ -d "$BASE/lib" ]] || BASE="$(cd "$BASE/.." && pwd)"
+export KS_BASE="$BASE"
+# shellcheck source=lib/common.sh
+. "$BASE/lib/common.sh"
+
+usage(){ awk 'NR>1{ if (/^#/) { sub(/^#[ ]?/,""); print } else exit }' "${BASH_SOURCE[0]}"; }
+
+# Every subcommand this dispatcher names is built. `recall` was the last stub
+# and it is an engine now, so the helper that printed "designed but not built"
+# is gone rather than kept warm for a hypothetical next one - CLAUDE.md rule 7
+# is about a stub SAYING it is a stub, not about keeping the machinery for one.
+# The next stub can bring its own three lines back.
+
+# Hand off to tp and become it. exec rather than a call: tp's exit code is the
+# contract cron reads, and anything that runs after the engine here is a chance
+# to lose it or add to it. There is nothing this layer could usefully do after
+# a transfer that it could not do before one.
+
+# ---------------------------------------------------------------------------
+#  Which verbs write, what they write, and the one flag that skips the asking
+# ---------------------------------------------------------------------------
+#  -y is parsed HERE and removed, so no engine has to know about it. It means
+#  "I have already decided", and it skips the question and nothing else: no
+#  guard is weakened by it, ever, and there is deliberately no --force. A flag
+#  whose use case has to be invented under pressure is a flag that gets used
+#  under pressure.
+# ---------------------------------------------------------------------------
+#  A bare writing verb is an incomplete instruction, not a request for defaults
+# ---------------------------------------------------------------------------
+#  `ketsync distribute` on its own could mean every container in the fleet. It
+#  is four characters cheaper than saying so, and the four characters are the
+#  record of what somebody meant: `--all` in a shell history says "I meant the
+#  fleet", and a bare verb says "I pressed Enter". A week later, reconstructing
+#  what happened, those are not the same sentence.
+#
+#  So it refuses - and prints something worth reading while it does. The old
+#  two-line usage sent people to --help, which is the whole engine header.
+#
+#  Read-only verbs are the opposite case: `doctor` and `status` have nothing to
+#  scope and nothing to lose, so bare is exactly right for them.
+ks_menu(){   # $1 = verb
+  case "$1" in
+    distribute) cat <<'MENU'
+distribute: a DR copy on the backup node -> a compute node's own storage
+            it prepares the nodes first - see ketsync distribute --help
+
+  --list                 what would go where. writes nothing
+  --all                  every container that has a copy and a target
+  --ctid <id>            one container, by its PRODUCTION id
+  --dry-run              every guard runs, nothing is written
+  --to <ip>              override the target from fleet.tsv
+  --dst <storage-id>     override the storage on that target
+  --no-prepare           place only; do not evacuate or isolate anything
+MENU
+;;
+    replica) cat <<'MENU'
+replica: the live image here -> a stopped copy on the backup node
+
+  --all                  every row in inventory-replica.tsv
+  --ctid <id>            one container
+  --storage <id>         one source storage - this is what cron uses, so the
+                         bandwidth ceiling is shared per lane
+  --dry-run              every guard runs, nothing is written
+MENU
+;;
+    failback) cat <<'MENU'
+failback: a promoted copy -> back into the PRODUCTION image
+
+  --all                  every row in inventory-replica.tsv
+  --ctid <id>            one container
+  --dest <storage-id>    only the copies on that pool
+  --dry-run              every guard runs, nothing is written
+  --final                the last delta. Needs PAUSE, and a stopped copy
+MENU
+;;
+    recall) cat <<'MENU'
+recall: a 9<id> on a compute node -> back into its DR copy
+
+  --list                 what would move where. writes nothing
+  --all                  every container with a live 9<id>
+  --ctid <id>            one container, by its PRODUCTION id
+  --dry-run              every guard runs, nothing is written
+  --final                the last delta. The 9<id> must be STOPPED
+MENU
+;;
+    migrate) cat <<'MENU'
+migrate: an old standalone node -> a raw image on the storage node
+
+  --all                  every row in inventory-migrate.tsv
+  --ctid <id>            one container
+  --dry-run              every guard runs, nothing is written
+MENU
+;;
+    cleanup) cat <<'MENU'
+cleanup: the disaster is over - put the 9<id> away
+         needs ct-failback --final to have finished ok for that container
+
+  --all                  every container in the inventory
+  --ctid <id>            one container, by its PRODUCTION id
+  --destroy              also destroy the 9<id>, which releases ct-replica R13
+  --dry-run              every guard runs, nothing is written
+MENU
+;;
+    recover) cat <<'MENU'
+recover: the whole way back - what the failback log's checklist says, executed
+         assumes recall --final already ran for every 9<id>. It refuses a
+         9<id> that is still RUNNING: stopping it is the cutover decision
+
+  --list                 the checklist, with what is already done. writes nothing
+  --all                  everything the disaster's own records name
+  --destroy              also destroy each 9<id>, then rm PAUSE and run the
+                         first replica round - the complete return
+  --dry-run              every guard runs, nothing is written
+MENU
+;;
+    prepare|isolate|restore|evacuate) cat <<'MENU'
+prepare: get a production container out of the way, and put it back
+         moves no data. Refuses unless its storage is provably dead
+
+  ketsync isolate  --ctid <id> | --all      off the wire, recording where from
+  ketsync restore  --ctid <id> | --all      put those bridges and onboot back
+  ketsync restore  --node <ip>              switch that node's storages back on
+  ketsync evacuate --node <ip> | --all      disable, unmount, then stop
+  ketsync prepare  --list                   what state each container is in
+
+  --dry-run              every guard runs, nothing is written
+MENU
+;;
+    # sync is deliberately absent: "push the tables to everybody" is its only
+    # scope, so a bare `ketsync sync` is a complete instruction rather than an
+    # unfinished one. It still asks before it writes.
+    *) return 1;;
+  esac
+  return 0
+}
+
+KS_ASSUME_YES=0
+declare -a KS_ARGV=()
+for _a in "$@"; do
+  case "$_a" in
+    -y|--yes) KS_ASSUME_YES=1;;
+    *) KS_ARGV+=("$_a");;
+  esac
+done
+export KS_ASSUME_YES
+set -- ${KS_ARGV[@]+"${KS_ARGV[@]}"}
+
+# --dry-run and --list write nothing, so they are never worth asking about.
+# Asking anyway would train the answer.
+ks_writes(){   # $1 = verb, rest = its arguments
+  local a
+  for a in "${@:2}"; do
+    [[ "$a" == --dry-run || "$a" == --list ]] && return 1
+  done
+  case "$1" in
+    migrate|replica|failback|distribute|recall|prepare|isolate|restore|evacuate|cleanup|recover|sync) return 0;;
+    *) return 1;;
+  esac
+}
+ks_what(){   # $1 = verb -> one line, in the present tense, about customer data
+  case "$1" in
+    migrate)    echo "this COPIES a container onto the storage node and writes its config.";;
+    replica)    echo "this OVERWRITES each DR copy on the backup node with the live image.";;
+    failback)   echo "this WRITES a copy back into the PRODUCTION image. It is the direction that loses data if it is wrong.";;
+    distribute) echo "this PREPARES every node in the inventory - disabling dead storages, unmounting them, stopping containers - and then places the copies.";;
+    recall)     echo "this OVERWRITES each DR copy with what a 9<id> has been serving.";;
+    prepare|evacuate)
+                echo "this DISABLES a storage cluster-wide, unmounts it, and stops the containers that were on it.";;
+    isolate)    echo "this takes RUNNING production containers off the network.";;
+    restore)    echo "this puts bridges, onboot and storages back the way they were.";;
+    cleanup)    echo "this STOPS each 9<id> that stood in during the outage and takes it off the wire. With --destroy it removes them for good.";;
+    recover)    echo "this runs the WHOLE way back: fsck, failback --final, restores, cleanup. It assumes recall --final already ran - the copies must hold what the 9<id>s were serving.";;
+    sync)       echo "this OVERWRITES the fleet tables on every other node.";;
+    *)          echo "this writes.";;
+  esac
+}
+
+TP="$BASE/engines/tp"
+run_tp(){
+  if [[ ! -x "$TP" ]]; then
+    log "ERROR: $TP is missing or not executable - NOTHING was run"
+    log "ERROR:   the engines are committed in this repo, so this is a broken"
+    log "ERROR:   checkout rather than a clone step somebody skipped."
+    log "ERROR:   check it with:  ./ketsync doctor"
+    exit 2
+  fi
+  exec "$TP" "$@"
+}
+
+# A writing verb with nothing after it at all. Not "no recognised scope" - an
+# argument this dispatcher does not know is the engine's business, and guessing
+# on its behalf is how a flag stops working the day the engine grows one.
+if (( $# == 1 )) && ks_writes "$1" && ks_menu "$1"; then
+  echo
+  echo "refused: no scope given. Say --all, or name one with --ctid, or ask"
+  echo "with --list or --dry-run first.  full header: ./ketsync $1 --help"
+  exit 2
+fi
+
+if ks_writes "${1:-}" "$@"; then
+  ks_confirm "$(ks_what "$1")" \
+    "  see exactly what it would do first:  ./ketsync $1 ${*:2} --dry-run" \
+    || exit $?
+fi
+
+case "${1:-}" in
+  # --- tp's, passed through untouched ---
+  migrate|replica|failback|status|recall|prepare|isolate|restore|evacuate|cleanup)
+              run_tp "$@";;
+  # The two verbs this layer does not pass through. Each composes engines,
+  # because deciding the ORDER is what this layer is for - see each file.
+  # distribute is the way IN to a disaster, recover is the way back OUT.
+  distribute) shift; . "$BASE/lib/cmd_distribute.sh"; cmd_distribute "$@";;
+  recover)    shift; . "$BASE/lib/cmd_recover.sh";    cmd_recover "$@";;
+  tp)         shift; run_tp "$@";;
+
+  # --- this layer's own ---
+  sync)       shift; . "$BASE/lib/cmd_sync.sh";     cmd_sync "$@";;
+  role)       shift; . "$BASE/lib/cmd_role.sh";     cmd_role "$@";;
+  doctor)     shift; . "$BASE/lib/cmd_doctor.sh";   cmd_doctor "$@";;
+
+  version)    echo "ketsync $(cd "$BASE" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;
+  ""|-h|--help|help) usage;;
+  *) echo "ketsync: unknown subcommand '$1'" >&2; echo; usage; exit 2;;
+esac

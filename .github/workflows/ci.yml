@@ -5,9 +5,8 @@ name: ci
 # repo is the thing that is easy to skip by hand: proving the test suite can
 # still fail. `make mutation` is the target that matters most in this workflow.
 #
-# The gates are at the root and delegate into engines/tp, so this runs both
-# layers. Checking only ketsync would go green while the layer that actually
-# touches customer data was broken.
+# One tree since the restructure: the root Makefile owns every gate for both
+# layers, so these four steps are the whole story.
 
 on:
   push:
@@ -37,14 +36,6 @@ jobs:
       - name: lint both layers
         run: make lint
 
-      - name: language rule (no Thai in code, none inside <pre>)
-        run: make -C engines/tp no-thai
-
-      # Both layers, from the root. This ran `make -C engines/tp test` for
-      # months, and ketsync's own 71 scenarios reached CI only through a step
-      # marked continue-on-error - so a red ketsync simulator was a green
-      # build, which is the mirror image of what this file's own header says
-      # it exists to prevent. That step is gone; this one covers it.
       - name: both layers must still be a working install
         run: make test
 

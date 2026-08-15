@@ -36,7 +36,7 @@ mutant(){
   local m ok=1 s tree
   tree="$(mktemp -d /tmp/ksdoc-mutant.XXXXXX)"
   echo "  [$name]"
-  mkdir -p "$tree/lib" "$tree/engines/tp"
+  mkdir -p "$tree/lib" "$tree/engines"
   cp "$ROOT/ketsync" "$tree/ketsync"; chmod +x "$tree/ketsync"
   cp "$ROOT"/lib/*.sh "$tree/lib/"
   m="$tree/lib/cmd_doctor.sh"
@@ -153,7 +153,7 @@ mutant "a backup node that could not be asked reads as a fleet with nothing left
 
 # ---------- the engines cron has to be able to run ---------------------------
 mutant "an engine that is not executable is reported as ok" \
-  's{\Q      if [[ -x "\E\$KS_BASE\Q/engines/tp/\E\$f\Q" ]]; then say "  \E}{      if [[ -e "\$KS_BASE/engines/tp/\$f" ]]; then say "  }' \
+  's{\Q      if [[ -x "\E\$KS_BASE\Q/engines/\E\$f\Q" ]]; then say "  \E}{      if [[ -e "\$KS_BASE/engines/\$f" ]]; then say "  }' \
   12
 
 # ---------- the image whose filesystem already said something ----------------
@@ -180,7 +180,7 @@ mutant "the -y a cron line already has is not looked for" \
 
 # ---------- both layers, one exit code ---------------------------------------
 mutant "the execution layer's exit code is dropped on the floor" \
-  's{\Q    "\E\$KS_BASE\Q/engines/tp/tp" doctor || rc=1\E}{    "\$KS_BASE/engines/tp/tp" doctor || true}' \
+  's{\Q    "\E\$KS_BASE\Q/engines/tp" doctor || rc=1\E}{    "\$KS_BASE/engines/tp" doctor || true}' \
   19
 
 echo

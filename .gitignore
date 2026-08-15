@@ -1,23 +1,60 @@
-# the live tables are per-site; only the samples are tracked
-/ketsync.conf
-/nodes.tsv
-/fleet.tsv
-
+# live tables are per-site; only the samples are tracked
+/conf/ketsync.conf
+/conf/nodes.tsv
+/conf/fleet.tsv
 # generated from the cluster, never edited by hand
-/nodes.map
+/conf/nodes.map
 
-# runtime
+# the engines' own per-site work lists and local overrides
+/engines/inventory-migrate.tsv
+/engines/inventory-replica.tsv
+/engines/bridgemap.tsv
+/engines/fleet.tsv
+/engines/nodes.map
+/engines/ctmig.local.conf
+/engines/ctrep.local.conf
+
+# runtime, written next to the code that writes it. Never commit: per-host,
+# and it holds the live status of a real fleet
 /logs/
 /state/
+/engines/logs/
+/engines/done/
+/engines/state/
+/engines/pause/
+/engines/.sync-*.lock
+/engines/.node-*.lock
+/engines/.replica-*.lock
+/engines/.failback-*.lock
+/engines/.ct-*.lock
+/engines/.distribute.lock
+/engines/.recall.lock
+/engines/.prepare.lock
 
-# engines/tp is committed, not cloned. Its own runtime leftovers - state/,
-# logs/, pause/, the lock files and the real inventories - are ignored by
-# engines/tp/.gitignore, which git applies relative to itself.
+# set by hand during a failback to stop every replica lane. If this were
+# committed, cloning the repo onto a node would silently stop its replication
+/engines/PAUSE
 
-# editors and desktops
+# python (nothing here ships python; tooling leaves droppings anyway)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# the macOS working copy is reached over a mount that cannot unlink files.
+# Deletions get parked in _to_delete/ instead, scratch goes to _tmp/, and the
+# mount itself leaves .fuse_hidden droppings behind. None of it is the repo.
+/_to_delete/
+/_tmp/
+.fuse_hidden*
+
+# editors and desktops. The repo is edited from macOS, which litters
 .DS_Store
 ._*
+.idea/
 *.swp
 *~
-.idea/
 .vscode/

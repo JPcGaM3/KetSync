@@ -39,24 +39,24 @@ ME=10.100.1.17
 new_world(){
   SIMROOT="$(mktemp -d /tmp/ksconf-sim.XXXXXX)"
   MASTER="$SIMROOT/master"
-  mkdir -p "$MASTER/lib" "$MASTER/engines/tp" "$MASTER/logs"
+  mkdir -p "$MASTER/lib" "$MASTER/conf" "$MASTER/engines" "$MASTER/logs"
   : > "$SIMROOT/trace"
   local ksdir; ksdir="$(cd "$(dirname "$KS")" && pwd)"
   cp "$KS" "$MASTER/ketsync"; chmod +x "$MASTER/ketsync"
   cp "$ksdir"/lib/*.sh "$MASTER/lib/"
-  cat > "$MASTER/ketsync.conf" <<CONF
+  cat > "$MASTER/conf/ketsync.conf" <<CONF
 KS_ROLE=master
 KS_MASTER_IP=$ME
 CONF
-  printf '# generation: 1\n%s\tstorage\n' "$ME" > "$MASTER/nodes.tsv"
+  printf '# generation: 1\n%s\tstorage\n' "$ME" > "$MASTER/conf/nodes.tsv"
   local f
   for f in tp ct-prepare.sh; do
-    cat > "$MASTER/engines/tp/$f" <<STUB
+    cat > "$MASTER/engines/$f" <<STUB
 #!/usr/bin/env bash
 printf '%s %s\n' "$f" "\$*" >> "$SIMROOT/trace"
 exit 0
 STUB
-    chmod +x "$MASTER/engines/tp/$f"
+    chmod +x "$MASTER/engines/$f"
   done
 }
 

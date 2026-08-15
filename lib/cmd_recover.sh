@@ -82,10 +82,10 @@ cmd_recover(){
     return 2
   fi
 
-  local TPREP="$KS_BASE/engines/tp/ct-prepare.sh"
-  local TFB="$KS_BASE/engines/tp/ct-failback.sh"
-  local TREP="$KS_BASE/engines/tp/ct-replica.sh"
-  local PAUSE="$KS_BASE/engines/tp/PAUSE"
+  local TPREP="$KS_BASE/engines/ct-prepare.sh"
+  local TFB="$KS_BASE/engines/ct-failback.sh"
+  local TREP="$KS_BASE/engines/ct-replica.sh"
+  local PAUSE="$KS_BASE/engines/PAUSE"
   local e
   for e in "$TPREP" "$TFB" "$TREP"; do
     [[ -x "$e" ]] || { say "ERROR: $e is missing or not executable - NOTHING was run"; return 2; }

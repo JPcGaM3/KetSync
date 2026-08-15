@@ -43,7 +43,7 @@ mutant(){
   tree="$(mktemp -d /tmp/ksconf-mutant.XXXXXX)"
   m="$tree/ketsync"
   echo "  [$name]"
-  mkdir -p "$tree/lib" "$tree/engines/tp"
+  mkdir -p "$tree/lib" "$tree/engines"
   cp "$ROOT/ketsync" "$tree/ketsync"; chmod +x "$tree/ketsync"
   cp "$ROOT"/lib/*.sh "$tree/lib/"
   # A zero-byte mutant is not a mutant. perl refusing the program - an
@@ -111,7 +111,7 @@ mutant_lib(){
   local m ok=1 s tree
   tree="$(mktemp -d /tmp/ksconf-mutant.XXXXXX)"
   echo "  [$name]"
-  mkdir -p "$tree/lib" "$tree/engines/tp"
+  mkdir -p "$tree/lib" "$tree/engines"
   cp "$ROOT/ketsync" "$tree/ketsync"; chmod +x "$tree/ketsync"
   cp "$ROOT"/lib/*.sh "$tree/lib/"
   m="$tree/lib/common.sh"

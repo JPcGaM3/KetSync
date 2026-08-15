@@ -50,20 +50,20 @@ new_world(){
   MASTER="$SIMROOT/master"
   : > "$SIMROOT/violations"; : > "$SIMROOT/trace"
 
-  mkdir -p "$MASTER/lib" "$MASTER/engines/tp/state" "$MASTER/logs"
+  mkdir -p "$MASTER/lib" "$MASTER/conf" "$MASTER/engines/state" "$MASTER/logs"
   local ksdir; ksdir="$(cd "$(dirname "$KS")" && pwd)"
   cp "$KS" "$MASTER/ketsync"; chmod +x "$MASTER/ketsync"
   cp "$ksdir"/lib/*.sh "$MASTER/lib/"
 
-  cat > "$MASTER/ketsync.conf" <<CONF
+  cat > "$MASTER/conf/ketsync.conf" <<CONF
 KS_ROLE=master
 KS_MASTER_IP=$ME
 CONF
-  table "$MASTER/nodes.tsv" 1 \
+  table "$MASTER/conf/nodes.tsv" 1 \
     "$ME	storage" "$BKP	backup" "$C1	compute" "$C2	compute"
-  table "$MASTER/fleet.tsv" 5 "110	$C1	$C2	local-lvm" "120	$C2	$C1	local-lvm"
-  table "$MASTER/engines/tp/inventory-replica.tsv" 5 "110	replica-hdd" "120	replica-hdd"
-  table "$MASTER/engines/tp/inventory-migrate.tsv"  2 "251	tank-hdd-nas"
+  table "$MASTER/conf/fleet.tsv" 5 "110	$C1	$C2	local-lvm" "120	$C2	$C1	local-lvm"
+  table "$MASTER/engines/inventory-replica.tsv" 5 "110	replica-hdd" "120	replica-hdd"
+  table "$MASTER/engines/inventory-migrate.tsv"  2 "251	tank-hdd-nas"
 
   # The engines have to exist and be runnable, because "cron would exit 126" is
   # one of the things doctor is for. tp itself is a stub: what the execution
@@ -71,11 +71,11 @@ CONF
   # whether doctor passes its exit code through.
   local f
   for f in ct-migrate.sh ct-replica.sh ct-failback.sh ct-distribute.sh ct-recall.sh ct-prepare.sh; do
-    printf '#!/usr/bin/env bash\nexit 0\n' > "$MASTER/engines/tp/$f"
-    chmod +x "$MASTER/engines/tp/$f"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$MASTER/engines/$f"
+    chmod +x "$MASTER/engines/$f"
   done
-  printf '#!/usr/bin/env bash\necho "  tp: nothing to report"\nexit 0\n' > "$MASTER/engines/tp/tp"
-  chmod +x "$MASTER/engines/tp/tp"
+  printf '#!/usr/bin/env bash\necho "  tp: nothing to report"\nexit 0\n' > "$MASTER/engines/tp"
+  chmod +x "$MASTER/engines/tp"
 
   # Every machine, and what the cluster would say its name is.
   : > "$SIMROOT/cluster.tsv"
@@ -137,7 +137,7 @@ left_placed(){   # 9<id> on a node
 
 replica_state(){  # ctid epoch
   printf '{\n  "ctid": %s,\n  "last": {"epoch":%s,"status":"ok"}\n}\n' "$1" "$2" \
-    > "$MASTER/engines/tp/state/replica-$1.json"
+    > "$MASTER/engines/state/replica-$1.json"
 }
 cron_line(){ printf '%s\n' "$1" >> "$SIMROOT/crontab"; }
 
@@ -220,7 +220,7 @@ if scenario "4: a cluster that cannot be asked falls back to the cache and says 
   # The names are cached on purpose: discovery needs a quorate cluster, and the
   # run that needs the map most is the one during an incident.
   no_cluster_status
-  printf '# ip\tname\n%s\tpve-r32\n' "$C1" > "$MASTER/nodes.map"
+  printf '# ip\tname\n%s\tpve-r32\n' "$C1" > "$MASTER/conf/nodes.map"
   run_ks
   rc_is 1
   has "could not reach the cluster - using the cached nodes.map"
@@ -229,7 +229,7 @@ if scenario "4: a cluster that cannot be asked falls back to the cache and says 
 fi
 
 if scenario "5: a table with no generation line cannot be ordered by sync"; then
-  printf '110\t%s\t%s\tlocal-lvm\n' "$C1" "$C2" > "$MASTER/fleet.tsv"
+  printf '110\t%s\t%s\tlocal-lvm\n' "$C1" "$C2" > "$MASTER/conf/fleet.tsv"
   run_ks
   rc_is 1
   has "fleet.tsv: NO generation line"
@@ -239,7 +239,7 @@ fi
 if scenario "6: the OLD five-column fleet.tsv is named, not read as the new one"; then
   # An old row has four fields too, so it parses as the new shape and means
   # something completely different: column 2 was a tier and is now an address.
-  table "$MASTER/fleet.tsv" 5 "110	gold	$C1	$C2	local-lvm"
+  table "$MASTER/conf/fleet.tsv" 5 "110	gold	$C1	$C2	local-lvm"
   run_ks
   rc_is 1
   has "column 2 is 'gold', not an address"
@@ -248,7 +248,7 @@ if scenario "6: the OLD five-column fleet.tsv is named, not read as the new one"
 fi
 
 if scenario "7: an address in fleet.tsv that nodes.tsv has never heard of"; then
-  table "$MASTER/fleet.tsv" 5 "110	$C1	10.100.1.99	local-lvm"
+  table "$MASTER/conf/fleet.tsv" 5 "110	$C1	10.100.1.99	local-lvm"
   run_ks
   rc_is 1
   has "10.100.1.99 has no row in nodes.tsv"
@@ -256,7 +256,7 @@ if scenario "7: an address in fleet.tsv that nodes.tsv has never heard of"; then
 fi
 
 if scenario "8: a row with no dst, which distribute will refuse when it matters"; then
-  table "$MASTER/fleet.tsv" 5 "110	$C1	$C2"
+  table "$MASTER/conf/fleet.tsv" 5 "110	$C1	$C2"
   run_ks
   rc_is 1
   has "no dst - distribute will refuse it, there is no default"
@@ -303,7 +303,7 @@ if scenario "11: a backup node that cannot be asked is not a fleet with nothing 
 fi
 
 if scenario "12: an engine cron could not run is worth more than one that is missing"; then
-  chmod -x "$MASTER/engines/tp/ct-distribute.sh"
+  chmod -x "$MASTER/engines/ct-distribute.sh"
   run_ks
   rc_is 1
   has "ct-distribute.sh is NOT EXECUTABLE - cron would exit 126"
@@ -382,8 +382,8 @@ fi
 if scenario "19: the exit code is the worse of the two layers"; then
   # A healthy decision layer on top of a broken execution layer is not a
   # healthy system, and doctor is the one command that reports both.
-  printf '#!/usr/bin/env bash\necho "  tp: something is wrong"\nexit 1\n' > "$MASTER/engines/tp/tp"
-  chmod +x "$MASTER/engines/tp/tp"
+  printf '#!/usr/bin/env bash\necho "  tp: something is wrong"\nexit 1\n' > "$MASTER/engines/tp"
+  chmod +x "$MASTER/engines/tp"
   run_ks
   rc_is 1
   has "tp: something is wrong"
@@ -391,10 +391,10 @@ if scenario "19: the exit code is the worse of the two layers"; then
 fi
 
 if scenario "20: engines/tp missing at all is the end of the report, not a section of it"; then
-  rm -f "$MASTER/engines/tp/tp"
+  rm -f "$MASTER/engines/tp"
   run_ks
   rc_is 1
-  has "engines/tp is missing - ketsync decides, tp does"
+  has "engines/ is missing its dispatcher - ketsync decides, tp does"
   done_scenario
 fi
 

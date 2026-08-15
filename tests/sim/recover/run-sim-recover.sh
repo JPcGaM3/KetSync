@@ -50,7 +50,7 @@ new_world(){
   SIMROOT="$(mktemp -d /tmp/ksrec-sim.XXXXXX)"
   MASTER="$SIMROOT/master"
   PVE="$SIMROOT/pve"
-  mkdir -p "$MASTER/lib" "$MASTER/engines/tp" "$MASTER/logs" \
+  mkdir -p "$MASTER/lib" "$MASTER/conf" "$MASTER/engines" "$MASTER/logs" \
            "$PVE/ketsync/evacuate" "$PVE/ketsync/isolate" \
            "$PVE/nodes/pve-r32/lxc" "$PVE/nodes/pve-r33/lxc" \
            "$SIMROOT/ct" "$SIMROOT/img"
@@ -60,15 +60,15 @@ new_world(){
   local ksdir; ksdir="$(cd "$(dirname "$KS")" && pwd)"
   cp "$KS" "$MASTER/ketsync"; chmod +x "$MASTER/ketsync"
   cp "$ksdir"/lib/*.sh "$MASTER/lib/"
-  cat > "$MASTER/ketsync.conf" <<CONF
+  cat > "$MASTER/conf/ketsync.conf" <<CONF
 KS_ROLE=master
 KS_MASTER_IP=$ME
 CONF
   printf '# generation: 1\n%s\tstorage\n%s\tbackup\n%s\tcompute\n%s\tcompute\n' \
-    "$ME" "$BKP" "$N1" "$N2" > "$MASTER/nodes.tsv"
-  printf '%s\tpbs-r09\n%s\tpve-r32\n%s\tpve-r33\n' "$BKP" "$N1" "$N2" > "$MASTER/nodes.map"
+    "$ME" "$BKP" "$N1" "$N2" > "$MASTER/conf/nodes.tsv"
+  printf '%s\tpbs-r09\n%s\tpve-r32\n%s\tpve-r33\n' "$BKP" "$N1" "$N2" > "$MASTER/conf/nodes.map"
   printf '# generation: 1\n110\t%s\t%s\tlocal-lvm\n120\t%s\t%s\tlocal-lvm\n' \
-    "$N1" "$N1" "$N2" "$N2" > "$MASTER/fleet.tsv"
+    "$N1" "$N1" "$N2" "$N2" > "$MASTER/conf/fleet.tsv"
   stub_engines
 
   # The mid-return fleet, the way the 2026-08-15 drill actually left it:
@@ -91,7 +91,7 @@ CONF
 # records to decide what is left. A stub that recorded and changed nothing
 # would make every idempotency scenario pass vacuously.
 stub_engines(){
-  cat > "$MASTER/engines/tp/ct-prepare.sh" <<'STUB'
+  cat > "$MASTER/engines/ct-prepare.sh" <<'STUB'
 #!/usr/bin/env bash
 printf 'ct-prepare.sh %s\n' "$*" >> "$SIMROOT/trace"
 PVE="$SIMROOT/pve"
@@ -105,7 +105,7 @@ done
 if [[ " $* " == *" --restore "* && -n "$ip" ]]; then
   rc="$(cat "$SIMROOT/rc.prep-node" 2>/dev/null || echo 0)"
   if (( rc == 0 && ! dry )); then
-    name="$(awk -v i="$ip" '$1==i{print $2; exit}' "$SIMROOT/master/nodes.map")"
+    name="$(awk -v i="$ip" '$1==i{print $2; exit}' "$SIMROOT/master/conf/nodes.map")"
     rm -f "$PVE/ketsync/evacuate/$name.tsv"
   fi
   exit "$rc"
@@ -125,7 +125,7 @@ STUB
   # The failback stub also writes down whether PAUSE existed when it ran,
   # because B2 needs it there and no assertion after the run can see back in
   # time to that moment.
-  cat > "$MASTER/engines/tp/ct-failback.sh" <<'STUB'
+  cat > "$MASTER/engines/ct-failback.sh" <<'STUB'
 #!/usr/bin/env bash
 p=absent; [[ -f "$(dirname "$0")/PAUSE" ]] && p=present
 printf 'ct-failback.sh %s [pause=%s]\n' "$*" "$p" >> "$SIMROOT/trace"
@@ -133,12 +133,12 @@ ct=""; prev=""
 for a in "$@"; do [[ "$prev" == --ctid ]] && ct="$a"; prev="$a"; done
 exit "$(cat "$SIMROOT/rc.fb.$ct" 2>/dev/null || echo 0)"
 STUB
-  cat > "$MASTER/engines/tp/ct-replica.sh" <<'STUB'
+  cat > "$MASTER/engines/ct-replica.sh" <<'STUB'
 #!/usr/bin/env bash
 printf 'ct-replica.sh %s\n' "$*" >> "$SIMROOT/trace"
 exit "$(cat "$SIMROOT/rc.replica" 2>/dev/null || echo 0)"
 STUB
-  chmod +x "$MASTER"/engines/tp/*.sh
+  chmod +x "$MASTER"/engines/*.sh
 }
 
 # ---------- world knobs ----------
@@ -149,7 +149,7 @@ fb_fails(){     printf '1\n' > "$SIMROOT/rc.fb.$1"; }
 replica_fails(){ printf '1\n' > "$SIMROOT/rc.replica"; }
 bkp_down(){     : > "$SIMROOT/bkp.down"; }
 no_nine(){      rm -f "$PVE"/nodes/*/lxc/"9$1.conf"; }
-slave_role(){   printf 'KS_ROLE=slave\nKS_MASTER_IP=%s\n' "$ME" > "$MASTER/ketsync.conf"; }
+slave_role(){   printf 'KS_ROLE=slave\nKS_MASTER_IP=%s\n' "$ME" > "$MASTER/conf/ketsync.conf"; }
 
 run_ks(){
   ( export SIMROOT SIMBIN="$HERE/bin"
@@ -173,8 +173,8 @@ before(){ local a b
   a=$(grep -n -- "^$1" <<<"$TRACE" | head -1 | cut -d: -f1)
   b=$(grep -n -- "^$2" <<<"$TRACE" | head -1 | cut -d: -f1)
   [[ -n "$a" && -n "$b" && "$a" -lt "$b" ]] || _err "'$1' should have run before '$2'"; }
-pause_there(){ [[ -f "$MASTER/engines/tp/PAUSE" ]] || _err "PAUSE should exist"; }
-pause_gone(){  [[ -f "$MASTER/engines/tp/PAUSE" ]] && _err "PAUSE should have been removed"; return 0; }
+pause_there(){ [[ -f "$MASTER/engines/PAUSE" ]] || _err "PAUSE should exist"; }
+pause_gone(){  [[ -f "$MASTER/engines/PAUSE" ]] && _err "PAUSE should have been removed"; return 0; }
 clean_trace(){ : > "$SIMROOT/trace"; }
 
 SFAIL=0; SNAME=""

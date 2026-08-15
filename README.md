@@ -33,7 +33,7 @@ customer's service back is a decision, not a step.
 ## The two layers
 
 `ketsync` decides **who** does **what** and **where**. `tp` — the five engines
-under `engines/tp/` — does it. Nothing in the decision layer moves customer
+under `engines/` — does it. Nothing in the decision layer moves customer
 data by itself; if you find an `rsync` outside an engine, it is in the wrong
 place.
 
@@ -135,7 +135,7 @@ go through it.
 ```bash
 cd /root/ketsync
 cp ketsync.conf.sample  ketsync.conf     # KS_ROLE=slave, KS_MASTER_IP=<the storage node>
-$EDITOR engines/tp/ctrep.conf            # BW_TOTAL_MB for THIS machine's link
+$EDITOR engines/ctrep.conf            # BW_TOTAL_MB for THIS machine's link
 ./ketsync doctor                          # builds nodes.map here
 ```
 
@@ -163,7 +163,7 @@ the storage node is gone — usually the same machine, because what died is the
 disk and not the CPU. `dst` is the storage on that machine, spelled exactly as
 `pvesm status` there spells it.
 
-`engines/tp/inventory-replica.tsv` — which containers get copied, and to which
+`engines/inventory-replica.tsv` — which containers get copied, and to which
 pool on the backup node. The dest is required on every row; there is no
 default, for the same reason `fleet.tsv` has no fallback storage:
 
@@ -189,8 +189,8 @@ Then, on the master:
 ```
 
 ```cron
-*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-hdd-nas
-*/15 * * * * /root/ketsync/engines/tp/ct-replica.sh --storage tank-ssd-nas
+*/15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-hdd-nas
+*/15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-ssd-nas
 ```
 
 One lane per storage, because the bandwidth ceiling is per lane.
@@ -255,7 +255,7 @@ which guide to open for what. The shape of a disaster:
      disk, with nothing replicating it
 
 4  the storage node comes back
-     touch engines/tp/PAUSE                     on the storage node
+     touch engines/PAUSE                     on the storage node
      ./ketsync recall --all                     # keep narrowing the gap
      ./ketsync failback --all                   # 8110 -> the production image
      both are presync tools: run them repeatedly while 9110 still serves, and
@@ -271,7 +271,7 @@ which guide to open for what. The shape of a disaster:
 6  clean up, or the next disaster collides with this one
      pct destroy 9110                           frees R13, which has been
                                                 holding replica off 8110
-     rm engines/tp/PAUSE
+     rm engines/PAUSE
 ```
 
 Everything routes through the backup node rather than going compute-to-storage
@@ -327,7 +327,7 @@ the right reason — and every mutation in there is a bug somebody could really
 write. Several are bugs that were really written, kept so the suite can prove
 it would catch them again.
 
-Read `CLAUDE.md` and `engines/tp/CLAUDE.md` before changing anything. The rules
+Read `CLAUDE.md` and `engines/CLAUDE.md` before changing anything. The rules
 in them are short and each one is there because getting it wrong had a cost
 that is not obvious from the code.
 
@@ -336,7 +336,7 @@ that is not obvious from the code.
 ```
 ketsync                      the dispatcher. No logic of its own
 lib/                         one file per subcommand
-engines/tp/                  the five engines that move data
+engines/                  the five engines that move data
 docs/index.html              which of the five guides to open (Thai)
 docs/start-here.html         the operator's front door (Thai)
 docs/infrastructure-setup.html   build it from nothing (Thai)

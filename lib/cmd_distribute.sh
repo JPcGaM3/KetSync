@@ -64,7 +64,7 @@ cmd_distribute(){
   done
 
   if (( prep )) && (( ! list )); then
-    local TPREP="$KS_BASE/engines/tp/ct-prepare.sh"
+    local TPREP="$KS_BASE/engines/ct-prepare.sh"
     if [[ ! -x "$TPREP" ]]; then
       say "ERROR: $TPREP is missing or not executable - NOTHING was run"
       say "ERROR:   the engines are committed in this repo, so this is a broken"
@@ -99,7 +99,7 @@ cmd_distribute(){
     (( rc != 0 )) && say "== prepare finished with exit $rc - carrying on; D1 decides per container"
   fi
 
-  local TP="$KS_BASE/engines/tp/tp"
+  local TP="$KS_BASE/engines/tp"
   if [[ ! -x "$TP" ]]; then
     say "ERROR: $TP is missing or not executable - NOTHING was run"
     return 2

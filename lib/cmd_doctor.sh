@@ -81,7 +81,7 @@ cmd_doctor(){
   fi
 
   say "== the files that must carry a generation"
-  for f in nodes.tsv fleet.tsv engines/tp/inventory-replica.tsv engines/tp/inventory-migrate.tsv; do
+  for f in conf/nodes.tsv conf/fleet.tsv engines/inventory-replica.tsv engines/inventory-migrate.tsv; do
     [[ -f "$KS_BASE/$f" ]] || { say "  $f: missing"; rc=1; continue; }
     gen="$(sed -n 's/^#[[:space:]]*generation:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$KS_BASE/$f" | head -1)"
     [[ -n "$gen" ]] && say "  $f: generation $gen" || { say "  $f: NO generation line - sync cannot order it"; rc=1; }
@@ -122,7 +122,7 @@ cmd_doctor(){
   # fresh copy", which is the sentence that matters. The epoch is already in
   # every state file - nobody was asking for it.
   say "== how old the newest copy of each container is"
-  local sdir="$KS_BASE/engines/tp/state" sf id ep age oldest=0 seen=0
+  local sdir="$KS_BASE/engines/state" sf id ep age oldest=0 seen=0
   if [[ -d "$sdir" ]]; then
     for sf in "$sdir"/replica-*.json; do
       [[ -e "$sf" ]] || continue
@@ -152,13 +152,13 @@ cmd_doctor(){
   # There is no mirror any more, and a leftover one is worth naming: it is not
   # read, but somebody will find it during an incident and believe it.
   for f in fleet.tsv nodes.map; do
-    [[ -e "$KS_BASE/engines/tp/$f" ]] \
-      && say "  engines/tp/$f is a LEFTOVER from the old mirror - nothing reads it, delete it"
+    [[ -e "$KS_BASE/engines/$f" ]] \
+      && say "  engines/$f is a LEFTOVER from the old mirror - nothing reads it, delete it"
   done
 
   say "== the engines"
-  if [[ ! -f "$KS_BASE/engines/tp/tp" ]]; then
-    say "  engines/tp is missing - ketsync decides, tp does. Nothing can run."; rc=1
+  if [[ ! -f "$KS_BASE/engines/tp" ]]; then
+    say "  engines/ is missing its dispatcher - ketsync decides, tp does. Nothing can run."; rc=1
   else
     # Not "does the file exist" but "can cron actually run it". A checkout that
     # crossed a filesystem which drops the mode bit - a network share, a FUSE
@@ -168,12 +168,12 @@ cmd_doctor(){
     # you reach for while the storage node is dead was the one nobody checked
     # was runnable.
     for f in tp ct-migrate.sh ct-replica.sh ct-failback.sh ct-distribute.sh ct-recall.sh ct-prepare.sh; do
-      if [[ -x "$KS_BASE/engines/tp/$f" ]]; then say "  $f ok"
-      else say "  $f is NOT EXECUTABLE - cron would exit 126. chmod +x engines/tp/$f"; rc=1; fi
+      if [[ -x "$KS_BASE/engines/$f" ]]; then say "  $f ok"
+      else say "  $f is NOT EXECUTABLE - cron would exit 126. chmod +x engines/$f"; rc=1; fi
     done
 
     echo
-    "$KS_BASE/engines/tp/tp" doctor || rc=1
+    "$KS_BASE/engines/tp" doctor || rc=1
   fi
 
   # ---- what a half-finished DR left behind -------------------------------

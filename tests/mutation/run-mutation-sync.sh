@@ -44,7 +44,7 @@ mutant(){
   tree="$(mktemp -d /tmp/kssync-mutant.XXXXXX)"
   m="$tree/lib/cmd_sync.sh"
   echo "  [$name]"
-  mkdir -p "$tree/lib" "$tree/engines/tp"
+  mkdir -p "$tree/lib" "$tree/engines"
   cp "$ROOT/ketsync" "$tree/ketsync"; chmod +x "$tree/ketsync"
   cp "$ROOT"/lib/*.sh "$tree/lib/"
   # A zero-byte mutant is not a mutant. perl refusing the program - an
@@ -115,7 +115,7 @@ mutant "a slave is allowed to push too" \
 # This was live: ketsync.conf carries KS_ROLE, and one copy of it on every node
 # makes every node believe it may write.
 mutant "ketsync.conf joins the list of files that get pushed" \
-  's{\QKS_SYNCED=(nodes.tsv fleet.tsv\E}{KS_SYNCED=(ketsync.conf nodes.tsv fleet.tsv}' \
+  's{\QKS_SYNCED=(conf/nodes.tsv conf/fleet.tsv\E}{KS_SYNCED=(conf/ketsync.conf conf/nodes.tsv conf/fleet.tsv}' \
   4
 
 # The denylist can only do anything when a per-machine file is actually in
@@ -124,7 +124,7 @@ mutant "ketsync.conf joins the list of files that get pushed" \
 # rsync records it as a violation, and scenario 4 fails on the consequence
 # rather than on a message.
 mutant "the denylist stops refusing, and the role file goes out with the tables" \
-  's{\QKS_SYNCED=(nodes.tsv fleet.tsv\E}{KS_SYNCED=(ketsync.conf nodes.tsv fleet.tsv}; s{^\Q      exit 2\E$}{      break 2}m' \
+  's{\QKS_SYNCED=(conf/nodes.tsv conf/fleet.tsv\E}{KS_SYNCED=(conf/ketsync.conf conf/nodes.tsv conf/fleet.tsv}; s{^\Q      exit 2\E$}{      break 2}m' \
   4
 
 # ---------- where the other machine keeps its install -----------------------

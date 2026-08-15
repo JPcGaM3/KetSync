@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ติดตั้งระบบตั้งแต่ศูนย์ — ketsync</title>
+<style>
+  :root{
+    --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
+    --bg:#fbfaf8; --surface:#ffffff; --line:#e8e5de; --line2:#d9d5cc;
+    --accent:#0f766e; --accent-soft:#e6f1ef;
+    --warn:#a45309; --warn-soft:#fdf3e3;
+    --crit:#b02020; --crit-soft:#fceded;
+    --code-bg:#f5f4f0;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai","Sarabun",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+  .topbar{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line)}
+  .topbar .in{max-width:820px;margin:0 auto;padding:11px 24px;display:flex;
+              align-items:center;gap:16px;flex-wrap:wrap}
+  .topbar .name{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent)}
+  .topbar a{font-size:14px;color:var(--muted);text-decoration:none;padding:2px 0;
+            border-bottom:1.5px solid transparent}
+  .topbar a:hover{color:var(--ink);border-bottom-color:var(--accent)}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 90px}
+  header.doc{padding-bottom:26px;border-bottom:2px solid var(--ink);margin-bottom:8px}
+  h1{font-size:31px;line-height:1.35;margin:0 0 8px;font-weight:700}
+  header.doc p{color:var(--muted);margin:0;font-size:16.5px}
+  .where{display:inline-block;margin-top:16px;font-size:14px;background:var(--accent-soft);
+         color:var(--accent);border:1px solid #c6ddd9;border-radius:999px;padding:4px 14px}
+  section{margin-top:46px;scroll-margin-top:70px}
+  .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+  .num{font-family:var(--mono);font-size:13px;font-weight:600;color:#fff;background:var(--accent);
+       border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+  h2{font-size:22px;margin:0;font-weight:700}
+  h3{font-size:17px;margin:30px 0 6px;font-weight:700}
+  p{margin:0 0 14px}
+  .lead{color:var(--muted);margin-bottom:16px}
+  .part{margin-top:64px;padding:14px 0 0;border-top:3px solid var(--ink)}
+  .part .label{font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase;
+               color:var(--accent);margin-bottom:2px}
+  .part h2{font-size:26px}
+  ol.steps{counter-reset:s;margin:10px 0 16px;padding:0;list-style:none}
+  ol.steps li{position:relative;padding-left:42px;margin:14px 0}
+  ol.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:3px;
+    width:27px;height:27px;background:var(--accent);color:#fff;border-radius:50%;
+    font-family:var(--mono);font-size:13px;font-weight:600;
+    display:flex;align-items:center;justify-content:center}
+  ul.clean{margin:8px 0 16px;padding:0;list-style:none}
+  ul.clean li{position:relative;padding-left:20px;margin:9px 0}
+  ul.clean li::before{content:"";position:absolute;left:2px;top:12px;width:6px;height:6px;
+                      background:var(--accent);border-radius:50%}
+  .code{position:relative;margin:14px 0 18px}
+  pre{background:var(--code-bg);border:1px solid var(--line2);border-radius:10px;
+      padding:15px 68px 15px 17px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;
+      font-family:var(--mono);font-size:13.5px;line-height:1.75;color:#22262c}
+  pre .p{color:var(--accent);user-select:none}
+  pre .c{color:var(--faint)}
+  .code .cp{position:absolute;top:8px;right:8px;font-family:var(--sans);font-size:12px;
+    color:var(--muted);background:var(--surface);border:1px solid var(--line2);
+    border-radius:7px;padding:3px 11px;cursor:pointer;line-height:1.5}
+  .code .cp:hover{color:var(--accent);border-color:var(--accent)}
+  .out{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line2);
+       border-radius:0 10px 10px 0;padding:13px 16px;margin:14px 0 18px;
+       white-space:pre-wrap;overflow-wrap:anywhere;
+       font-family:var(--mono);font-size:12.8px;line-height:1.8;color:#4b515b}
+  .out .g{color:var(--accent);font-weight:600}
+  .out .r{color:var(--crit);font-weight:600}
+  code.inl{font-family:var(--mono);font-size:.87em;background:#eef0ec;border:1px solid var(--line2);
+           border-radius:4px;padding:1px 6px;color:#0c4f48;white-space:nowrap}
+  kbd{font-family:var(--mono);font-size:.85em;background:var(--surface);border:1px solid var(--line2);
+      border-bottom-width:2px;border-radius:5px;padding:2px 7px;color:var(--ink);white-space:nowrap}
+  .tip,.ok,.warn,.stop{border-left:3px solid;border-radius:0 9px 9px 0;padding:13px 17px;
+                       margin:16px 0;font-size:15px}
+  .tip{border-color:var(--accent);background:var(--accent-soft)}
+  .ok{border-color:var(--accent);background:var(--accent-soft)}
+  .warn{border-color:var(--warn);background:var(--warn-soft)}
+  .stop{border-color:var(--crit);background:var(--crit-soft)}
+  .tip b{color:var(--accent)} .ok b{color:var(--accent)}
+  .warn b{color:var(--warn)} .stop b{color:var(--crit)}
+  .tip p:last-child,.ok p:last-child,.warn p:last-child,.stop p:last-child{margin-bottom:0}
+  table{width:100%;border-collapse:collapse;margin:14px 0 18px;font-size:14.5px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:13px;color:var(--muted);font-weight:600;border-bottom:1.5px solid var(--line2)}
+  td.m,td .m{font-family:var(--mono);font-size:13px;white-space:nowrap;color:#0c4f48}
+  tr:hover td{background:#fdfdfb}
+  footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);
+         font-size:13.5px;color:var(--faint);line-height:1.9}
+  @media(max-width:640px){
+    body{font-size:15.5px}
+    .wrap{padding:28px 18px 70px}
+    h1{font-size:25px}
+    table{font-size:13.5px}
+    th,td{padding:8px 8px}
+    td.m,td .m{white-space:normal}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="in">
+    <span class="name">setup</span>
+    <a href="#s1">มีเครื่องอะไรบ้าง</a>
+    <a href="#s2">เตรียมก่อนเริ่ม</a>
+    <a href="#sc">cluster</a>
+    <a href="#s3">ssh</a>
+    <a href="#s4">storage</a>
+    <a href="#s5">bridge</a>
+    <a href="#sp">PBS</a>
+    <a href="#s6">ลงตัวโปรแกรม</a>
+    <a href="#s7">กรอก 3 ไฟล์</a>
+    <a href="#s8">ตรวจ</a>
+    <a href="#s9">ซ้อม</a>
+    <a href="#s10">ตั้งเวลา</a>
+    <a href="#s11">พังตรงไหนทำไง</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="doc">
+  <h1>ติดตั้งระบบตั้งแต่ศูนย์</h1>
+  <p>ทำตามทีละข้อ ข้อละไม่กี่นาที ทุกข้อมีวิธีเช็กว่าผ่านแล้วจริง — ไม่ต้องเข้าใจ Proxmox ลึกก็ทำได้</p>
+  <div class="where">คำสั่งทุกอันบอกไว้ว่าพิมพ์บนเครื่องไหน ถ้าไม่ได้บอก แปลว่าเครื่อง storage</div>
+</header>
+
+<section id="s1">
+  <div class="eyebrow"><span class="num">0</span><h2>มีเครื่องอะไรบ้าง แต่ละเครื่องทำอะไร</h2></div>
+  <p>ทั้งระบบมีเครื่อง 3 ประเภท คิดง่ายๆ แบบนี้ — เครื่องหนึ่ง<b>เก็บของ</b> เครื่องหนึ่ง<b>ใช้ของ</b>
+     และอีกเครื่อง<b>เก็บสำเนาไว้เผื่อฉุกเฉิน</b> ทั้งหมดใช้เวลาตั้งประมาณครึ่งวัน
+     ทำตามลำดับ อย่าข้าม เพราะข้อหลังๆ ใช้ของที่ข้อก่อนหน้าสร้างไว้</p>
+  <table>
+    <tr><th>เรียกว่า</th><th>ตัวอย่าง IP</th><th>ทำอะไร</th><th>ต้องลงโปรแกรมนี้มั้ย</th></tr>
+    <tr><td class="m">storage</td><td class="m">10.100.1.17</td>
+        <td>เก็บไฟล์ดิสก์ของ CT ทุกตัว และเป็นเครื่องที่สั่งงานทุกอย่าง</td><td><b>ใช่ ที่นี่ที่เดียว</b></td></tr>
+    <tr><td class="m">compute</td><td class="m">10.100.1.32, .33</td>
+        <td>เอาดิสก์จาก storage มา mount แล้วรัน CT จริงๆ</td><td>ไม่ต้อง</td></tr>
+    <tr><td class="m">backup</td><td class="m">10.100.1.9</td>
+        <td>เก็บสำเนา CT ที่ปิดอยู่ ไว้ใช้ตอนฉุกเฉิน</td><td>ไม่ต้อง</td></tr>
+  </table>
+  <details class="cmd"><summary>writes            mounts over NFS</summary><div class="code"><pre>          <span class="c">writes</span>            <span class="c">mounts over NFS</span>
+  storage  ---------->  compute      (CT runs here)
+     |
+     | <span class="c">nightly copy</span>
+     v
+  backup                             (a stopped copy waits here)</pre></div></details>
+  <p>เครื่อง storage <b>ไม่ได้อยู่ใน cluster ของ Proxmox</b> ตั้งใจให้เป็นแบบนั้น
+     มันเลยไม่รู้จักชื่อเครื่องอื่นเลย ทุกอย่างในระบบนี้จึงคุยกันด้วย IP ล้วน</p>
+</section>
+
+<section id="s2">
+  <div class="eyebrow"><span class="num">1</span><h2>เตรียมให้ครบก่อนเริ่ม</h2></div>
+  <p>ถ้าขาดข้อใดข้อหนึ่ง ให้หยุดแล้วหาให้ครบก่อน อย่าเพิ่งทำต่อ — ตอนหลังจะหาสาเหตุยากกว่ามาก</p>
+  <table>
+    <tr><th>ต้องมี</th><th>เอาไปทำอะไร</th></tr>
+    <tr><td>IP ของทุกเครื่อง กับรหัส root</td><td>ใส่ในตารางเดียวของระบบ</td></tr>
+    <tr><td>เครื่อง storage มีเนื้อที่ว่างพอ</td><td>ดิสก์ของ CT ทุกตัวอยู่ที่นี่</td></tr>
+    <tr><td>เครื่อง backup มี ZFS pool ว่าง</td><td>เก็บสำเนา</td></tr>
+    <tr><td>สิทธิ์แก้ network บนเครื่อง backup</td><td>สร้าง bridge ปิดตายให้สำเนา (ข้อ 5)</td></tr>
+    <tr><td>CT หรือ VM เล็กๆ อีกตัว ที่ไม่ได้อยู่ใน cluster</td><td>เป็นเสียงโหวตที่ 3 ของ cluster (ข้อ 2)</td></tr>
+    <tr><td>ZFS pool อีกก้อนที่เครื่อง backup</td><td>ที่เก็บของ PBS แยกจากที่เก็บสำเนา (ข้อ 6)</td></tr>
+  </table>
+  <div class="warn"><p><b>คำเตือนข้อเดียวที่สำคัญที่สุดในหน้านี้</b> สำเนาที่เก็บไว้ที่เครื่อง backup
+     ใช้ IP และ MAC เดียวกับตัวจริงเป๊ะ ถ้ามันออกเน็ตได้เมื่อไหร่ = มีเครื่องสองตัวใช้ IP เดียวกันพร้อมกัน
+     ระบบลูกค้าจะพังทันที ข้อ 3 คือการกันเรื่องนี้ และตัวโปรแกรมจะไม่ยอมทำงานเลยถ้ายังกันไม่เรียบร้อย</p></div>
+</section>
+
+<section id="sc">
+  <div class="eyebrow"><span class="num">2</span><h2>รวมเครื่อง compute กับ backup เป็น cluster</h2></div>
+  <p>cluster คือการทำให้เครื่องหลายตัวมองเห็น config ของกันและกัน มันทำให้ย้าย CT ข้ามเครื่องได้
+     และทำให้เครื่องหนึ่งตอบแทนอีกเครื่องได้ ซึ่งเครื่องมือชุดนี้ใช้อยู่หลายที่</p>
+  <div class="stop"><p><b>เครื่อง storage ไม่ join cluster</b> ตั้งใจให้อยู่นอก
+     เพราะมันเป็นที่เก็บดิสก์ของทุกเครื่อง ถ้ามันร่วมโหวตด้วยแล้วมันล่ม cluster จะเสียเสียงโหวตไปพร้อมกับดิสก์
+     ข้ามข้อนี้ไปสำหรับเครื่อง storage</p></div>
+
+  <h3>สร้าง cluster ที่เครื่อง compute เครื่องแรก</h3>
+  <details class="cmd"><summary>pvecm create tomato</summary><div class="code"><pre><span class="c"># on the FIRST compute node</span>
+pvecm create tomato</pre></div></details>
+
+  <h3>เอาเครื่องที่เหลือเข้ามา</h3>
+  <details class="cmd"><summary>pvecm add 10.100.1.32</summary><div class="code"><pre><span class="c"># on EVERY other compute node, and on the backup node</span>
+pvecm add 10.100.1.32</pre></div></details>
+  <p>ใส่ IP ของเครื่องแรกที่สร้าง cluster ไว้ มันจะถามรหัส root ของเครื่องนั้น</p>
+
+  <h3>ตัวช่วยโหวต — ข้อนี้อย่าข้าม</h3>
+  <p>cluster ตัดสินใจด้วยเสียงข้างมาก ถ้ามีเครื่องเลขคู่แล้วขาดไปครึ่งหนึ่ง จะไม่มีใครได้เสียงข้างมาก
+     ทุกเครื่องจะหยุดเขียน config พร้อมกัน ตัวช่วยโหวตคือเสียงที่ 3 ที่ทำให้ไม่เกิดเรื่องนั้น</p>
+  <details class="cmd"><summary>apt install -y corosync-qnetd</summary><div class="code"><pre><span class="c"># on a small CT or VM that is NOT a cluster member</span>
+apt install -y corosync-qnetd
+
+<span class="c"># on EVERY cluster member - not one may be skipped</span>
+apt install -y corosync-qdevice
+
+<span class="c"># back on one cluster member, pointing at the voter</span>
+pvecm qdevice setup 10.100.1.40</pre></div></details>
+
+  <h3>เช็กว่าผ่าน</h3>
+  <details class="cmd"><summary>pvecm status</summary><div class="code"><pre>pvecm status</pre></div></details>
+  <p>ต้องเห็นคำว่า <code class="inl">Quorate: Yes</code> และเห็นชื่อเครื่องครบทุกตัวที่ join ไป
+     ถ้าตั้งตัวช่วยโหวตแล้วต้องเห็น <code class="inl">Qdevice</code> ในรายการด้วย</p>
+  <div class="tip"><p>ถ้า qnetd ไม่ยอมขึ้นหลังติดตั้ง มักเป็นเรื่องสิทธิ์ไฟล์ แก้ด้วยสองบรรทัดนี้
+     บนเครื่องที่ลง qnetd</p>
+     <details class="cmd"><summary>chown -R coroqnetd:coroqnetd /etc/corosync/qnetd</summary><div class="code"><pre>chown -R coroqnetd:coroqnetd /etc/corosync/qnetd
+systemctl reset-failed corosync-qnetd &amp;&amp; systemctl restart corosync-qnetd</pre></div></details></div>
+</section>
+
+<section id="s3">
+  <div class="eyebrow"><span class="num">3</span><h2>ให้เครื่อง storage เข้าเครื่องอื่นได้โดยไม่ต้องถามรหัส</h2></div>
+  <p>ระบบทำงานอัตโนมัติตอนกลางคืน จะมานั่งใส่รหัสไม่ได้ ทำครั้งเดียวจบ</p>
+  <details class="cmd"><summary>ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519   # skip if you have …</summary><div class="code"><pre><span class="c"># on the storage node</span>
+ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519   <span class="c"># skip if you have one</span>
+
+ssh-copy-id root@10.100.1.9     <span class="c"># backup  - REQUIRED</span>
+ssh-copy-id root@10.100.1.32    <span class="c"># compute - one per node</span>
+ssh-copy-id root@10.100.1.33</pre></div></details>
+  <h3>เช็กว่าผ่าน</h3>
+  <details class="cmd"><summary>for ip in 10.100.1.9 10.100.1.32 10.100.1.33; do</summary><div class="code"><pre>for ip in 10.100.1.9 10.100.1.32 10.100.1.33; do
+  printf '%s ' "$ip"; ssh -o BatchMode=yes root@$ip true &amp;&amp; echo OK || echo FAIL
+done</pre></div></details>
+  <p>ต้องขึ้น <code class="inl">OK</code> ทุกบรรทัด ถ้ามีบรรทัดไหนขึ้น <code class="inl">FAIL</code>
+     ให้ทำ <code class="inl">ssh-copy-id</code> เครื่องนั้นซ้ำ</p>
+  <div class="tip"><p><b>เส้นที่ขาดไม่ได้จริงๆ มีเส้นเดียว</b> คือ storage ไปเครื่อง backup
+     เพราะทั้ง config ของ CT ทุกตัวและตัวข้อมูลจริงวิ่งผ่านเส้นนี้ ส่วนเส้นไป compute
+     ใช้ตอบคำถามเดียวว่า “CT ตัวจริงปิดอยู่รึยัง” ตอนจะเอาข้อมูลกลับ ไม่มีก็ยังก๊อปได้ปกติ
+     แต่จะเอากลับไม่ได้</p></div>
+</section>
+
+<section id="s4">
+  <div class="eyebrow"><span class="num">4</span><h2>ตั้งชื่อ storage ให้ตรงกันสองฝั่ง</h2></div>
+  <p>ตรงนี้คนพลาดบ่อยที่สุด กติกาคือ <b>ชื่อต้องเหมือนกันเป๊ะ แต่ประเภทต้องต่างกัน</b>
+     เพราะ config ของ CT จำแค่ชื่อ พอ CT ย้ายไปรันที่ compute มันจะหาจากชื่อเดิม
+     แล้วเจอของที่ mount ผ่าน NFS ที่เครื่องนั้นเอง</p>
+  <details class="cmd"><summary>pvesm add dir tank-hdd-nas --path /tank/hosting --is_mountpoint yes \</summary><div class="code"><pre><span class="c"># on the storage node - the real files live here</span>
+pvesm add dir tank-hdd-nas --path /tank/hosting --is_mountpoint yes \
+  --content images,rootdir
+
+<span class="c"># on EVERY compute node - same id, reached over NFS</span>
+pvesm add nfs tank-hdd-nas --server 10.100.1.17 --export /tank/hosting \
+  --content images,rootdir</pre></div></details>
+  <h3>เช็กว่าผ่าน</h3>
+  <details class="cmd"><summary>pvesm status | grep tank-hdd-nas</summary><div class="code"><pre><span class="c"># must say "active" on BOTH sides, with the SAME id</span>
+pvesm status | grep tank-hdd-nas
+ssh root@10.100.1.32 "pvesm status | grep tank-hdd-nas"</pre></div></details>
+  <div class="stop"><p><b>ห้ามให้ pool ไปอยู่บน disk ระบบ</b> ถ้า dataset ไม่ได้ mount อยู่จริง
+     Linux จะเห็นเป็นแค่โฟลเดอร์ว่างธรรมดา เขียนลงไปได้เรื่อยๆ จนดิสก์ระบบเต็มแล้วเครื่องล่ม
+     ตัวโปรแกรมเช็กให้ก่อนเขียนทุกครั้ง (guard G1) แต่ตอนตั้งค่าก็ควรรู้ไว้</p></div>
+</section>
+
+<section id="s5">
+  <div class="eyebrow"><span class="num">5</span><h2>สร้าง bridge ปิดตาย ทุกเครื่อง (backup + compute)</h2></div>
+  <p>สำเนาที่เก็บไว้ต้องต่ออยู่กับ “เกาะร้าง” — เป็น bridge ที่ไม่มีสายออกไปไหนเลย
+     ถ้าวันหนึ่งมีคนเผลอเปิดสำเนาขึ้นมา มันจะออกเน็ตไม่ได้ ไม่ไปชนกับตัวจริง</p>
+  <p>ต้องมีที่ <b>เครื่อง compute ทุกเครื่องด้วย</b> ไม่ใช่แค่ backup วันที่เครื่อง storage ตาย
+     ทางออกทางเดียวของ CT ที่ค้างอยู่คือย้าย network มาลง bridge นี้ ณ เครื่องที่มันรันอยู่
+     (guard P4 กับ D1 จะเช็กให้ตรงนั้น) เครื่องไหนไม่มี เครื่องนั้นกู้ไม่ได้ และจะรู้ตอนเกิดเหตุ</p>
+  <details class="cmd"><summary>cat >> /etc/network/interfaces <<'EOF'</summary><div class="code"><pre><span class="c"># on the BACKUP node, and on EVERY compute node</span>
+cat &gt;&gt; /etc/network/interfaces &lt;&lt;'EOF'
+
+auto vmbr99
+iface vmbr99 inet manual
+    bridge-ports none
+    bridge-stp off
+    bridge-fd 0
+EOF
+
+ifup vmbr99</pre></div></details>
+  <p>เครื่องที่ใช้ Open vSwitch (ดูจาก <code class="inl">ovs_type OVSBridge</code> ใน
+     <code class="inl">/etc/network/interfaces</code>) ให้สร้างเป็น OVS bridge แทน อย่าปนสองแบบในเครื่องเดียว</p>
+  <details class="cmd"><summary>cat >> /etc/network/interfaces <<'EOF'   (OVS)</summary><div class="code"><pre><span class="c"># OVS node only. No ovs_ports line: an island has nothing on it</span>
+apt install -y openvswitch-switch
+
+cat &gt;&gt; /etc/network/interfaces &lt;&lt;'EOF'
+
+auto vmbr99
+iface vmbr99 inet manual
+    ovs_type OVSBridge
+EOF
+
+ifup vmbr99</pre></div></details>
+  <h3>เช็กว่าผ่าน</h3>
+  <details class="cmd"><summary>ip -br link show vmbr99</summary><div class="code"><pre><span class="c"># on EVERY node that has it - the port list must be EMPTY</span>
+ip -br link show vmbr99
+ls /sys/class/net/vmbr99/brif/          <span class="c"># linux bridge</span>
+ovs-vsctl --timeout=5 list-ifaces vmbr99 <span class="c"># OVS bridge</span></pre></div></details>
+  <p>บรรทัดแรกต้องเห็น <code class="inl">vmbr99</code> รายการ port ต้องว่างเปล่า
+     ถ้ามีชื่อการ์ดโผล่มาแปลว่ามีสายต่ออยู่ — ต้องเอาออกก่อน ไม่งั้นโปรแกรมจะปฏิเสธไม่ยอมทำงาน (guard R9)
+     ซึ่งถูกแล้ว อย่าไปปิด guard</p>
+  <p>ที่ถาม OVS ด้วยคำว่า <code class="inl">list-ifaces</code> ไม่ใช่ <code class="inl">list-ports</code>
+     เพราะ bond ของ OVS นับเป็น port เดียวที่ไม่มีตัวตนในเคอร์เนล ถามแบบ port จะเห็นแค่ชื่อ bond
+     แล้วเข้าใจผิดว่าเกาะนี้ไม่มีสาย ทั้งที่มีสายอยู่สองเส้น</p>
+</section>
+
+<section id="sp">
+  <div class="eyebrow"><span class="num">6</span><h2>ลง PBS ที่เครื่อง backup</h2></div>
+  <p>PBS (Proxmox Backup Server) เป็นคนละเรื่องกับสำเนาที่ ct-replica ทำ และต้องมีทั้งคู่</p>
+  <table>
+    <tr><th></th><th>ct-replica</th><th>PBS</th></tr>
+    <tr><td>ตอบคำถามว่า</td><td>เครื่องพังตอนนี้ กู้กลับมาได้เร็วแค่ไหน</td><td>ไฟล์ที่ลบไปเมื่อวันอังคาร เอากลับมาได้มั้ย</td></tr>
+    <tr><td>เก็บอะไร</td><td>สำเนาล่าสุดชุดเดียว พร้อมเปิดใช้</td><td>ย้อนหลังหลายเดือน เปิดใช้ทันทีไม่ได้</td></tr>
+    <tr><td>บ่อยแค่ไหน</td><td>ทุก 15 นาที</td><td>คืนละครั้ง</td></tr>
+  </table>
+  <p>ของสองอย่างนี้อยู่คนละ pool กันบนเครื่องเดียวกัน ตั้งใจให้ไม่แย่งหัวอ่านดิสก์กัน</p>
+
+  <h3>ติดตั้ง</h3>
+  <details class="cmd"><summary>echo "deb http://download.proxmox.com/debian/pbs bookworm pbs-no-subscript…</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
+echo "deb http://download.proxmox.com/debian/pbs bookworm pbs-no-subscription"   &gt; /etc/apt/sources.list.d/pbs.list
+apt update &amp;&amp; apt install -y proxmox-backup-server</pre></div></details>
+
+  <h3>ทำที่เก็บ แล้วทำผู้ใช้ให้ PVE เอาไว้ยิงเข้ามา</h3>
+  <details class="cmd"><summary>zfs create pbsstore-sas/chunks</summary><div class="code"><pre>zfs create pbsstore-sas/chunks
+proxmox-backup-manager datastore create main /pbsstore-sas/chunks
+
+proxmox-backup-manager user create svc-pve@pbs --password 'CHANGE-ME'
+proxmox-backup-manager acl update /datastore/main DatastoreBackup   --auth-id svc-pve@pbs</pre></div></details>
+  <p>ผู้ใช้ตัวนี้ได้สิทธิ์แค่ “ฝากของ” ไม่ได้สิทธิ์ลบ ตั้งใจให้เป็นแบบนั้น —
+     ถ้าเครื่องใน cluster ถูกเจาะ คนที่เข้ามาจะลบ backup ย้อนหลังทิ้งไม่ได้</p>
+
+  <h3>เอาลายนิ้วมือของ certificate ไว้</h3>
+  <details class="cmd"><summary>proxmox-backup-manager cert info | grep Fingerprint</summary><div class="code"><pre>proxmox-backup-manager cert info | grep Fingerprint</pre></div></details>
+  <p>ก๊อปค่าที่ได้ไว้ ใช้ตอนต่อ PVE เข้ามาในขั้นถัดไป</p>
+
+  <h3>ตั้งงานประจำ 3 อย่าง</h3>
+  <details class="cmd"><summary>proxmox-backup-manager prune-job create daily-prune   --store main --sched…</summary><div class="code"><pre>proxmox-backup-manager prune-job create daily-prune   --store main --schedule "daily 05:00"   --keep-daily 14 --keep-weekly 8 --keep-monthly 6
+
+proxmox-backup-manager datastore update main --gc-schedule "sun 06:00"
+
+proxmox-backup-manager verify-job create weekly-verify   --store main --schedule "wed 22:00"   --ignore-verified true --outdated-after 30</pre></div></details>
+  <p>prune คือตัดรุ่นเก่าทิ้งตามกฎ, GC คือคืนเนื้อที่จริง (prune อย่างเดียวไม่คืนเนื้อที่),
+     verify คืออ่านทุก chunk มาเทียบ checksum ว่ายังอ่านได้อยู่จริง
+     เวลาที่ตั้งไว้เลี่ยงไม่ให้ทับกับ backup job ตอนตี 2 ครึ่ง</p>
+
+  <h3>ต่อ PBS เข้า cluster แล้วตั้ง backup ทุกคืน</h3>
+  <details class="cmd"><summary>pvesm add pbs pbs-main   --server 10.100.1.9 --datastore main   --username…</summary><div class="code"><pre><span class="c"># on ANY cluster member</span>
+pvesm add pbs pbs-main   --server 10.100.1.9 --datastore main   --username svc-pve@pbs --password 'CHANGE-ME'   --fingerprint 'PASTE-THE-FINGERPRINT-HERE'
+
+pvesh create /cluster/backup   --all 1 --storage pbs-main --schedule "02:30"   --mode snapshot --mailnotification failure   --notes-template '{{guestname}}'</pre></div></details>
+  <p><code class="inl">--all 1</code> แปลว่า guest ที่สร้างทีหลังจะเข้า job นี้เองอัตโนมัติ
+     ไม่ต้องมานั่งเพิ่มทีละตัว ซึ่งเป็นวิธีที่ CT ตัวใหม่มักจะหลุดไม่ได้ backup</p>
+
+  <h3>เช็กว่าผ่าน</h3>
+  <details class="cmd"><summary>pvesm status | grep pbs-main</summary><div class="code"><pre><span class="c"># on any cluster member</span>
+pvesm status | grep pbs-main
+
+<span class="c"># on the BACKUP node, after the first night</span>
+proxmox-backup-manager task list | head</pre></div></details>
+  <p>ต้องขึ้น <code class="inl">active</code> และคืนถัดมาต้องเห็น task ที่จบด้วย OK</p>
+  <div class="warn"><p><b>สำเนาที่ ct-replica ทำ ไม่ได้เข้า PBS</b> คนละระบบกัน
+     ตัวสำเนาปิดอยู่และไม่ได้อยู่ใน backup job — ถ้าอยากให้เข้าด้วยต้องเพิ่มเอง
+     แต่ปกติไม่ต้อง เพราะตัวจริงเข้าอยู่แล้ว และสำเนาก็คือตัวจริงเมื่อ 15 นาทีก่อน</p></div>
+</section>
+
+<section id="s6">
+  <div class="eyebrow"><span class="num">7</span><h2>ลงตัวโปรแกรม</h2></div>
+  <p>ลงที่เครื่อง storage เครื่องเดียว clone ครั้งเดียวได้ครบ ไม่ต้อง clone ซ้ำที่ไหนอีก</p>
+  <details class="cmd"><summary>git clone <this repo> /root/ketsync</summary><div class="code"><pre><span class="c"># on the storage node</span>
+git clone &lt;this repo&gt; /root/ketsync
+cd /root/ketsync
+
+cp ketsync.conf.sample  ketsync.conf
+cp nodes.tsv.sample     nodes.tsv
+cp fleet.tsv.sample     fleet.tsv
+cp engines/inventory-replica.sample.tsv engines/inventory-replica.tsv</pre></div></details>
+  <p>ไฟล์ที่ลงท้าย <code class="inl">.sample</code> คือตัวอย่าง ก๊อปแล้วตัดคำว่า sample ออกถึงใช้จริง
+     ตัวอย่างจะถูกอัปเดตตอน <code class="inl">git pull</code> ส่วนตัวจริงของคุณจะไม่ถูกทับ</p>
+</section>
+
+<section id="s7">
+  <div class="eyebrow"><span class="num">8</span><h2>กรอก 3 ไฟล์ แค่นี้พอ</h2></div>
+
+  <h3>ไฟล์ที่ 1 — ketsync.conf: เครื่องนี้เป็นตัวหลักรึเปล่า</h3>
+  <details class="cmd"><summary>KS_ROLE=master</summary><div class="code"><pre>KS_ROLE=master
+KS_MASTER_IP=10.100.1.17</pre></div></details>
+  <p>เครื่อง storage คือ <code class="inl">master</code> เครื่อง backup ใส่
+     <code class="inl">slave</code> ตัวหลักเท่านั้นที่แก้ตารางได้ เครื่องอื่นรับมาอย่างเดียว
+     ระบบไม่สลับให้เอง — คนเปลี่ยนเองตอนจำเป็น ตั้งใจให้เป็นแบบนั้น</p>
+
+  <h3>ไฟล์ที่ 2 — nodes.tsv: ทุกเครื่องที่ระบบจะคุยด้วย</h3>
+  <details class="cmd"><summary>10.100.1.17	storage</summary><div class="code"><pre># ip	role
+10.100.1.17	storage
+10.100.1.9	backup
+10.100.1.32	compute
+10.100.1.33	compute</pre></div></details>
+  <p>คั่นด้วยปุ่ม Tab ไม่ใช่เว้นวรรค ไม่มีคอลัมน์ชื่อเครื่องนะ ตั้งใจตัดออก
+     ชื่อ node ของ Proxmox ระบบจะไปถามมาเองแล้วเก็บไว้ที่ <code class="inl">nodes.map</code>
+     ซึ่งห้ามแก้มือ</p>
+
+  <h3>ไฟล์ที่ 3 — engines/inventory-replica.tsv: จะก๊อป CT ตัวไหนบ้าง</h3>
+  <details class="cmd"><summary>105                                       replica-ssd</summary><div class="code"><pre># src_ctid  [tgt_ctid]  [storage-assert]  dest
+105                                       replica-ssd
+113                                       replica-hdd</pre></div></details>
+  <p>คอลัมน์แรกคือเลข CT ที่จะก๊อป ส่วน <code class="inl">replica-ssd</code> กับ
+     <code class="inl">replica-hdd</code> คือจะเก็บลง pool ไหนที่เครื่อง backup
+     เริ่มจากใส่แค่ตัวเดียวก่อนก็ได้ แล้วค่อยเพิ่มทีหลัง</p>
+  <div class="stop"><p><b>คอลัมน์ dest ต้องมีทุกแถว</b> ไม่มีค่า default ให้แล้ว
+     แถวที่ลืมใส่จะทำให้ทั้งไฟล์ถูกปฏิเสธ พร้อมบอกเลขบรรทัด — เพราะแถวที่ลืม
+     กับแถวที่ตั้งใจ หน้าตาเหมือนกันทุกอย่าง และผลคือสำเนาของลูกค้าไปลง pool ที่ไม่มีใครเลือก</p>
+  <p>ชื่อ pool เขียนเต็มเสมอ เมื่อก่อนใช้คำสั้นว่า <code class="inl">hdd</code> กับ
+     <code class="inl">ssd</code> ซึ่งไปอยู่ข้าง <code class="inl">tank-hdd-nas</code>
+     แล้วอ่านเหมือนเป็นของอย่างเดียวกัน ทั้งที่เป็นคนละปลายของการก๊อป
+     ถ้ายังใช้คำเก่าอยู่ engine จะบอกให้ตรงๆ ว่าต้องเขียนว่าอะไร</p></div>
+  <div class="tip"><p><b>fleet.tsv ต้องกรอกด้วย</b> สี่คอลัมน์ <code class="inl">ct home dr dst</code>
+     ครบทุกแถว มันคือแผนที่ที่ <span class="m">ketsync distribute</span> ใช้ตอนเครื่อง storage ล่ม
+     ตอนนี้ทำงานได้จริงแล้ว ไม่ใช่ของที่ยังไม่เสร็จ — และไม่มี default ให้เหมือนกัน</p></div>
+</section>
+
+<section id="s8">
+  <div class="eyebrow"><span class="num">9</span><h2>สั่งตรวจ แล้วแก้จนเขียวหมด</h2></div>
+  <p>คำสั่งนี้อ่านอย่างเดียว ไม่แตะข้อมูลอะไรเลย สั่งซ้ำได้ไม่จำกัด</p>
+  <details class="cmd"><summary>cd /root/ketsync</summary><div class="code"><pre>cd /root/ketsync
+./ketsync doctor</pre></div></details>
+  <p>มันจะไล่บอกทีละบรรทัดว่าอะไรผ่านอะไรไม่ผ่าน อ่านจากบนลงล่างแล้วแก้ทีละอัน
+     ที่ต้องผ่านให้ได้ก่อนคือ <b>ssh ไปเครื่อง backup</b> เพราะชื่อ node ทุกตัวมาจากเส้นนั้นเส้นเดียว</p>
+  <div class="out">== the backup node, which everything else leans on
+  10.100.1.9 ok  (node bkp02)</div>
+  <p>บรรทัดที่เขียนว่า <code class="inl">no ssh (expected)</code> ตรงเครื่อง compute
+     <b>ไม่ใช่ปัญหา</b> เป็นสถานะปกติ ไม่ต้องไปแก้</p>
+  <p>ทำจนคำสั่งจบแล้วไม่มีบรรทัดที่เป็นตัวใหญ่ทั้งคำอย่าง <code class="inl">SSH FAILS</code>
+     หรือ <code class="inl">NOT EXECUTABLE</code> เหลืออยู่</p>
+</section>
+
+<section id="s9">
+  <div class="eyebrow"><span class="num">10</span><h2>ซ้อมก่อนของจริง</h2></div>
+  <p>เลือก CT ที่ไม่สำคัญมาตัวเดียว แล้วสั่งแบบซ้อม มันจะเดินผ่านด่านตรวจครบทุกด่านเหมือนของจริง
+     ต่างกันแค่ไม่เขียนอะไรลงดิสก์เลยสักไบต์</p>
+  <details class="cmd"><summary>./ketsync replica --dry-run --ctid 105</summary><div class="code"><pre>./ketsync replica --dry-run --ctid 105</pre></div></details>
+  <p>อ่านผลว่ามันบอกจะทำอะไรบ้าง ถ้าดูแล้วตรงกับที่คิด ค่อยสั่งของจริงตัวเดียวก่อน</p>
+  <details class="cmd"><summary>./ketsync replica --ctid 105</summary><div class="code"><pre>./ketsync replica --ctid 105</pre></div></details>
+  <p>รอบแรกจะนานหน่อยเพราะก๊อปทั้งก้อน รอบต่อไปจะเร็วมากเพราะก๊อปเฉพาะส่วนที่เปลี่ยน
+     พอตัวแรกผ่านแล้วค่อยสั่งทั้ง lane</p>
+  <details class="cmd"><summary>./ketsync replica --storage tank-hdd-nas</summary><div class="code"><pre>./ketsync replica --storage tank-hdd-nas</pre></div></details>
+</section>
+
+<section id="s10">
+  <div class="eyebrow"><span class="num">11</span><h2>ตั้งให้ทำเองทุก 15 นาที</h2></div>
+  <p>ใส่ทีละ lane อย่าใส่พร้อมกันสองอัน ดูสักรอบสองรอบว่า log ออกมาปกติก่อนค่อยใส่ตัวถัดไป</p>
+  <details class="cmd"><summary>crontab -e</summary><div class="code"><pre>crontab -e</pre></div></details>
+  <details class="cmd"><summary>*/15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-hdd-nas</summary><div class="code"><pre>*/15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-hdd-nas
+*/15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-ssd-nas</pre></div></details>
+  <h3>เช็กว่าทำงานอยู่จริง</h3>
+  <details class="cmd"><summary>./ketsync status</summary><div class="code"><pre>./ketsync status
+tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div></details>
+  <div class="warn"><p>ใน cron ต้องใส่ path เต็มเสมอ และเป็น path ของ engine ตรงๆ
+     (<code class="inl">engines/ct-replica.sh</code>) ไม่ใช่
+     <code class="inl">./ketsync</code> — เพราะ cron ไม่รู้ว่าตอนนี้อยู่โฟลเดอร์ไหน</p></div>
+</section>
+
+<section id="s11">
+  <div class="eyebrow"><span class="num">12</span><h2>เจอแบบนี้ แปลว่าอะไร ทำไง</h2></div>
+  <p>โปรแกรมนี้เลือกที่จะ “ปฏิเสธเสียงดัง” มากกว่า “ทำต่อเงียบๆ” เจอ error ส่วนใหญ่จึงแปลว่ามันกันไว้ให้แล้ว
+     ไม่ใช่ว่าพัง</p>
+  <table>
+    <tr><th>ขึ้นว่า</th><th>แปลว่า</th><th>ทำ</th></tr>
+    <tr><td class="m">GUARD R9 ... HAS AN UPLINK</td><td>bridge ที่เครื่อง backup ยังมีสายออกเน็ต</td><td>กลับไปข้อ 4 เอาการ์ดออกจาก bridge</td></tr>
+    <tr><td class="m">GUARD R3 ... not mounted</td><td>pool ปลายทางไม่ได้ mount อยู่</td><td>สั่ง <span class="m">zfs mount</span> ที่เครื่อง backup ก่อน</td></tr>
+    <tr><td class="m">GUARD R4</td><td>เลข CT ปลายทางมีเจ้าของอยู่แล้ว</td><td>เปลี่ยนเลขในไฟล์ inventory-replica.tsv</td></tr>
+    <tr><td class="m">GUARD B1 ... cannot reach</td><td>ssh ไปเครื่อง compute ไม่ได้</td><td>กลับไปข้อ 2 ทำ ssh-copy-id เครื่องนั้น</td></tr>
+    <tr><td class="m">storage 'xxx' is not active</td><td>ชื่อ storage สองฝั่งไม่ตรง หรือยังไม่ได้เพิ่ม</td><td>กลับไปข้อ 3</td></tr>
+    <tr><td class="m">inventory not found</td><td>ยังไม่ได้ก๊อปไฟล์ตัวอย่าง</td><td>อ่านบรรทัดถัดไป มันบอกคำสั่งไว้ให้แล้ว</td></tr>
+    <tr><td class="m">another run active - skip</td><td>รอบก่อนยังไม่จบ</td><td>ปกติ ไม่ต้องทำอะไร</td></tr>
+  </table>
+  <p>ถ้าติดตรงไหนนานกว่า 10 นาที ให้สั่ง <code class="inl">./ketsync doctor</code> อีกรอบ
+     แล้วอ่านจากบนลงล่าง เกือบทุกครั้งคำตอบอยู่ในนั้น</p>
+</section>
+
+<section id="s12">
+  <div class="eyebrow"><span class="num">13</span><h2>ตรวจครั้งสุดท้าย</h2></div>
+  <p>ตอบว่าใช่ได้ครบทุกข้อ ถือว่าติดตั้งเสร็จ</p>
+  <table>
+    <tr><th>ข้อ</th><th>เช็กยังไง</th></tr>
+    <tr><td>cluster ครบและมีเสียงข้างมาก</td><td class="m">pvecm status</td></tr>
+    <tr><td>ssh ไป backup ได้โดยไม่ถามรหัส</td><td class="m">ssh root@10.100.1.9 true</td></tr>
+    <tr><td>storage ชื่อตรงกันสองฝั่ง</td><td class="m">pvesm status | grep tank-</td></tr>
+    <tr><td>bridge ที่ backup ไม่มีสายต่อ</td><td class="m">ls /sys/class/net/vmbr99/brif/</td></tr>
+    <tr><td>compute ทุกเครื่องมี vmbr99</td><td class="m">ip -br link show vmbr99</td></tr>
+    <tr><td>PBS ต่อเข้า cluster แล้ว</td><td class="m">pvesm status | grep pbs-main</td></tr>
+    <tr><td>doctor ไม่มีคำตัวใหญ่เหลือ</td><td class="m">./ketsync doctor</td></tr>
+    <tr><td>ซ้อม 1 ตัวผ่าน</td><td class="m">./ketsync replica --dry-run --ctid 105</td></tr>
+    <tr><td>ของจริง 1 ตัวผ่าน</td><td class="m">./ketsync replica --ctid 105</td></tr>
+    <tr><td>cron ใส่แล้ว ทีละ lane</td><td class="m">crontab -l</td></tr>
+    <tr><td>เห็นผลใน status</td><td class="m">./ketsync status</td></tr>
+  </table>
+  <div class="ok"><p><b>สิ่งที่ควรทำเดือนละครั้ง</b> สั่ง
+     <code class="inl">./ketsync failback --list</code> ดูเฉยๆ ไม่แตะอะไร
+     มันจะบอกว่าถ้าวันนี้ต้องกู้จริง จะติดตรงไหนบ้าง — รู้วันธรรมดาดีกว่ารู้ตอนเกิดเหตุ</p></div>
+</section>
+
+<footer>
+  อ่านต่อ: <code class="inl">docs/index.html</code> สารบัญคู่มือทั้งชุด ·
+  <code class="inl">docs/start-here.html</code> ใช้งานประจำวัน ·
+
+  <code class="inl">docs/decisions.md</code> เหตุผลเบื้องหลังทุกการตัดสินใจ
+</footer>
+
+</div>
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp'; btn.type = 'button'; btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.c').forEach(function(el){ el.remove(); });
+      var text = clone.textContent.split('\n').filter(function(l){ return l.trim() !== ''; }).join('\n');
+      var done = function(){ btn.textContent='copied'; setTimeout(function(){ btn.textContent='copy'; },1200); };
+      function fallback(){
+        var ta=document.createElement('textarea'); ta.value=text;
+        ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){ btn.textContent='select manually'; }
+        document.body.removeChild(ta);
+      }
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,fallback);}else{fallback();}
+    });
+    box.appendChild(btn);
+  });
+  var all = document.querySelectorAll('details.cmd');
+  if(all.length){
+    var b=document.createElement('button');
+    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    var open=false;
+    b.addEventListener('click',function(){
+      open=!open;
+      all.forEach(function(d){ d.open=open; });
+      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+    });
+    var first=document.querySelector('header.doc');
+    if(first) first.parentNode.insertBefore(b, first.nextSibling);
+  }
+})();
+</script>
+</body>
+</html>

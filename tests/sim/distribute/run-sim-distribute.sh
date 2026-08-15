@@ -48,7 +48,7 @@ ME=10.100.1.17
 new_world(){
   SIMROOT="$(mktemp -d /tmp/ksdist-sim.XXXXXX)"
   MASTER="$SIMROOT/master"
-  mkdir -p "$MASTER/lib" "$MASTER/engines/tp" "$MASTER/logs"
+  mkdir -p "$MASTER/lib" "$MASTER/conf" "$MASTER/engines" "$MASTER/logs"
   : > "$SIMROOT/trace"
   # lib/ comes from beside the DISPATCHER, not from the repo: cmd_distribute.sh
   # is sourced, and taking it from $ROOT would load the good copy while the
@@ -56,11 +56,11 @@ new_world(){
   local ksdir; ksdir="$(cd "$(dirname "$KS")" && pwd)"
   cp "$KS" "$MASTER/ketsync"; chmod +x "$MASTER/ketsync"
   cp "$ksdir"/lib/*.sh "$MASTER/lib/"
-  cat > "$MASTER/ketsync.conf" <<CONF
+  cat > "$MASTER/conf/ketsync.conf" <<CONF
 KS_ROLE=master
 KS_MASTER_IP=$ME
 CONF
-  printf '# generation: 1\n%s\tstorage\n' "$ME" > "$MASTER/nodes.tsv"
+  printf '# generation: 1\n%s\tstorage\n' "$ME" > "$MASTER/conf/nodes.tsv"
   stub ct-prepare.sh 0
   stub tp 0
 }
@@ -69,7 +69,7 @@ CONF
 # exactly as it received them. The order of the lines is the order of the run,
 # which is half of what these scenarios assert.
 stub(){   # $1 = filename, $2 = exit code
-  local f="$MASTER/engines/tp/$1"
+  local f="$MASTER/engines/$1"
   cat > "$f" <<STUB
 #!/usr/bin/env bash
 printf '%s %s\n' "$1" "\$*" >> "$SIMROOT/trace"
@@ -77,8 +77,8 @@ exit $2
 STUB
   chmod +x "$f"
 }
-no_stub(){ rm -f "$MASTER/engines/tp/$1"; }
-unexec(){  chmod -x "$MASTER/engines/tp/$1"; }
+no_stub(){ rm -f "$MASTER/engines/$1"; }
+unexec(){  chmod -x "$MASTER/engines/$1"; }
 
 run_ks(){
   # -y, because this harness is a machine and distribute asks a person before
