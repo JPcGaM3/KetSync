@@ -182,10 +182,29 @@ fi
 BKP_SSH="root@100.100.100.35"
 MOCKNET_BRIDGE=vmbr99            # the isolated bridge. Same knob, same file,
                                  # as ct-replica R9 and ct-distribute D1
-SHUTDOWN_TIMEOUT=90              # seconds to wait for one container to come
+SHUTDOWN_TIMEOUT=180             # seconds to wait for one container to come
                                  # down before falling back to isolating it. At
                                  # two hundred containers, waiting the PVE
-                                 # default each time is a night
+                                 # default each time is a night.
+                                 #
+                                 # 180 and not 90, and the number comes off this
+                                 # fleet's own dmesg. A container on a dead NFS
+                                 # comes down when its outstanding I/O finally
+                                 # ERRORS, not when it is asked - and how long
+                                 # that takes is the mount's own schedule, not
+                                 # ours. PVE mounts NFS `hard,timeo=600,
+                                 # retrans=2`: 60s per try, twice, and only then
+                                 # does the write fail, ext4 abort its journal
+                                 # and the kill land. Measured on pve-r33: the
+                                 # unmount at 15:47:11, the I/O error at
+                                 # 15:49:18, the container gone at 15:49:23 -
+                                 # 132 seconds. At 90 this engine gave up 40
+                                 # seconds early and isolated a container that
+                                 # was already on its way down.
+                                 #
+                                 # If your mounts use a shorter timeo, shorten
+                                 # this with them: it is that schedule plus a
+                                 # margin, and nothing else.
 STAT_TIMEOUT=5                   # seconds to wait for a storage to answer. A
                                  # live mount answers in microseconds; this is
                                  # not a tuning knob, it is the difference
@@ -1183,6 +1202,13 @@ do_evacuate(){   # $1 = node ip
             "$pn" "$pip" "$(date '+%FT%T%z')" \
             "$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-')" "$$")"
   for _s in "${DEADSIDS[@]}"; do body="$body$(printf '\ndisabled\t%s' "$_s")"; done
+  # And which containers this is about to stop. They are stopped by an I/O
+  # ERROR rather than by a clean shutdown - that is what forcing the mount to
+  # fail does - so every one of these images has an ext4 that was aborted
+  # mid-write. Writing them down is what lets the way back name them instead of
+  # leaving somebody to work out which of two hundred containers were up when
+  # the storage died.
+  for _s in "${TOSTOP[@]}"; do body="$body$(printf '\nstopped\t%s' "$_s")"; done
   if ! printf '%s\n' "$body" | ssh $SSH_OPT "root@$pip" \
         "mkdir -p $EVAC_DIR && cat > '$(evac_path "$pn")'" 2>/dev/null; then
     log "[$pip] ERROR: could not write $(evac_path "$pn") - NOTHING was disabled"
@@ -1243,7 +1269,11 @@ do_evacuate(){   # $1 = node ip
       124) log "[$ct] did not come down within ${SHUTDOWN_TIMEOUT}s (rc=124) - isolating it instead"
            log "[$ct]   nothing here forces a stop. A container that will not go is one whose"
            log "[$ct]   processes are still waiting on something, and taking it off the wire"
-           log "[$ct]   removes the hazard the DR actually cares about.";;
+           log "[$ct]   removes the hazard the DR actually cares about."
+           log "[$ct]   it may still come down on its own: the kill lands when the container's"
+           log "[$ct]   outstanding I/O gives up, and the mount decides when that is. Read its"
+           log "[$ct]   schedule, and if timeo x retrans is longer than SHUTDOWN_TIMEOUT, that"
+           log "[$ct]   is the whole answer:  ssh root@$pip grep $sid /proc/mounts";;
       *)   log "[$ct] pct shutdown returned rc=$rc and CT $ct is still running - isolating it instead"
            log "[$ct]   what pct said is above. Taking it off the wire removes the hazard the"
            log "[$ct]   DR actually cares about, and needs nothing from the dead storage.";;
@@ -1269,9 +1299,10 @@ do_unevacuate(){   # $1 = node ip - put the storages back
     log "[$pip] GUARD E3:   disabled on purpose is how a half-repaired fleet goes back to work."
     st_skip "$pip"; return 1
   fi
-  declare -a SIDS=()
+  declare -a SIDS=() STOPPED=()
   while IFS=$'\t' read -r _k _v; do
     [[ "$_k" == disabled ]] && SIDS+=("$_v")
+    [[ "$_k" == stopped  ]] && STOPPED+=("$_v")
   done <<< "$rec"
   if (( ${#SIDS[@]} == 0 )); then
     log "[$pip] ERROR: the record at $(evac_path "$pn") names no storages"
@@ -1294,6 +1325,22 @@ do_unevacuate(){   # $1 = node ip - put the storages back
   rsh "$pip" "rm -f '$(evac_path "$pn")'" \
     || log "[$pip] WARN: enabled everything but could not remove $(evac_path "$pn")"
   log "[$pip] RE-ENABLED: ${SIDS[*]} on $pn"
+  # What the containers on that storage went through, said once, here, because
+  # this is the moment somebody is about to start them again. They were not
+  # shut down - they were stopped by their own writes failing, which is what
+  # forcing a dead mount to fail does. ext4 aborts the journal, remounts the
+  # rootfs read-only, and records the error in the image; the next mount says
+  # "Filesystem error recorded from previous mount" and asks for a check. It
+  # mounts anyway, which is exactly why nobody notices until it matters.
+  if (( ${#STOPPED[@]} )); then
+    log "[$pip] the containers this stopped were killed by I/O errors, not by a shutdown:"
+    log "[$pip]   ${STOPPED[*]}"
+    log "[$pip]   their images have an ext4 that was aborted mid-write. Check each one"
+    log "[$pip]   BEFORE starting it, while nothing is using it:"
+    log "[$pip]     e2fsck -fy /mnt/pve/<storage>/images/<ctid>/vm-<ctid>-disk-0.raw"
+    log "[$pip]   a failback writes INTO that image, so a filesystem with errors is worth"
+    log "[$pip]   half an hour now rather than a rebuild later."
+  fi
   st_ok "$pip"; return 0
 }
 

@@ -794,7 +794,7 @@ if scenario "39: a container that still will not stop is isolated, never forced"
   rc_is 0; clean
   ct_status_is 300 pve01 running
   ct_status_is 310 pve01 stopped
-  has "did not come down within 90s"
+  has "did not come down within 180s"
   has "nothing here forces a stop"
   cfg_net pve01 300 net0 vmbr99
   rec_there 300
@@ -846,6 +846,25 @@ if scenario "43: restore --node switches the storages back on and clears the rec
   storage_enabled tank-hdd-nas
   evac_none pve01
   has "RE-ENABLED: tank-hdd-nas on pve01"
+  done_scenario
+fi
+
+if scenario "43b: the way back names the images that were killed mid-write"; then
+  # The containers evacuate stops are not shut down - they are stopped by their
+  # own writes failing, which is what forcing a dead mount to fail does. ext4
+  # aborts the journal, remounts read-only and records the error in the image,
+  # and the NEXT mount says "error recorded from previous mount" and carries on
+  # anyway. That is the moment nobody notices, so the tool says it at the one
+  # moment somebody is about to start them: when the storage comes back.
+  run_engine --evacuate --node "$N1"
+  rc_is 0; clean
+  storage pve01 tank-hdd-nas alive
+  run_engine --restore --node "$N1"
+  rc_is 0; clean
+  has "RE-ENABLED: tank-hdd-nas on pve01"
+  has "killed by I/O errors, not by a shutdown"
+  has "300"
+  has "e2fsck -fy"
   done_scenario
 fi
 

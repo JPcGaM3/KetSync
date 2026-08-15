@@ -377,6 +377,17 @@ mutant "cleanup leaves onboot alone, so the next reboot starts the stand-in" \
   's{\Q  rsh "\E\$dip\Q" "pct set \E\$dr\Q --onboot 0"\E}{  :}' \
   51
 
+# The images those containers were using were not closed, they were aborted.
+# Nothing else in the fleet ever says so, and ext4 mounts them again without
+# complaint loud enough to notice.
+mutant "the way back stops naming the images that were killed mid-write" \
+  's{\Q  if (( \E\$\{#STOPPED\[@\]\}\Q )); then\E}{  if false; then}' \
+  43b
+
+mutant "the record forgets which containers it was about to stop" \
+  's{\Q  for _s in "\E\$\{TOSTOP\[@\]\}\Q"; do body=\E}{  for _s in ""; do body=}' \
+  43b
+
 # ---------- what the log says when a step does not work ---------------------
 # Each of these ends with a run that reads as a fleet problem when it is not
 # one, which on the night this matters sends somebody to check machines that

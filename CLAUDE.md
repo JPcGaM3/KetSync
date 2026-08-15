@@ -69,7 +69,7 @@ held", and the run exits 0 having done nothing.
 left: `distribute` stopped being one when `engines/tp/ct-distribute.sh` was
 written, and `recall` when `engines/tp/ct-recall.sh` was, with 67/68 and 53/47
 scenarios and mutations behind them - which is the bar for the next one.
-`isolate`/`restore`/`evacuate`/`cleanup` arrived at 71/61, deliberately smaller because
+`isolate`/`restore`/`evacuate`/`cleanup` arrived at 72/63, deliberately smaller because
 `ct-prepare.sh` moves no customer data: there is no transfer to tear, no
 mountpoint to fill and no direction to invert, so the surface really is
 smaller. Do not read it as the new bar. The helper that printed "designed but
@@ -97,8 +97,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 403 tp scenarios + 51 for ketsync
-    make mutation # 396 known bugs put back. None may survive
+    make test     # both layers: 405 tp scenarios + 51 for ketsync
+    make mutation # 398 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

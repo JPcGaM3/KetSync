@@ -225,7 +225,7 @@ feel temporary - a 9xxx container is one somebody has to deliberately unwind.
 Stage 1 of the DR runbook - get the production containers out of the way -
 was four or five raw `pvesm`, `umount` and `pct` commands per node, in an
 order almost everybody gets wrong. It is `isolate`, `restore` and `evacuate`
-now. 71 scenarios, 61 mutations.
+now. 72 scenarios, 63 mutations.
 
 **What makes it safe is a proof, not an intention.** P2 and E2 refuse unless
 the container's rootfs storage is provably dead, and the proof is not an
@@ -604,8 +604,8 @@ doctor` says so on the next good day.
     ketsync recall       tp's - engines/tp/ct-recall.sh, 53 scenarios,
                          47 mutations. See section 6
     ketsync status       tp's
-    ketsync isolate      tp's - engines/tp/ct-prepare.sh, 71 scenarios,
-    ketsync restore      61 mutations, shared by all four. See section 4b
+    ketsync isolate      tp's - engines/tp/ct-prepare.sh, 72 scenarios,
+    ketsync restore      63 mutations, shared by all four. See section 4b
     ketsync evacuate
     ketsync cleanup
 
