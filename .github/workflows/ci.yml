@@ -40,19 +40,21 @@ jobs:
       - name: language rule (no Thai in code, none inside <pre>)
         run: make -C engines/tp no-thai
 
-      - name: the engines must still be a working install
-        run: make -C engines/tp test
+      # Both layers, from the root. This ran `make -C engines/tp test` for
+      # months, and ketsync's own 71 scenarios reached CI only through a step
+      # marked continue-on-error - so a red ketsync simulator was a green
+      # build, which is the mirror image of what this file's own header says
+      # it exists to prevent. That step is gone; this one covers it.
+      - name: both layers must still be a working install
+        run: make test
 
       # A green suite means nothing until you have watched it go red for the
-      # right reason. This reintroduces a hundred and fifty-six known bugs one
-      # at a time, across all three engines and the dispatcher, and fails if
-      # the simulators let any of them through.
+      # right reason. This reintroduces every known bug one at a time, across
+      # both layers, and fails if the simulators let any of them through.
+      #
+      # The count used to be written out here and was wrong by eighty within
+      # two months - nothing in CI can check a number in a comment, and every
+      # commit that adds a mutation moves it. The runners print their own
+      # totals; read them there.
       - name: mutation
         run: make mutation
-
-      # ketsync's own commands have no simulator yet. This step is here so the
-      # debt is visible in every run rather than only in tests/README.md. It is
-      # allowed to fail; when the simulator exists, delete this line.
-      - name: ketsync simulator (known debt, not yet written)
-        continue-on-error: true
-        run: make test-ketsync
