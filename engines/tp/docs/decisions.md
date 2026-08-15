@@ -296,6 +296,35 @@ three mutations that had never touched the engine. → `mutant()` checks perl's
 exit status and refuses a mutant that is empty or less than half the size of
 the engine.
 
+**The engine read its own unmount back as the storage recovering.** During the
+2026-08-15 DR drill, evacuate correctly proved tank-hdd-nas dead, unmounted it
+with `umount -f -l`, and asked CT 110 to stop. lxc-stop gave up, the engine
+fell back to isolating - and P2 refused, because "the storage ANSWERED": the
+unmount had left PVE's mountpoint directory behind, an empty dir on the node's
+root filesystem, and a `stat` on an empty local dir answers instantly with
+rc 0. The stat proof cannot tell a live NFS server from the hole where one was
+unmounted; only `/proc/mounts` can, and nothing asked it. The simulator's fake
+had modelled the unmounted case as ENOENT - what would have been convenient -
+so every scenario passed against a world that does not exist. → the probe now
+reports MOUNTED from `/proc/mounts` (which cannot block) plus the storage's
+type, and the verdict is made in the engine: an nfs/cifs storage, or a dir
+that declares is_mountpoint, that is absent from the mount table is `gone`
+whatever the stat said. A plain dir storage keeps the stat alone - it was
+never a mount, and condemning it for that would isolate every container on a
+healthy local-path storage.
+
+**The three-minute budget that never reached the command doing the waiting.**
+Same drill, one line earlier. SHUTDOWN_TIMEOUT is 180 because the I/O error
+that lets a guest on a forced-off mount finally die was measured at ~132s -
+but `pct shutdown` hands the wait to `lxc-stop --nokill --timeout 60`, its own
+default, and nothing passed the budget down. lxc-stop gave up at sixty every
+time; the outer `timeout 180` never fired and never helped. → every shutdown
+here passes `--timeout $SHUTDOWN_TIMEOUT`, and the outer timeout is thirty
+seconds longer, existing only for a pct that never returns at all. The fake
+reproduces pct's real failure line with the timeout number in it, so a budget
+that stops reaching lxc-stop turns a scenario red by the number in the
+message.
+
 ## 6. Numbers calibrated on the real fleet
 
     BW_TOTAL_MB        230     divided statically by LANES

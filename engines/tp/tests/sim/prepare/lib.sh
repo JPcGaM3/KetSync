@@ -42,18 +42,43 @@ evac_file(){ printf '%s/pve/ketsync/evacuate/%s.tsv' "$SIMROOT" "$1"; }
 storage_verdict_of(){ cat "$(node_dir "$1")/storage/$2.verdict" 2>/dev/null; }
 
 # What `timeout N stat` would exit with, which is what the engine actually
-# reads. A live mount answers (0), a dead one blocks until timeout kills it
-# (124), and a mountpoint nobody mounted is simply not there (1).
+# reads. A live mount answers (0) and a dead one blocks until timeout kills
+# it (124). An UNMOUNTED one also answers 0, instantly - `umount` takes the
+# mount out of the namespace and leaves PVE's mountpoint DIRECTORY behind, an
+# empty dir on the node's root filesystem, and a stat on an empty local dir
+# succeeds.
+#
+# This function said ENOENT for that case for a month. The engine's verdict
+# read the real thing as ALIVE, every scenario passed against the lie, and a
+# live drill watched P2 refuse to isolate a container four minutes after the
+# same run's own `umount -f -l`. A fake models what the world does, not what
+# would be convenient for the code under test - the world's answer here is
+# "the stat succeeds and only /proc/mounts knows the difference", so that is
+# what this fake says, and mounted_of below is the /proc/mounts half.
+# A fourth state, `stale`: still IN the mount table, and stat fails instantly
+# instead of blocking - ESTALE, the shape an NFS export rebuilt underneath its
+# clients produces. I/O against it errors rather than hangs, so it behaves
+# like `gone` for everything that matters here, and it is the one state left
+# that reaches the verdict's stat arm rather than its mount-table arm.
 stat_rc_of(){
-  # An unmounted storage is not a mounted one that answers slowly. Once the
-  # mount is out of the namespace the stat returns immediately with ENOENT,
-  # which is the third case the engine tells apart - and the case evacuate
-  # creates on purpose.
-  [[ -f "$(node_dir "$1")/storage/$2.unmounted" ]] && { printf '1'; return; }
+  [[ -f "$(node_dir "$1")/storage/$2.unmounted" ]] && { printf '0'; return; }
   case "$(storage_verdict_of "$1" "$2")" in
     alive) printf '0';;
     dead)  printf '124';;
-    *)     printf '1';;
+    stale) printf '1';;
+    *)     printf '0';;
+  esac
+}
+mounted_of(){
+  [[ -f "$(node_dir "$1")/storage/$2.unmounted" ]] && { printf '0'; return; }
+  # A plain directory storage is never in the mount table, healthy or not -
+  # its path is just a directory on the node's root filesystem. That is the
+  # case that keeps "not mounted" from meaning "dead" on its own.
+  [[ "$(cat "$(node_dir "$1")/storage/$2.type" 2>/dev/null)" == dir ]] \
+    && { printf '0'; return; }
+  case "$(storage_verdict_of "$1" "$2")" in
+    alive|dead|stale) printf '1';;
+    *)                printf '0';;
   esac
 }
 

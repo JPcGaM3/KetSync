@@ -494,6 +494,12 @@ rec_field(){ awk -F'\t' -v k="$2" '$1==k{print $2; exit}' <<<"$1"; }
 #   STATUS <word>
 #   ROOTSID <storage-id>  where its rootfs lives
 #   STATRC <rc>           124 = the storage blocked until the timeout: dead
+#   ROOTTYPE <word>       the storage.cfg section header: nfs, cifs, dir ...
+#   ROOTISMP <val>        is_mountpoint from that section, empty when unset
+#   MOUNTED <0|1>         whether ROOTPATH is in /proc/mounts. A FACT, like
+#                         OVSBR: reading /proc/mounts cannot block, and the
+#                         verdict that needs it is made by the engine, where
+#                         mutations can reach it
 #   BRMISSING             MOCKNET_BRIDGE is not on this node
 #   UPLINK <port>         MOCKNET_BRIDGE has a physical port on it
 #   OK                    the probe ran to the end
@@ -512,6 +518,9 @@ probe(){   # $1 = ip, $2 = ctid
     [ -n \"\$p\" ] && echo \"ROOTPATH \$p\" || { p=/mnt/pve/\$sid; echo \"ROOTPATH \$p\"; }
     timeout $STAT_TIMEOUT stat -t \"\$p/.\" >/dev/null 2>&1
     echo \"STATRC \$?\"
+    echo \"ROOTTYPE \$(sed -n \"s/^\\([a-z]*\\): \$sid\$/\\1/p\" /etc/pve/storage.cfg 2>/dev/null | head -1)\"
+    echo \"ROOTISMP \$(sed -n \"/^[a-z]*: \$sid\$/,/^\$/p\" /etc/pve/storage.cfg 2>/dev/null | sed -n 's/^[[:space:]]*is_mountpoint[[:space:]]\\{1,\\}//p' | head -1)\"
+    if awk -v p=\"\$p\" '\$2==p{f=1} END{exit f?0:1}' /proc/mounts; then echo \"MOUNTED 1\"; else echo \"MOUNTED 0\"; fi
     echo \"DSTATE \$(ps -eo stat= 2>/dev/null | grep -c '^D')\"
     for i in /sys/class/net/veth${ct}i*; do
       [ -e \"\$i\" ] || continue
@@ -550,9 +559,24 @@ prod_node(){   # $1 = ctid -> "node<TAB>ip", empty if it is nowhere
 # ---------- P2, on its own because it is the guard everything hangs off ------
 # rc 124 is `timeout` killing a `stat` that never returned, which is what a
 # mount whose server has gone does. rc 0 is a storage that answered - alive,
-# and a hard refusal. Anything else is a mountpoint that is not there, which
-# means something already unmounted it, which is also not alive.
-storage_verdict(){   # $1 = STATRC -> dead | alive | gone
+# and a hard refusal - PROVIDED the path is actually a mount. That proviso is
+# the 2026-08-15 drill: `umount -f -l` takes the mount out of the namespace
+# and leaves PVE's mountpoint DIRECTORY behind, an empty dir on the node's
+# root filesystem, and a stat on an empty local dir answers instantly. This
+# function read that instant answer as ALIVE - the engine's own unmount, read
+# back four minutes later as the storage having recovered - and P2 refused
+# the isolation that unmount existed to make possible. So for a storage that
+# is only real when mounted - nfs, cifs, or a dir that declares is_mountpoint
+# - the kernel's mount table overrules the stat: a path that is not in it is
+# gone, however fast whatever is at that path answers. A plain dir storage
+# stays with the stat alone; it was never a mount, and condemning it for not
+# being one would refuse every healthy local-path storage on the fleet.
+storage_verdict(){   # $1 = STATRC, $2 = MOUNTED, $3 = ROOTTYPE, $4 = ROOTISMP
+  case "${3:-}" in
+    nfs|cifs) [[ "${2:-1}" == 0 ]] && { printf 'gone'; return; };;
+    *)        [[ -n "${4:-}" && "${4:-0}" != 0 && "${2:-1}" == 0 ]] \
+                && { printf 'gone'; return; };;
+  esac
   case "${1:-}" in
     124) printf 'dead';;
     0)   printf 'alive';;
@@ -590,12 +614,15 @@ do_isolate(){   # $1 = ctid
   fi
 
   st="$(awk '$1=="STATUS"{print $2; exit}' <<<"$out")"
-  local sid path statrc verdict dstate
+  local sid path statrc verdict dstate mounted
   sid="$(awk '$1=="ROOTSID"{print $2; exit}' <<<"$out")"
   path="$(awk '$1=="ROOTPATH"{print $2; exit}' <<<"$out")"
   statrc="$(awk '$1=="STATRC"{print $2; exit}' <<<"$out")"
   dstate="$(awk '$1=="DSTATE"{print $2; exit}' <<<"$out")"
-  verdict="$(storage_verdict "$statrc")"
+  mounted="$(awk '$1=="MOUNTED"{print $2; exit}' <<<"$out")"
+  verdict="$(storage_verdict "$statrc" "$mounted" \
+               "$(awk '$1=="ROOTTYPE"{print $2; exit}' <<<"$out")" \
+               "$(awk '$1=="ROOTISMP"{print $2; exit}' <<<"$out")")"
   ISO_PIP="$pip"; ISO_PN="$pn"; ISO_VERDICT="$verdict"
 
   # ---- GUARD P2: the storage must be provably dead ------------------------
@@ -608,7 +635,7 @@ do_isolate(){   # $1 = ctid
     log "[$ct] GUARD P2:   otherwise, that is a bug in the check, not a reason to skip it."
     st_skip "$ct"; return 1
   fi
-  log "[$ct] P2: storage '$sid' is $verdict ($path, stat rc=$statrc, $dstate procs in D state)"
+  log "[$ct] P2: storage '$sid' is $verdict ($path, stat rc=$statrc, mounted=$mounted, $dstate procs in D state)"
 
   # ---- GUARD P3: a stopped container has nothing to isolate ---------------
   if [[ "$st" != running ]]; then
@@ -802,8 +829,10 @@ stop_after_isolate(){   # $1 = ctid. Uses what do_isolate just found out.
   fi
   log "[$ct] its dead mount is already gone, so a shutdown can return: asking CT $ct to stop"
   # Its own exit code on its own line, for the same reason as evacuate above:
-  # pct exits 255 when it dies and so does ssh when it cannot connect.
-  out="$(rsh "$ISO_PIP" "timeout $SHUTDOWN_TIMEOUT pct shutdown $ct 2>&1; echo __rc=\$?")"
+  # pct exits 255 when it dies and so does ssh when it cannot connect. And the
+  # same --timeout, for the same reason: pct's own default is sixty seconds,
+  # which is shorter than the I/O-error horizon this budget was sized against.
+  out="$(rsh "$ISO_PIP" "timeout $((SHUTDOWN_TIMEOUT+30)) pct shutdown $ct --timeout $SHUTDOWN_TIMEOUT 2>&1; echo __rc=\$?")"
   rc="$(sed -n 's/^__rc=//p' <<<"$out" | tail -1)"
   while IFS= read -r _l; do
     [[ -n "$_l" && "$_l" != __rc=* ]] && log "[$ct]   pct: $_l"
@@ -826,7 +855,7 @@ stop_after_isolate(){   # $1 = ctid. Uses what do_isolate just found out.
     return 0
   fi
   if [[ "$rc" == 124 ]]; then
-    log "[$ct] did not come down within ${SHUTDOWN_TIMEOUT}s (rc=124) - it stays isolated"
+    log "[$ct] pct itself never returned (rc=124) - it stays isolated"
   else
     log "[$ct] pct itself failed (rc=$rc) and CT $ct is still running - it stays isolated"
     log "[$ct]   what pct said is above."
@@ -1035,7 +1064,7 @@ do_cleanup(){   # $1 = production ctid
     fi
     log "[$ct] cleanup: production CT $ct is running, so CT $dr is a second machine on one"
     log "[$ct] cleanup:   address - asking it to stop"
-    rsh "$dip" "timeout $SHUTDOWN_TIMEOUT pct shutdown $dr"
+    rsh "$dip" "timeout $((SHUTDOWN_TIMEOUT+30)) pct shutdown $dr --timeout $SHUTDOWN_TIMEOUT"
     out="$(probe "$dip" "$dr")"
     st="$(awk '$1=="STATUS"{print $2; exit}' <<<"$out")"
     if [[ "$st" == running ]]; then
@@ -1109,7 +1138,10 @@ do_list(){   # $1 = ctid
   sid="$(awk '$1=="ROOTSID"{print $2; exit}' <<<"$out")"
   statrc="$(awk '$1=="STATRC"{print $2; exit}' <<<"$out")"
   nets="$(awk '$1=="NETS"{print $2; exit}' <<<"$out")"
-  verdict="$(storage_verdict "$statrc")"
+  verdict="$(storage_verdict "$statrc" \
+               "$(awk '$1=="MOUNTED"{print $2; exit}' <<<"$out")" \
+               "$(awk '$1=="ROOTTYPE"{print $2; exit}' <<<"$out")" \
+               "$(awk '$1=="ROOTISMP"{print $2; exit}' <<<"$out")")"
   rec="$(rec_read "$pip" "$ct")"
   log "[$ct] LIST: on $pn ($pip), ${st:-?}, rootfs storage '$sid' is $verdict, $nets net line(s)"
   printf '%s\n' "$out" | awk '$1=="VETH"{print $2" -> "$3}' | while read -r _l; do
@@ -1161,7 +1193,7 @@ evac_read(){ rsh "$1" "cat '$(evac_path "$2")' 2>/dev/null"; }
 
 do_evacuate(){   # $1 = node ip
   local pip="$1" pn out ct sid verdict st _s _l
-  declare -a MINE=() DEADSIDS=() DEADPATHS=() TOSTOP=()
+  declare -a MINE=() DEADSIDS=() DEADPATHS=() DEADMNT=() TOSTOP=()
   declare -A SEEN_SID=()
 
   # Which of the inventory's containers live here, and what each one's rootfs
@@ -1188,7 +1220,10 @@ do_evacuate(){   # $1 = node ip
       st_fail "$pip"; return 1
     fi
     sid="$(awk '$1=="ROOTSID"{print $2; exit}' <<<"$out")"
-    verdict="$(storage_verdict "$(awk '$1=="STATRC"{print $2; exit}' <<<"$out")")"
+    verdict="$(storage_verdict "$(awk '$1=="STATRC"{print $2; exit}' <<<"$out")" \
+                 "$(awk '$1=="MOUNTED"{print $2; exit}' <<<"$out")" \
+                 "$(awk '$1=="ROOTTYPE"{print $2; exit}' <<<"$out")" \
+                 "$(awk '$1=="ROOTISMP"{print $2; exit}' <<<"$out")")"
     st="$(awk '$1=="STATUS"{print $2; exit}' <<<"$out")"
     if [[ "$verdict" == alive ]]; then
       log "[$pip] E2: CT $ct is on '$sid', which answered - left alone, not touched"
@@ -1198,6 +1233,7 @@ do_evacuate(){   # $1 = node ip
       SEEN_SID[$sid]=1
       DEADSIDS+=("$sid")
       DEADPATHS+=("$(awk '$1=="ROOTPATH"{print $2; exit}' <<<"$out")")
+      DEADMNT+=("$(awk '$1=="MOUNTED"{print $2; exit}' <<<"$out")")
       log "[$pip] E2: storage '$sid' is $verdict here"
     fi
     [[ "$st" == running ]] && TOSTOP+=("$ct")
@@ -1230,7 +1266,22 @@ do_evacuate(){   # $1 = node ip
   # mid-write. Writing them down is what lets the way back name them instead of
   # leaving somebody to work out which of two hundred containers were up when
   # the storage died.
-  for _s in "${TOSTOP[@]}"; do body="$body$(printf '\nstopped\t%s' "$_s")"; done
+  #
+  # A SECOND evacuate of the same node - a drill re-run, or a first run that
+  # was interrupted - finds those containers already down, so they are not in
+  # TOSTOP any more. Rewriting the record from TOSTOP alone would erase the
+  # first run's list, and that list is the only record of which images were
+  # killed mid-write. The old record's names are carried forward instead.
+  declare -a RECSTOP=()
+  (( ${#TOSTOP[@]} )) && RECSTOP=("${TOSTOP[@]}")
+  local _prev _pv _q
+  _prev="$(evac_read "$pip" "$pn")"
+  while IFS=$'\t' read -r _s _pv; do
+    [[ "$_s" == stopped && -n "$_pv" ]] || continue
+    for _q in "${RECSTOP[@]}"; do [[ "$_q" == "$_pv" ]] && continue 2; done
+    RECSTOP+=("$_pv")
+  done <<< "$_prev"
+  for _s in "${RECSTOP[@]}"; do body="$body$(printf '\nstopped\t%s' "$_s")"; done
   if ! printf '%s\n' "$body" | ssh $SSH_OPT "root@$pip" \
         "mkdir -p $EVAC_DIR && cat > '$(evac_path "$pn")'" 2>/dev/null; then
     log "[$pip] ERROR: could not write $(evac_path "$pn") - NOTHING was disabled"
@@ -1250,7 +1301,14 @@ do_evacuate(){   # $1 = node ip
     # processes; -l detaches the tree so a mount nothing can reach still comes
     # out of the namespace. Neither destroys anything: the data is on the
     # server that is not answering.
-    if rsh "$pip" "umount -f -l '${DEADPATHS[$i]}'"; then
+    #
+    # A path that is already out of the mount table has nothing to unmount -
+    # which is what a SECOND evacuate of the same node finds, because the
+    # first one unmounted it. Unmounting it again would fail, and the warning
+    # below would tell the operator the stops may hang when they will not.
+    if [[ "${DEADMNT[$i]:-1}" == 0 ]]; then
+      log "[$pip] ${DEADPATHS[$i]} is already out of the namespace - nothing to unmount"
+    elif rsh "$pip" "umount -f -l '${DEADPATHS[$i]}'"; then
       log "[$pip] unmounted ${DEADPATHS[$i]}"
     else
       log "[$pip] WARN: umount -f -l ${DEADPATHS[$i]} did not return 0 - the stops below may hang"
@@ -1279,7 +1337,16 @@ do_evacuate(){   # $1 = node ip
     # isolation that is the entire fallback. It was reading pct's own words
     # out of the same run while it said so. Two facts that need different
     # answers cannot share one number.
-    sout="$(rsh "$pip" "timeout $SHUTDOWN_TIMEOUT pct shutdown $ct 2>&1; echo __rc=\$?")"
+    # pct hands the actual stopping to `lxc-stop --nokill --timeout 60` -
+    # SIXTY SECONDS, ITS OWN DEFAULT - unless it is told otherwise. On the
+    # 2026-08-15 drill this engine stood ready to wait three minutes while
+    # lxc-stop had already given up at one: the I/O error that lets a guest on
+    # a forced-off mount finally die was measured at ~132s on this fleet, and
+    # the budget sized for that number never reached the command doing the
+    # waiting. So pct gets the budget, and the outer timeout is thirty seconds
+    # longer: it exists only for a pct that never returns at all, and must not
+    # fire first and shadow pct's own answer.
+    sout="$(rsh "$pip" "timeout $((SHUTDOWN_TIMEOUT+30)) pct shutdown $ct --timeout $SHUTDOWN_TIMEOUT 2>&1; echo __rc=\$?")"
     sshrc=$?
     rc="$(sed -n 's/^__rc=//p' <<<"$sout" | tail -1)"
     while IFS= read -r _l; do
@@ -1301,17 +1368,18 @@ do_evacuate(){   # $1 = node ip
       st_fail "$ct"; continue
     fi
     if [[ "$rc" == 124 ]]; then
-      log "[$ct] did not come down within ${SHUTDOWN_TIMEOUT}s (rc=124) - isolating it instead"
-      log "[$ct]   it may still come down on its own: the kill lands when the container's"
-      log "[$ct]   outstanding I/O gives up, and the mount decides when that is. Read its"
-      log "[$ct]   schedule, and if timeo x retrans is longer than SHUTDOWN_TIMEOUT, that"
-      log "[$ct]   is the whole answer:  ssh root@$pip grep $sid /proc/mounts"
+      log "[$ct] pct itself never returned (rc=124) - isolating CT $ct instead"
+      log "[$ct]   it was given ${SHUTDOWN_TIMEOUT}s to run the shutdown and 30 more to say"
+      log "[$ct]   how that went, and said nothing. A guest refusing looks different: pct"
+      log "[$ct]   reports that in its own words, with an exit code of its own."
     else
       log "[$ct] pct itself failed (rc=$rc) and CT $ct is still running - isolating it instead"
       log "[$ct]   what pct said is above. On this fleet that is usually lxc-stop giving up"
-      log "[$ct]   after its own timeout, on a container whose rootfs is a loop device with"
-      log "[$ct]   nothing behind it - and `pct stop`, which kills rather than asks, does not"
-      log "[$ct]   return either: the wait is in the block layer, where SIGKILL does not go."
+      log "[$ct]   after the ${SHUTDOWN_TIMEOUT}s it was given, on a container whose rootfs is"
+      log "[$ct]   a loop device with nothing behind it - and 'pct stop', which kills rather"
+      log "[$ct]   than asks, does not return either: the wait is in the block layer, where"
+      log "[$ct]   SIGKILL does not go. It may still come down on its own, when the mount's"
+      log "[$ct]   outstanding I/O finally errors - or when the storage returns."
     fi
     log "[$ct]   nothing here forces a stop. Taking it off the wire removes the hazard the"
     log "[$ct]   DR actually cares about, and needs nothing from the dead storage."

@@ -112,6 +112,16 @@ ct_ssh_dies(){ : > "$(node_d "$2")/ct/$1.sshdies"; }
 # and ct_ssh_dies produce the SAME NUMBER from opposite ends of the run, and
 # the pair of them is the only way to prove the engine tells them apart.
 ct_pct_fails(){ : > "$(node_d "$2")/ct/$1.pctfails"; }
+# pct never answering at all: the outer timeout kills it and leaves 124 with
+# no words - a third shape, distinct from both of the above.
+ct_pct_hangs(){ : > "$(node_d "$2")/ct/$1.pcthangs"; }
+# A storage that is a plain directory on the node, not a mount. Its stat
+# answers without the path being in /proc/mounts, and that is HEALTHY - the
+# case that keeps the verdict from condemning everything unmounted.
+storage_is_dir(){ printf 'dir\n' > "$(node_d "$1")/storage/$2.type"; }
+# ...unless the storage declared is_mountpoint, which is PVE's way of saying
+# "this dir is only real when something is mounted on it".
+storage_declares_mountpoint(){ printf '1\n' > "$(node_d "$1")/storage/$2.ismp"; }
 storage_disabled(){ [[ -f "$PVE/storage-$1.disabled" ]] \
   || _err "storage $1 should be disabled cluster-wide"; }
 storage_enabled(){  [[ -f "$PVE/storage-$1.disabled" ]] \
@@ -124,6 +134,8 @@ ct_status_is(){ local got; got=$(cat "$(node_d "$2")/ct/$1.status" 2>/dev/null)
   [[ "$got" == "$3" ]] || _err "ct$1 on $2 is '$got', expected '$3'"; }
 evac_f(){ printf '%s/pve/ketsync/evacuate/%s.tsv' "$SIMROOT" "$1"; }
 evac_there(){ [[ -f "$(evac_f "$1")" ]] || _err "there is no evacuate record for $1"; }
+evac_has(){ grep -qP -- "^$2$" "$(evac_f "$1")" 2>/dev/null \
+              || _err "the evacuate record for $1 lacks '$2'"; }
 evac_none(){  [[ -f "$(evac_f "$1")" ]] && _err "an evacuate record for $1 should NOT exist"; return 0; }
 dstate(){ printf '%s\n' "$2" > "$(node_d "$1")/dstate"; }
 
@@ -325,10 +337,31 @@ if scenario "3: GUARD P2 - a storage that ANSWERED means the container is fine";
 fi
 
 if scenario "4: a mountpoint somebody already unmounted counts as gone, not as alive"; then
+  # The stat on an unmounted path ANSWERS - instantly, rc 0, because `umount`
+  # leaves PVE's mountpoint directory behind on the node's root filesystem.
+  # Only /proc/mounts knows the difference, and for one drill the engine did
+  # not ask it: it read its own unmount back as a storage that had recovered,
+  # and refused the isolation the unmount was for.
   storage pve01 tank-hdd-nas gone
   run_engine --isolate --ctid 300
   rc_is 0; clean
   has "is gone"
+  has "mounted=0"
+  cfg_net pve01 300 net0 vmbr99
+  done_scenario
+fi
+
+if scenario "4b: a mount that errors instead of blocking is gone, not alive"; then
+  # ESTALE: the path is still IN the mount table and stat fails at once
+  # instead of hanging - an export rebuilt underneath its clients. I/O errors
+  # rather than blocks, so everything this engine wants to do works, and
+  # refusing it as \"answered\" would be wrong in the same direction as the
+  # unmounted case.
+  storage pve01 tank-hdd-nas stale
+  run_engine --isolate --ctid 300
+  rc_is 0; clean
+  has "is gone"
+  has "stat rc=1, mounted=1"
   cfg_net pve01 300 net0 vmbr99
   done_scenario
 fi
@@ -488,8 +521,28 @@ if scenario "10f: a container that will not come down stays isolated, never forc
   ct_stubborn 300 pve01
   run_engine --isolate --ctid 300
   rc_is 0; clean
-  has "did not come down within"
+  # lxc-stop's failure line carries the timeout it was GIVEN, and 180 in it is
+  # the proof the engine's budget reached the process doing the waiting - pct's
+  # own default is sixty, and for one drill the engine stood ready to wait
+  # three minutes while lxc-stop had already given up at one.
+  has "pct: command 'lxc-stop -n 300 --nokill --timeout 180' failed: exit code 1"
+  has "pct itself failed (rc=255) and CT 300 is still running - it stays isolated"
   has "nothing here forces a stop"
+  ct_status_is 300 pve01 running
+  done_scenario
+fi
+
+if scenario "10f2: a pct that never returns is not a guest that refused"; then
+  # 124 is the OUTER timeout's code: pct was killed still waiting, having said
+  # nothing - not even its own failure. A guest refusing arrives as pct's 255
+  # with lxc-stop's words attached; the two must not share a message.
+  storage pve01 tank-hdd-nas gone
+  ct_pct_hangs 300 pve01
+  run_engine --isolate --ctid 300
+  rc_is 0; clean
+  has "pct itself never returned (rc=124) - it stays isolated"
+  hasnt "pct itself failed"
+  hasnt "ssh to pve01 FAILED"
   ct_status_is 300 pve01 running
   done_scenario
 fi
@@ -504,10 +557,11 @@ if scenario "10h: pct dying is not the node failing, even where it costs nothing
   ct_pct_fails 300 pve01
   run_engine --isolate --ctid 300
   rc_is 0; clean
-  has "pct: Job for lxc@300.service failed because a timeout was exceeded."
+  has "pct: command 'lxc-stop -n 300 --nokill --timeout 180' failed: exit code 1"
+  has "pct: container did not stop"
   has "pct itself failed (rc=255) and CT 300 is still running - it stays isolated"
   hasnt "ssh to pve01 FAILED"
-  hasnt "did not come down within"
+  hasnt "never returned"
   ct_status_is 300 pve01 running
   done_scenario
 fi
@@ -525,6 +579,41 @@ if scenario "10i: an ssh that failed after the isolate says so, and says whose";
   hasnt "did not come down within"
   hasnt "pct itself failed"
   cfg_net pve01 300 net0 vmbr99
+  done_scenario
+fi
+
+if scenario "10k: a directory storage that answers is alive, mounted or not"; then
+  # A dir storage's path is just a directory on the node - it is never in
+  # /proc/mounts, and that is its healthy state. The verdict must not read
+  # "absent from the mount table" as dead for a storage that was never a
+  # mount, or every healthy local-path storage on the fleet gets its
+  # containers isolated off the air.
+  add_ct 340 pve01 backup-dir
+  storage pve01 backup-dir alive /var/lib/backup-dir
+  storage_is_dir pve01 backup-dir
+  inventory "340	replica-hdd"
+  run_engine --isolate --ctid 340
+  rc_is 1; clean
+  has "GUARD P2: storage 'backup-dir' on pve01 ANSWERED"
+  cfg_net pve01 340 net0 vmbr0
+  done_scenario
+fi
+
+if scenario "10l: a dir that declared is_mountpoint is only real when mounted"; then
+  # is_mountpoint is PVE's own way of saying "this path is a mount or it is
+  # nothing" - the same declaration G1 honours in ct-migrate. When the backing
+  # mount is out of the table, the instant answer from the leftover directory
+  # is the same lie the 2026-08-15 drill hit, wearing a dir-type storage.
+  add_ct 340 pve01 nas-dir
+  storage pve01 nas-dir gone /srv/nas-dir
+  storage_is_dir pve01 nas-dir
+  storage_declares_mountpoint pve01 nas-dir
+  inventory "340	replica-hdd"
+  run_engine --isolate --ctid 340
+  rc_is 0; clean
+  has "P2: storage 'nas-dir' is gone"
+  has "ISOLATED: net0 now on vmbr99"
+  cfg_net pve01 340 net0 vmbr99
   done_scenario
 fi
 
@@ -832,10 +921,29 @@ if scenario "39: a container that still will not stop is isolated, never forced"
   rc_is 0; clean
   ct_status_is 300 pve01 running
   ct_status_is 310 pve01 stopped
-  has "did not come down within 180s"
+  # The 180 in lxc-stop's line is the engine's budget arriving where the
+  # waiting happens - see 10f. And the sentence after it names the way this
+  # ends without anyone forcing it: the blocked I/O erroring out.
+  has "pct: command 'lxc-stop -n 300 --nokill --timeout 180' failed: exit code 1"
+  has "pct itself failed (rc=255) and CT 300 is still running - isolating it instead"
+  has "and 'pct stop', which kills rather"
   has "nothing here forces a stop"
   cfg_net pve01 300 net0 vmbr99
   rec_there 300
+  done_scenario
+fi
+
+if scenario "39b: a pct that never returns is isolated too, and blamed correctly"; then
+  # Same fact as 10f2, on the path where it matters more: evacuate is the
+  # fleet-wide pass, and a wrong sentence here sends somebody to a guest when
+  # the thing that broke was pct on that node.
+  ct_pct_hangs 300 pve01
+  run_engine --evacuate --node "$N1"
+  rc_is 0; clean
+  has "pct itself never returned (rc=124) - isolating CT 300 instead"
+  has "said nothing"
+  hasnt "pct itself failed"
+  cfg_net pve01 300 net0 vmbr99
   done_scenario
 fi
 
@@ -865,6 +973,30 @@ if scenario "41: a healthy storage on the same node keeps its containers running
   storage_mounted pve01 local-lvm
   ct_status_is 330 pve01 running
   ct_status_is 300 pve01 stopped
+  done_scenario
+fi
+
+if scenario "41c: a second evacuate finds its own unmount, and neither lies nor forgets"; then
+  # The 2026-08-15 drill, one command later. The first run unmounted the dead
+  # storage; a re-run of the same node then reads the empty mountpoint
+  # directory left behind - which answers a stat instantly. Three things have
+  # to survive that: E2 must still call the storage gone rather than ANSWERED
+  # (the lie the drill printed), the unmount step must say there is nothing to
+  # unmount rather than warn that the stops may hang, and the record must
+  # still name the containers the FIRST run killed mid-write - they are the
+  # list --restore reads back for the fsck warning, and this run's own list is
+  # empty because they are already down.
+  run_engine --evacuate --node "$N1"
+  rc_is 0; clean
+  ct_status_is 300 pve01 stopped
+  run_engine --evacuate --node "$N1"
+  rc_is 0; clean
+  has "E2: storage 'tank-hdd-nas' is gone here"
+  hasnt "which answered"
+  has "/mnt/pve/tank-hdd-nas is already out of the namespace - nothing to unmount"
+  hasnt "the stops below may hang"
+  evac_has pve01 "stopped	300"
+  evac_has pve01 "stopped	310"
   done_scenario
 fi
 
@@ -1017,7 +1149,8 @@ if scenario "51c: pct failing is not ssh failing, and the container is isolated"
   ct_pct_fails 300 pve01
   run_engine --evacuate --node "$N1"
   rc_is 0; clean
-  has "pct: Job for lxc@300.service failed because a timeout was exceeded."
+  has "pct: command 'lxc-stop -n 300 --nokill --timeout 180' failed: exit code 1"
+  has "pct: container did not stop"
   has "pct itself failed (rc=255) and CT 300 is still running - isolating it instead"
   hasnt "ssh to pve01 FAILED"
   hasnt "was never asked"

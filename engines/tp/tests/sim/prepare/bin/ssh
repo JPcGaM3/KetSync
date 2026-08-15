@@ -136,6 +136,14 @@ case "$c" in
     printf 'ROOTSID %s\n' "$sid"
     printf 'ROOTPATH %s\n' "$(cat "$N/storage/$sid.path" 2>/dev/null || echo "/mnt/pve/$sid")"
     printf 'STATRC %s\n' "$(stat_rc_of "$NODE" "$sid")"
+    # The storage's shape and the kernel's mount table, separate facts on
+    # purpose: the stat above answers 0 for a mounted live storage AND for the
+    # empty directory an unmount leaves behind, and only these two tell the
+    # engine which one it is looking at. nfs unless a scenario says otherwise,
+    # because that is what this engine's fleet runs on.
+    printf 'ROOTTYPE %s\n' "$(cat "$N/storage/$sid.type" 2>/dev/null || echo nfs)"
+    printf 'ROOTISMP %s\n' "$(cat "$N/storage/$sid.ismp" 2>/dev/null || echo '')"
+    printf 'MOUNTED %s\n' "$(mounted_of "$NODE" "$sid")"
     printf 'DSTATE %s\n' "$(cat "$N/dstate" 2>/dev/null || echo 0)"
     # The KERNEL's view, kept separate from the config's on purpose: a config
     # can record a bridge change PVE never applied to a running container, and
@@ -242,28 +250,43 @@ case "$c" in
     # __rc= line whatever the command asked for - the shell that would have
     # printed it never ran - and that silence is what the engine reads.
     [[ -f "$D/$id.sshdies" ]] && { echo "ssh: connect to host $host port 22: No route to host" >&2; exit 255; }
-    # pct dying on its own. Its rootfs is a loop device with nothing behind it,
-    # lxc-stop gives up after its own timeout, and perl exits 255 - the same
-    # number ssh uses above, from a machine that answered perfectly well. This
-    # is the case the fleet hit.
-    if [[ -f "$D/$id.pctfails" ]]; then
-      pct_says "Job for lxc@$id.service failed because a timeout was exceeded." \
-               "See \"systemctl status lxc@$id.service\" and \"journalctl -xeu lxc@$id.service\" for details."
-      pct_exit 255
-    fi
+    # pct wedging entirely - not the guest refusing, pct never getting as far
+    # as an answer. The outer `timeout` kills it and 124 is timeout's code,
+    # arriving with no words at all.
+    [[ -f "$D/$id.pcthangs" ]] && pct_exit 124
     sid="$(cat "$D/$id.rootsid" 2>/dev/null)"
     if [[ "$(storage_verdict_of "$NODE" "$sid")" == alive ]]; then
       violation "shut down CT $id while its storage '$sid' was ALIVE"
       exit 1
     fi
-    # Blocked I/O is what makes a shutdown hang, and there are two ways for it
-    # not to be blocked: this run unmounted the dead storage, or the mountpoint
-    # was already gone when the run started - which is what the `gone` verdict
-    # IS. Modelling only the first made a shutdown against an already-unmounted
-    # storage hang in the fake and return in reality.
+    # pct passes the wait to `lxc-stop --nokill --timeout N`, N being pct's own
+    # sixty unless the command said --timeout - and when the guest does not
+    # come down, THAT number is in lxc-stop's failure line. Reproducing it from
+    # the command is what lets a scenario prove the engine's budget actually
+    # reached the process doing the waiting, instead of dying unused in an
+    # outer timeout while lxc-stop gave up at sixty. The 2026-08-15 drill ran
+    # exactly that way around.
+    tmo=60
+    if [[ "$c" == *" --timeout "* ]]; then
+      tmo="${c##*--timeout }"; tmo="${tmo%% *}"
+      [[ "$tmo" =~ ^[0-9]+$ ]] || tmo=60
+    fi
+    pct_gives_up(){
+      pct_says "command 'lxc-stop -n $id --nokill --timeout $tmo' failed: exit code 1" \
+               "container did not stop"
+      pct_exit 255
+    }
+    # Blocked I/O is what makes a guest unable to act on the request, and
+    # there are two ways for it not to be blocked: this run unmounted the dead
+    # storage, or the mountpoint was already gone when the run started - which
+    # is what the `gone` verdict IS. A guest still blocked does not hang pct
+    # forever: lxc-stop waits out its timeout, fails, and pct dies with 255
+    # and its words - the shape the fleet actually produced.
     if [[ ! -f "$N/storage/$sid.unmounted" \
-       && "$(storage_verdict_of "$NODE" "$sid")" != gone ]]; then pct_exit 124; fi
-    [[ -f "$D/$id.stubborn" ]] && pct_exit 124
+       && "$(storage_verdict_of "$NODE" "$sid")" != gone ]]; then pct_gives_up; fi
+    # A guest that will not come down even with its I/O free - same answer
+    # from pct, for a different reason the log cannot see from here.
+    [[ -f "$D/$id.stubborn" || -f "$D/$id.pctfails" ]] && pct_gives_up
     printf 'stopped\n' > "$D/$id.status"
     : > "$D/$id.veth"
     pct_exit 0;;

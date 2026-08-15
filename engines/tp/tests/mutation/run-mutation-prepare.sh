@@ -118,9 +118,42 @@ mutant "P2 reads a storage that answered instantly as one that never answered" \
   's{\Q    0)   printf \E\x27\Qalive\E\x27\Q;;\E}{    0)   printf \x27dead\x27;;}' \
   3
 
-mutant "P2 reads a mountpoint that is not there as a live storage" \
+# The stat arm's `*)` is only reachable for a mount that is IN the table and
+# errors instantly - ESTALE. The unmounted case stopped coming through here on
+# 2026-08-15, when the verdict learned to ask the mount table first; the four
+# mutations for that clause live further down with the evacuate ones.
+mutant "P2 reads a mount that errors as a live storage" \
   's{\Q    *)   printf \E\x27\Qgone\E\x27\Q;;\E}{    *)   printf \x27alive\x27;;}' \
+  4b
+
+# The drill bug itself, put back: `umount -f -l` leaves PVE's mountpoint
+# directory behind, a stat on that empty local dir answers instantly with rc 0,
+# and a verdict that reads the stat alone calls the engine's own unmount ALIVE
+# - which P2 then refuses to touch, four minutes after the same run unmounted
+# it in order to touch it.
+mutant "a mount that left the namespace reads as a storage that answered" \
+  's{\Q    nfs|cifs) [[ "\E\$\{2:-1\}\Q" == 0 ]] && \E}{    nfs|cifs) false \&\& }' \
+  4 41c
+
+# The MOUNTED fact is emitted inside the remote snippet, where no mutation can
+# reach it - the fake answers for the far side whole, which is the same reason
+# D1's bridge choice had to move into the engine. What IS reachable is the
+# local read of that fact, once per path that uses it.
+mutant "isolate drops the mount fact on its way into the verdict" \
+  's{\Q  mounted="\E\$\Q(awk \E\x27\Q\E\$\Q1=="MOUNTED"{print \E\$\Q2; exit}\E\x27\Q <<<"\E\$out\Q")"\E}{  mounted=1}' \
   4
+
+mutant "evacuate drops the mount fact on its way into the verdict" \
+  's{\Q                 "\E\$\Q(awk \E\x27\Q\E\$\Q1=="MOUNTED"{print \E\$\Q2; exit}\E\x27\Q <<<"\E\$out\Q")" \E}{                 "1" }' \
+  41c
+
+mutant "everything unmounted is condemned, plain directory storages included" \
+  's{\Q    *)        [[ -n "\E\$\{4:-\}\Q" && "\E\$\{4:-0\}\Q" != 0 && "\E\$\{2:-1\}\Q" == 0 ]] \E}{    *)        [[ "\$\{2:-1\}" == 0 ]] }' \
+  10k
+
+mutant "a dir that declared is_mountpoint is trusted while unmounted" \
+  's{\Q    *)        [[ -n "\E\$\{4:-\}\Q" && "\E\$\{4:-0\}\Q" != 0 && "\E\$\{2:-1\}\Q" == 0 ]] \E}{    *)        false }' \
+  10l
 
 # ---------- P1: unreachable is not safe to change ----------------------------
 mutant "P1 treats a node that did not answer as one with nothing to say" \
@@ -296,8 +329,12 @@ mutant "the record of what was switched off never lands" \
   42
 
 mutant "the storage is disabled but never unmounted, so nothing can be stopped" \
-  's{\Q    if rsh "\E\$pip\Q" "umount -f -l \E\x27\Q\E\$\{DEADPATHS\[\$i\]\}\Q\E\x27\Q"; then\E}{    if false; then}' \
+  's{\Q    elif rsh "\E\$pip\Q" "umount -f -l \E\x27\Q\E\$\{DEADPATHS\[\$i\]\}\Q\E\x27\Q"; then\E}{    elif false; then}' \
   38
+
+mutant "a mount that is already out of the namespace is unmounted at anyway" \
+  's{\Q    if [[ "\E\$\{DEADMNT\[\$i\]:-1\}\Q" == 0 ]]; then\E}{    if false; then}' \
+  41c
 
 mutant "pvestatd is left holding the mount that just went away" \
   's{\Q"systemctl restart pvestatd"\E}{"true"}' \
@@ -385,8 +422,15 @@ mutant "the way back stops naming the images that were killed mid-write" \
   43b
 
 mutant "the record forgets which containers it was about to stop" \
-  's{\Q  for _s in "\E\$\{TOSTOP\[@\]\}\Q"; do body=\E}{  for _s in ""; do body=}' \
+  's{\Q  for _s in "\E\$\{RECSTOP\[@\]\}\Q"; do body=\E}{  for _s in ""; do body=}' \
   43b
+
+# A drill re-run finds the containers already down, so this run's own stop
+# list is empty - and a record rewritten from that alone erases the FIRST
+# run's list, which is the only record of which images were killed mid-write.
+mutant "a second evacuate erases the first one's list of killed images" \
+  's{\Q read -r _s _pv; do\E}{ read -r _s _pv; do break;}' \
+  41c
 
 # ---------- what the log says when a step does not work ---------------------
 # Each of these ends with a run that reads as a fleet problem when it is not
@@ -411,8 +455,40 @@ mutant "a shutdown that never reached the node reads as a container that would n
 # to read, every container reads as never asked, and a whole node's worth of
 # them is skipped in silence.
 mutant "the command stops reporting its own exit code, so nothing can be told apart" \
-  's{\Q    sout="\E\$\Q(rsh "\E\$pip\Q" "timeout \E\$SHUTDOWN_TIMEOUT\Q pct shutdown \E\$ct\Q 2>&1; echo __rc=\E\\\$\Q?")"\E}{    sout="\$(rsh "\$pip" "timeout \$SHUTDOWN_TIMEOUT pct shutdown \$ct 2>\&1")"}' \
+  's{\Q    sout="\E\$\Q(rsh "\E\$pip\Q" "timeout \E\$\Q((SHUTDOWN_TIMEOUT+30)) pct shutdown \E\$ct\Q --timeout \E\$SHUTDOWN_TIMEOUT\Q 2>&1; echo __rc=\E\\\$\Q?")"\E}{    sout="\$(rsh "\$pip" "timeout \$((SHUTDOWN_TIMEOUT+30)) pct shutdown \$ct --timeout \$SHUTDOWN_TIMEOUT 2>\&1")"}' \
   39 51c
+
+# pct hands the wait to `lxc-stop --timeout 60` - ITS default - unless told
+# otherwise, and for one drill the engine's three-minute budget died unused in
+# an outer timeout while lxc-stop gave up at one. The 180 in lxc-stop's own
+# failure line is what these two scenarios read, so a budget that stops
+# reaching the waiting process is caught by the number in the message.
+mutant "the shutdown budget stops reaching the command doing the waiting" \
+  's{\Qpct shutdown \E\$ct\Q --timeout \E\$SHUTDOWN_TIMEOUT\Q 2>&1; echo __rc=\E\\\$\Q?")"\E\n\Q    sshrc=\E}{pct shutdown \$ct 2>\&1; echo __rc=\\\$?")"\n    sshrc=}' \
+  39
+
+mutant "the isolate-path shutdown budget stops reaching it too" \
+  's{\Q  out="\E\$\Q(rsh "\E\$ISO_PIP\Q" "timeout \E\$\Q((SHUTDOWN_TIMEOUT+30)) pct shutdown \E\$ct\Q --timeout \E\$SHUTDOWN_TIMEOUT\Q 2>&1; echo __rc=\E\\\$\Q?")"\E}{  out="\$(rsh "\$ISO_PIP" "timeout \$((SHUTDOWN_TIMEOUT+30)) pct shutdown \$ct 2>\&1; echo __rc=\\\$?")"}' \
+  10f
+
+# 124 is the OUTER timeout killing a pct that never said anything - a different
+# fact from a guest that refused, which arrives as pct's own 255 with words.
+mutant "a pct that never came back is read as a guest that refused" \
+  's{\Q    if [[ "\E\$rc\Q" == 124 ]]; then\E}{    if false; then}' \
+  39b
+
+mutant "the isolate path merges those two facts as well" \
+  's{\Q  if [[ "\E\$rc\Q" == 124 ]]; then\E}{  if false; then}' \
+  10f2
+
+# The prose in this line held a real command for a while: backticks inside a
+# double-quoted string are command substitution, and the engine executed
+# `pct stop` - no vmid, on the driving node - in the middle of writing a log
+# line about it. Harmless with no vmid, and exactly one argument away from
+# not being.
+mutant "the words in the log go back to being a command" \
+  's{\Qa loop device with nothing behind it - and \E\x27\Qpct stop\E\x27\Q, which kills rather\E}{a loop device with nothing behind it - and `pct stop`, which kills rather}' \
+  39
 
 # What pct SAYS is the other half of the diagnosis: "the guest ignored us" and
 # "lxc-stop could not even run" are the same exit code and different problems.
