@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>06 — อ้างอิง — ketsync</title>
+<style>
+  :root{
+    --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
+    --bg:#fbfaf8; --surface:#ffffff; --line:#e8e5de; --line2:#d9d5cc;
+    --accent:#0f766e; --accent-soft:#e6f1ef;
+    --warn:#a45309; --warn-soft:#fdf3e3;
+    --crit:#b02020; --crit-soft:#fceded;
+    --code-bg:#f5f4f0;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai","Sarabun",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.75;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto;padding:40px 24px 90px}
+  header.doc{padding-bottom:24px;border-bottom:2px solid var(--ink);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.35;margin:0 0 8px;font-weight:700}
+  header.doc p{color:var(--muted);margin:0;font-size:16.5px}
+  section{margin-top:44px}
+  .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:8px}
+  .num{font-family:var(--mono);font-size:13px;font-weight:600;color:#fff;background:var(--accent);
+       border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+  .num.crit{background:var(--crit)}
+  h2{font-size:21px;margin:0;font-weight:700}
+  h3{font-size:16.5px;margin:28px 0 6px;font-weight:700}
+  p{margin:0 0 13px}
+  .lead{color:var(--muted);margin-bottom:18px}
+  .part{margin-top:60px;padding:16px 0 0;border-top:3px solid var(--ink)}
+  .part .label{font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase;
+               color:var(--accent);margin-bottom:2px}
+  .part.red .label{color:var(--crit)}
+  .part h2{font-size:25px}
+  pre{background:var(--code-bg);border:1px solid var(--line2);border-radius:10px;
+      padding:14px 16px;margin:12px 0 16px;white-space:pre-wrap;overflow-wrap:anywhere;
+      font-family:var(--mono);font-size:13.5px;line-height:1.7;color:#22262c}
+  .m,code{font-family:var(--mono);font-size:13.5px;background:var(--code-bg);
+          border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+  table{width:100%;border-collapse:collapse;margin:14px 0 18px;font-size:14.5px}
+  th,td{text-align:left;vertical-align:top;padding:9px 11px;border-bottom:1px solid var(--line)}
+  th{background:var(--accent-soft);color:var(--accent);font-size:13px;
+     text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid #c6ddd9}
+  td.m{background:none;border:none;font-family:var(--mono);font-size:13px;white-space:nowrap}
+  .note,.warn,.stop{border-radius:10px;padding:13px 16px;margin:16px 0;font-size:15px}
+  .note{background:var(--accent-soft);border:1px solid #c6ddd9}
+  .warn{background:var(--warn-soft);border:1px solid #f0dcb4}
+  .stop{background:var(--crit-soft);border:1px solid #f2c9c9}
+  .note p,.warn p,.stop p{margin:0}
+
+  /* the three machines, and which way the bytes go */
+  .flow{background:var(--surface);border:1px solid var(--line2);border-radius:12px;
+        padding:18px 16px 14px;margin:16px 0 20px}
+  .flow .cap{font-family:var(--mono);font-size:12px;letter-spacing:1px;text-transform:uppercase;
+             color:var(--faint);margin-bottom:12px}
+  .rail{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+  .box{flex:1 1 0;min-width:150px;border:1.5px solid var(--line2);border-radius:10px;
+       padding:10px 12px;background:var(--bg)}
+  .box.live{border-color:var(--accent);background:var(--accent-soft)}
+  .box.dead{border-color:var(--crit);background:var(--crit-soft);opacity:.85}
+  .box.hold{border-color:var(--warn);background:var(--warn-soft)}
+  .box .who{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:3px}
+  .box .id{font-family:var(--mono);font-size:17px;font-weight:700}
+  .box .what{font-size:13px;color:var(--muted);line-height:1.5;margin-top:3px}
+  .arr{flex:0 0 74px;display:flex;flex-direction:column;align-items:center;
+       justify-content:center;color:var(--accent);padding:0 4px}
+  .arr .sym{font-family:var(--mono);font-size:19px;line-height:1}
+  .arr .lbl{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;
+            margin-top:3px;line-height:1.3}
+  .arr.none{color:var(--faint)}
+  .hand{display:inline-block;font-family:var(--mono);font-size:12px;background:#fff;
+        border:1.5px solid var(--crit);color:var(--crit);border-radius:999px;
+        padding:1px 10px;margin-right:6px}
+  .auto{display:inline-block;font-family:var(--mono);font-size:12px;background:#fff;
+        border:1.5px solid var(--accent);color:var(--accent);border-radius:999px;
+        padding:1px 10px;margin-right:6px}
+  ol.steps{counter-reset:s;margin:12px 0 16px;padding:0;list-style:none}
+  ol.steps li{position:relative;padding-left:40px;margin:15px 0}
+  ol.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:2px;
+    width:26px;height:26px;background:var(--accent);color:#fff;border-radius:50%;
+    font-family:var(--mono);font-size:13px;font-weight:600;
+    display:flex;align-items:center;justify-content:center}
+  ul.clean{margin:8px 0 16px;padding:0;list-style:none}
+  ul.clean li{position:relative;padding-left:20px;margin:8px 0}
+  ul.clean li::before{content:"";position:absolute;left:2px;top:11px;width:6px;height:6px;
+                      background:var(--accent);border-radius:50%}
+  footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);
+         color:var(--faint);font-size:14px}
+  .code .cp{position:absolute;top:8px;right:8px;font-family:var(--sans);font-size:12px;
+    color:var(--muted);background:var(--surface);border:1px solid var(--line2);
+    border-radius:7px;padding:3px 11px;cursor:pointer;line-height:1.5}
+  .code .cp:hover{color:var(--accent);border-color:var(--accent)}
+  details.cmd{margin:14px 0 18px;border:1px solid var(--line2);border-radius:10px;
+              background:var(--surface);overflow:hidden}
+  details.cmd>summary{cursor:pointer;padding:10px 15px;font-family:var(--mono);
+    font-size:13px;color:var(--accent);list-style:none;user-select:none}
+  details.cmd>summary::-webkit-details-marker{display:none}
+  details.cmd>summary::before{content:"\25B8  ";color:var(--faint)}
+  details.cmd[open]>summary::before{content:"\25BE  "}
+  details.cmd>summary:hover{background:var(--accent-soft)}
+  details.cmd .code{margin:0 12px 12px}
+  .allcmds{font-family:var(--sans);font-size:13px;color:var(--muted);
+           background:var(--surface);border:1px solid var(--line2);border-radius:8px;
+           padding:4px 12px;cursor:pointer;margin:0 0 14px}
+  .allcmds:hover{color:var(--accent);border-color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="in">
+    <span class="name">06</span>
+    <a href="#exit">รหัสออก</a>
+    <a href="#flags">flag</a>
+    <a href="#guards">guard</a>
+    <a href="#conf">conf</a>
+    <a href="#files">ไฟล์</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="doc">
+  <h1>06 — อ้างอิง</h1>
+  <p>เปิดค้น ไม่ต้องอ่านเรียง — รหัสออก flag ทุก guard บรรทัดเดียว คีย์ conf และไฟล์ทุกไฟล์</p>
+  <div class="where">ทุกคำปฏิเสธในระบบพิมพ์เหตุผลของมันเองใน log เสมอ หน้านี้คือฉบับเปิดหาเร็ว</div>
+</header>
+
+
+<section id="exit">
+  <div class="eyebrow"><span class="num">1</span><h2>รหัสออก</h2></div>
+  <table>
+    <tr><th>รหัส</th><th>แปลว่า</th></tr>
+    <tr><td class="m">0</td><td>ปกติ ไม่มีอะไรต้องดู</td></tr>
+    <tr><td class="m">1</td><td>มีอย่างน้อยหนึ่งอย่างต้องดู — CT ถูกข้าม รอบไม่จบเขียว หรือของ DR ยังค้าง</td></tr>
+    <tr><td class="m">2</td><td>ปฏิเสธตั้งแต่ยังไม่แตะอะไร — ตั้งค่าไม่ครบ ไม่มี scope หรือเครื่องผิดบทบาท</td></tr>
+  </table>
+  <p>ตัวกรองที่ไม่ match แถวไหนเลยไม่คืน 0 เด็ดขาด — ใต้ cron แล้ว &ldquo;0 แต่ไม่ได้ทำอะไร&rdquo;
+     หน้าตาเหมือนคืนที่ปกติ</p>
+  <table>
+    <tr><th>rsync</th><th>แปลว่า</th></tr>
+    <tr><td class="m">0 / 24</td><td>สำเร็จทั้งคู่ — 24 คือไฟล์หายระหว่างก๊อป ปกติของต้นทางที่ยังรันอยู่</td></tr>
+    <tr><td class="m">23</td><td>ก๊อปไม่ครบ ครั้งเดียว = อาการชั่วคราวของ snapshot, สองครั้งติดตัวเดิม = image มีปัญหา</td></tr>
+    <tr><td class="m">11</td><td>เนื้อที่ไม่พอ — engine ขยาย image ให้เอง 5% สามครั้ง (G4/B6)</td></tr>
+  </table>
+</section>
+
+<section id="flags">
+  <div class="eyebrow"><span class="num">2</span><h2>flag ชุดเดียว ใช้ทั้งระบบ</h2></div>
+  <table>
+    <tr><th>flag</th><th>แปลว่า</th><th>ใช้กับ</th></tr>
+    <tr><td class="m">--all</td><td>ทุกแถวใน inventory / ทุกอย่างที่บันทึกของภัยพิบัติบอก</td><td>เกือบทุกตัว</td></tr>
+    <tr><td class="m">--ctid &lt;id&gt;</td><td>เฉพาะตัวเดียว — เลขตัวจริงเสมอ ไม่ใช่ 8xxx/9xxx</td><td>เกือบทุกตัว</td></tr>
+    <tr><td class="m">--dry-run</td><td>เดินผ่าน guard ครบ ไม่เขียนอะไร แล้วพิมพ์แผน</td><td>ทุกตัวที่เขียน</td></tr>
+    <tr><td class="m">--list</td><td>อ่านอย่างเดียว ใครอยู่ไหน เหลืออะไร</td><td>failback, distribute, recall, recover, prepare, watch</td></tr>
+    <tr><td class="m">--storage &lt;id&gt;</td><td>ทำเฉพาะ lane นั้น (cron ใช้ตัวนี้)</td><td>migrate, replica</td></tr>
+    <tr><td class="m">--final</td><td>รอบตัดจริง — recall ต้องปิด 9xxx ก่อน, failback ต้องมี PAUSE</td><td>recall, failback</td></tr>
+    <tr><td class="m">--destroy</td><td>เก็บ 9xxx ทิ้งถาวร = ปลด R13 — ทำเมื่อเช็กตัวจริงแล้วเท่านั้น</td><td>cleanup, recover</td></tr>
+    <tr><td class="m">--to / --dst</td><td>override ปลายทางจาก fleet.tsv</td><td>dist
+ribute</td></tr>
+    <tr><td class="m">--node &lt;ip&gt;</td><td>ทำทั้งเครื่อง ไม่ใช่ราย CT</td><td>evacuate, restore</td></tr>
+    <tr><td class="m">--digest</td><td>ส่งรายงาน doctor ทั้งฉบับเข้าเมล</td><td>watch</td></tr>
+    <tr><td class="m">-y</td><td>ตัดสินใจไปแล้ว — ข้ามแค่คำถาม ไม่ข้ามด่านสักด่าน ไม่มี --force</td><td>ทุกตัวที่เขียน</td></tr>
+  </table>
+</section>
+
+<section id="guards">
+  <div class="eyebrow"><span class="num">3</span><h2>ทุก guard บรรทัดเดียว</h2></div>
+  <p>เจอ GUARD ใน log = ระบบกันไว้ให้แล้ว พร้อมเหตุผลใต้บรรทัดนั้นเสมอ ตารางนี้ไว้เปิดหาความหมายเร็วๆ
+     ฉบับเต็มพร้อมเหตุผลอยู่ใน <code class="inl">CLAUDE.md</code> กับ <code class="inl">../decisions.md</code></p>
+  <h3>migrate — G</h3>
+  <table>
+    <tr><td class="m">G1</td><td>pool ต้องไม่อยู่บนดิสก์ระบบ และต้อง mount อยู่จริง — เช็กก่อนจองเนื้อที่</td></tr>
+    <tr><td class="m">G2</td><td>ไม่ก๊อปทับ CT ที่กำลังรันบนเครื่องปลายทาง</td></tr>
+    <tr><td class="m">G3</td><td>ต้อง unmount ก่อน resize เสมอ</td></tr>
+    <tr><td class="m">G4</td><td>เนื้อที่หมด = ขยาย image 5% แล้วลองใหม่ สามครั้งแล้วบอกตรงๆ</td></tr>
+    <tr><td class="m">G5</td><td>เขียน config ต่อเมื่อก๊อปจบดี (rc 0/24) เท่านั้น</td></tr>
+    <tr><td class="m">G6</td><td>config ที่มีอยู่แล้วไม่ถูกเขียนทับ แค่รายงาน</td></tr>
+    <tr><td class="m">G7</td><td>เลขปลายทางต้องว่างจริงทั้ง cluster</td></tr>
+  </table>
+  <h3>replica — R</h3>
+  <table>
+    <tr><td class="m">R1</td><td>อ่านจาก snapshot+clone เสมอ ไม่อ่าน image ที่กำลังถูกเขียน</td></tr>
+    <tr><td class="m">R2</td><td>ไม่ก๊อปทับสำเนาที่กำลังรัน (แปลว่ามีคน promote ไปแล้ว)</td></tr>
+    <tr><td class="m">R3</td><td>dataset ปลายทางต้อง mounted=yes</td></tr>
+    <tr><td class="m">R4</td><td>เลขปลายทางต้องไม่เป็นของ guest อื่นที่ไหนเลยใน cluster — เช็กก่อนก๊อป</td></tr>
+    <tr><td class="m">R5</td><td>เขียน config หลังก๊อปจบดี แล้วอ่านกลับมาเทียบ</td></tr>
+    <tr><td class="m">R6</td><td>loop-mount แบบ ro,noload — ไม่มีการเขียนลง clone</td></tr>
+    <tr><td class="m">R7 / R10</td><td>lock ราย lane และรายสำเนา — สองรอบไม่ทับกัน</td></tr>
+    <tr><td class="m">R8</td><td>config สำเนาที่มีอยู่ต้องตรงกับ dest ในใบงาน</td></tr>
+    <tr><td class="m">R9</td><td>bridge เก็บสำเนา (vmbr99) ต้องไม่มีทางออกเน็ตจริงๆ — ถาม OVS แบบ ifaces ด้วย</td></tr>
+    <tr><td class="m">R11</td><td>เตือนเมื่อสำเนาที่ปิดอยู่ค้างบน bridge จริง</td></tr>
+    <tr><td class="m">R12</td><td>storage ต้นทางตายทั้งก้อน = ข้อเท็จจริงเดียว ข้ามพร้อมบอกครั้งเดียว และรอบนั้นไม่เขียว</td></tr>
+    <tr><td class="m">R13</td><td>มี 9xxx อยู่ = ข้อมูลใหม่สุดอยู่ที่อื่น สำเนาถูกปล่อยไว้จนกว่าใครจะ destroy 9xxx</td></tr>
+    <tr><td class="m">R14</td><td>lock สำเนาที่เครื่องที่ถือมัน — kernel ปลายทางเป็นกรรมการ ใช้ร่วมกับ B8/D8/C8</td></tr>
+  </table>
+  <h3>failback — B</h3>
+  <table>
+    <tr><td class="m">B1</td><td>ตัวจริงต้องปิดสนิท — ติดต่อไม่ได้ไม่นับว่าปิด</td></tr>
+    <tr><td class="m">B2</td><td>presync: สำเนารันอยู่ หรือปิดแต่มี 9xxx / --final: สำเนาปิด + มี PAUSE</td></tr>
+    <tr><td class="m">B3 / B4 / B5</td><td>image ต้องอยู่บน mount จริง ต้องมีอยู่แล้ว และ unmount ก่อน resize</td></tr>
+    <tr><td class="m">B6</td><td>เนื้อที่หมด = ขยาย image แทนที่จะทิ้งงานกลางทาง</td></tr>
+    <tr><td class="m">B7</td><td>--final ต้อง snapshot กันพลาดได้ก่อน ไม่งั้นปฏิเสธ (--no-snapshot คือทางผ่านที่ต้องพิมพ์เอง)</td></tr>
+    <tr><td class="m">B8</td><td>R14 ฝั่ง failback</td></tr>
+  </table>
+  <h3>distribute — D</h3>
+  <table>
+    <tr><td class="m">D1</td><td>ตัวจริงต้องตอบใครไม่ได้ และบูตเองไม่ได้ (onboot 0) — ยกเว้นเดียว: ทุก veth อยู่บน vmbr99 ที่ไม่มีทางออก อ่านจาก kernel</td></tr>
+    <tr><td class="m">D2</td><td>สำเนาต้นทางต้องมีจริงบนเครื่อง backup และปิดอยู่</td></tr>
+    <tr><td class="m">D3</td><td>เลข 9xxx ต้องว่างทั้ง cluster ทั้ง config และ volume</td></tr>
+    <tr><td class="m">D4 / D5</td><td>storage ปลายทางต้อง active ไม่อยู่บนดิสก์ระบบ และเช็กเนื้อที่ก่อนจอง</td></tr>
+    <tr><td class="m">D6</td><td>เขียน config หลังก๊อปจบดี แล้วอ่านกลับมาเทียบ</td></tr>
+    <tr><td class="m">D7</td><td>ไม่เปิดอะไรให้ เด็ดขาด</td></tr>
+    <tr><td class="m">D8</td><td>R14 ฝั่ง distribute — lock 9xxx ที่เครื่องปลายทาง ก่อนถาม D3</td></tr>
+  </table>
+  <h3>recall — C</h3>
+  <table>
+    <tr><td class="m">C1</td><td>หา 9xxx จากการถาม cluster ไม่รับเลขจากคนพิมพ์</td></tr>
+    <tr><td class="m">C2</td><td>9xxx ต้องปิดก่อน (--final) — ตัวที่รันอยู่คือ service ที่ยังไม่มีใครตัดสินใจหยุด</td></tr>
+    <tr><td class="m">C3</td><td>ทิศทางมาจากบันทึกที่มา ไม่ใช่วันเวลาไฟล์ — ไม่มีบันทึก ไม่ทำ</td></tr>
+    <tr><td class="m">C4</td><td>presync ต้องรันอยู่ / --final ต้องปิด — ปิดเฉยๆ โดยไม่บอก --final = คนละเจตนา ปฏิเสธ</td></tr>
+    <tr><td class="m">C5 / C6</td><td>ปลายทาง mounted=yes และ mount ฝั่งอ่านให้ถูกเจ้าของตามสถานะ CT</td></tr>
+    <tr><td class="m">C7</td><td>ไม่เปิด ไม่ปิด ไม่ลบอะไรให้</td></tr>
+    <tr><td class="m">C8</td><td>R14 สองปลาย — lock 9xxx ก่อนแล้วค่อย 8xxx</td></tr>
+  </table>
+  <h3>prepare (isolate / evacuate / restore / cleanup) — P E K</h3>
+  <table>
+    <tr><td class="m">P2 / E2</td><td>ต้องพิสูจน์ก่อนว่า storage ตายจริง — mount ที่ตอบ = ปฏิเสธทั้งยวง ไม่มี override</td></tr>
+    <tr><td class="m">P4</td><td>vmbr99 บนเครื่องนั้นต้องไม่มีทางออกจริง ก่อนย้ายอะไรไปลง</td></tr>
+    <tr><td class="m">P5</td><td>ไม่เขียนทับบันทึกว่า bridge เดิมคืออะไร</td></tr>
+    <tr><td class="m">E4</td><td>ตู้ที่ปิดไม่ลง = isolate แทน ไม่มีการบังคับปิดที่แรงกว่าขอ</td></tr>
+    <tr><td class="m">K2</td><td>cleanup ต้องเห็นหลักฐานจาก state ของ failback ว่ารอบ --final จบ ok แล้วจริง</td></tr>
+    <tr><td class="m">K3</td><td>ไม่หยุด 9xxx ที่กำลังตอบ ถ้าตัวจริงยังไม่เปิด</td></tr>
+  </table>
+</section>
+
+<section id="conf">
+  <div class="eyebrow"><span class="num">4</span><h2>คีย์ conf ที่ต้องรู้จัก</h2></div>
+  <h3>conf/ketsync.conf — ของแต่ละเครื่อง ไม่ถูก sync</h3>
+  <table>
+    <tr><td class="m">KS_ROLE</td><td>master / slave — คนเปลี่ยนเองเท่านั้น master คือเจ้าของตาราง</td></tr>
+    <tr><td class="m">KS_MASTER_IP</td><td>IP ของเครื่องที่เป็น master ตอนนี้</td></tr>
+    <tr><td class="m">KS_MAIL_FROM / _INFRA / _NODE / _DIGEST</td><td>ที่อยู่เมลของ watch — ไม่ครบ watch ปฏิเสธ</td></tr>
+    <tr><td class="m">KS_WATCH_HEALTHCHECK</td><td>URL dead-man (healthchecks.io) — รอบเขียวเท่านั้นที่ ping</td></tr>
+  </table>
+  <h3>engines/ctrep.conf — replica / failback / distribute / recall</h3>
+  <table>
+    <tr><td class="m">BKP_SSH</td><td>root@&lt;IP เครื่อง backup&gt; — เส้นเลือดหลักของทั้งระบบ</td></tr>
+    <tr><td class="m">BW_TOTAL_MB</td><td>เพดาน bandwidth รวมของเครื่องนี้ หารเป็น lane อัตโนมัติ</td></tr>
+    <tr><td class="m">OFFSET / DR_OFFSET</td><td>300 &rarr; 8300 (สำเนา) และ 300 &rarr; 9300 (ตัวชั่วคราว)</td></tr>
+    <tr><td class="m">MOCKNET_BRIDGE</td><td>bridge ปิดตาย (vmbr99) ที่สำเนาและตัวที่ถูก isolate ไปอยู่</td></tr>
+    <tr><td class="m">SHUTDOWN_GRACE</td><td>เวลารอ shutdown ตอน evacuate/isolate (สั้น เพราะสัญญาณเข้าคิวแล้ว)</td></tr>
+  </table>
+  <p><code class="inl">engines/ctmig.conf</code> คือชุดเดียวกันฝั่ง migrate ที่ต่างคือ
+     BW ของมันแยกเพดานกับ ctrep (doctor เตือนเรื่องนี้อยู่จนกว่า conf จะรวมเป็นไฟล์เดียว)</p>
+</section>
+
+<section id="files">
+  <div class="eyebrow"><span class="num">5</span><h2>ไฟล์ไหนอยู่ไหน ใครแก้</h2></div>
+  <table>
+    <tr><th>ไฟล์</th><th>คืออะไร</th><th>แก้บ่อยแค่ไหน</th></tr>
+    <tr><td class="m">conf/ketsync.conf</td><td>ตัวตนของเครื่องนี้ + เมล watch</td><td>ตอนติดตั้ง</td></tr>
+    <tr><td class="m">conf/nodes.tsv</td><td>IP + บทบาท ของทุกเครื่อง — ไม่มีคอลัมน์ชื่อ ตั้งใจ</td><td>ตอนมีเครื่องใหม่</td></tr>
+    <tr><td class="m">conf/fleet.tsv</td><td>แผนที่ DR: ct, home, dr, dst — ครบทุกคอลัมน์ ไม่มี default</td><td>ตอนรับลูกค้าใหม่</td></tr>
+    <tr><td class="m">conf/nodes.map</td><td>IP &rarr; ชื่อ node ระบบสร้างเอง <b>ห้ามแก้มือ</b></td><td>ไม่ต้องแตะ</td></tr>
+    <tr><td class="m">engines/inventory-replica.tsv</td><td>ใบงานก๊อปทุกคืน (replica + failback ใช้ร่วม)</td><td>บ่อยที่สุด</td></tr>
+    <tr><td class="m">engines/inventory-migrate.tsv</td><td>ใบงานย้ายเข้าฟลีต ใช้เฉพาะช่วงย้าย</td><td>ช่วงย้ายของ</td></tr>
+    <tr><td class="m">engines/PAUSE</td><td>มีไฟล์นี้ = replica หยุดทั้งระบบ ใช้ช่วง failback เท่านั้น</td><td>เฉพาะ DR</td></tr>
+    <tr><td class="m">engines/pause/&lt;ctid&gt;</td><td>พักราย CT — ลบไฟล์เมื่อพร้อมกลับมา</td><td>ตามจำเป็น</td></tr>
+    <tr><td class="m">logs/ · engines/logs/</td><td>log รายวัน ชื่อไฟล์บอกคำสั่งกับวันที่ ลบเองหลัง 14 วัน</td><td>อ่านอย่างเดียว</td></tr>
+    <tr><td class="m">state/watch.tsv</td><td>เรื่องที่ watch ถือค้างอยู่ — ดูผ่าน <span class="m">watch --list</span></td><td>ระบบเขียนเอง</td></tr>
+  </table>
+  <p>ไฟล์ <code class="inl">.sample</code> คือตัวอย่างที่ git track — ก๊อปแล้วตัดคำว่า sample ออกถึงใช้จริง
+     ตัวจริงของแต่ละไซต์ไม่ถูก track และไม่ถูก git pull ทับ</p>
+</section>
+<footer>
+  <a href="index.html">สารบัญ</a> ·
+  <a href="01-what-is-this.html">01 ระบบนี้คืออะไร</a> ·
+  <a href="02-install.html">02 ติดตั้ง</a> ·
+  <a href="03-daily.html">03 งานประจำวัน</a> ·
+  <a href="04-drill.html">04 ซ้อมภัยพิบัติ</a> ·
+  <a href="05-disaster-day.html">05 วันเกิดเหตุ</a>
+</footer>
+
+</div>
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp'; btn.type = 'button'; btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.c').forEach(function(el){ el.remove(); });
+      var text = clone.textContent.split('\n').filter(function(l){ return l.trim() !== ''; }).join('\n');
+      var done = function(){ btn.textContent='copied'; setTimeout(function(){ btn.textContent='copy'; },1200); };
+      function fallback(){
+        var ta=document.createElement('textarea'); ta.value=text;
+        ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){ btn.textContent='select manually'; }
+        document.body.removeChild(ta);
+      }
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,fallback);}else{fallback();}
+    });
+    box.appendChild(btn);
+  });
+  var all = document.querySelectorAll('details.cmd');
+  if(all.length){
+    var b=document.createElement('button');
+    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    var open=false;
+    b.addEventListener('click',function(){
+      open=!open;
+      all.forEach(function(d){ d.open=open; });
+      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+    });
+    var first=document.querySelector('header.doc');
+    if(first) first.parentNode.insertBefore(b, first.nextSibling);
+  }
+})();
+</script>
+</body>
+</html>

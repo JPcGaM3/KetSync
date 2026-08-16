@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>เครื่อง storage ตาย ทำยังไง — ketsync</title>
+<title>05 — เครื่อง storage ตาย ทำยังไง — ketsync</title>
 <style>
   :root{
     --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
@@ -119,8 +119,8 @@
 <div class="wrap">
 
 <header class="doc">
-  <h1>เครื่อง storage ตาย ทำยังไง</h1>
-  <p>อ่านหน้านี้ตอนยังไม่เกิดเหตุ แล้วเปิดซ้ำตอนเกิด — ทุกขั้นเป็นคำสั่งที่พิมพ์ได้เลย</p>
+  <h1>05 — เครื่อง storage ตาย ทำยังไง</h1>
+  <p>อ่านหน้านี้ตอนยังไม่เกิดเหตุ แล้วเปิดซ้ำตอนเกิด — ทุกขั้นเป็นคำสั่งที่พิมพ์ได้เลย ถ้ามาถึงหน้านี้เพราะเมล <b>[ketsync] INFRA</b> จาก watch มาถึงคุณ: ใช่ หน้านี้แหละ</p>
   <div class="where">ทุกคำสั่งในหน้านี้พิมพ์บนเครื่อง backup (10.100.1.9) เว้นแต่จะเขียนบอกไว้</div>
 </header>
 
@@ -531,6 +531,10 @@ rm /root/ketsync/engines/PAUSE</pre></div></details></li>
       <details class="cmd"><summary>./ketsync replica --ctid 300</summary><div class="code"><pre>./ketsync replica --ctid 300
 ./ketsync status</pre></div></details></li>
   </ol>
+  <div class="tip"><p><b>watch จะบอกเองว่าจบจริง</b> ตราบใดที่ยังมี 9xxx หรือบันทึกของ
+     evacuate/isolate ค้างอยู่ เมล INFRA/NODE ของมันยังถือเรื่องไว้ พอเก็บครบทุกขั้น
+     จะได้เมล CLEARED มาปิดเรื่อง — ไม่ได้ = ยังเหลืออะไรสักอย่าง สั่ง
+     <code class="inl">./ketsync watch --list</code> ดู</p></div>
   <div class="ok"><p><b>จบแล้วจดไว้หน่อย</b> ว่าติดตรงไหน ใช้เวลาเท่าไหร่ อะไรที่หน้านี้ไม่ได้บอก
      ครั้งหน้าจะได้ไม่ต้องคิดใหม่ และเอามาเติมในหน้านี้ได้เลย</p></div>
 
@@ -548,10 +552,12 @@ rm /root/ketsync/engines/PAUSE</pre></div></details></li>
 </section>
 
 <footer>
-  อ่านต่อ: <code class="inl">docs/index.html</code> สารบัญคู่มือทั้งชุด ·
-  <code class="inl">docs/infrastructure-setup.html</code> ติดตั้งตั้งแต่ศูนย์ ·
-  <code class="inl">docs/start-here.html</code> ใช้งานประจำวัน ·
-  <code class="inl">docs/decisions.md</code> เหตุผลเบื้องหลังทุกด่าน
+  <a href="index.html">สารบัญ</a> ·
+  <a href="01-what-is-this.html">01 ระบบนี้คืออะไร</a> ·
+  <a href="02-install.html">02 ติดตั้ง</a> ·
+  <a href="03-daily.html">03 งานประจำวัน</a> ·
+  <a href="04-drill.html">04 ซ้อมภัยพิบัติ</a> ·
+  <a href="06-reference.html">06 อ้างอิง</a>
 </footer>
 
 </div>

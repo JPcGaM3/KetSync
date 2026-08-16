@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>03 — งานประจำวัน — ketsync</title>
+<style>
+  :root{
+    --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
+    --bg:#fbfaf8; --surface:#ffffff; --line:#e8e5de; --line2:#d9d5cc;
+    --accent:#0f766e; --accent-soft:#e6f1ef;
+    --warn:#a45309; --warn-soft:#fdf3e3;
+    --crit:#b02020; --crit-soft:#fceded;
+    --code-bg:#f5f4f0;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai","Sarabun",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.75;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto;padding:40px 24px 90px}
+  header.doc{padding-bottom:24px;border-bottom:2px solid var(--ink);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.35;margin:0 0 8px;font-weight:700}
+  header.doc p{color:var(--muted);margin:0;font-size:16.5px}
+  section{margin-top:44px}
+  .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:8px}
+  .num{font-family:var(--mono);font-size:13px;font-weight:600;color:#fff;background:var(--accent);
+       border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+  .num.crit{background:var(--crit)}
+  h2{font-size:21px;margin:0;font-weight:700}
+  h3{font-size:16.5px;margin:28px 0 6px;font-weight:700}
+  p{margin:0 0 13px}
+  .lead{color:var(--muted);margin-bottom:18px}
+  .part{margin-top:60px;padding:16px 0 0;border-top:3px solid var(--ink)}
+  .part .label{font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase;
+               color:var(--accent);margin-bottom:2px}
+  .part.red .label{color:var(--crit)}
+  .part h2{font-size:25px}
+  pre{background:var(--code-bg);border:1px solid var(--line2);border-radius:10px;
+      padding:14px 16px;margin:12px 0 16px;white-space:pre-wrap;overflow-wrap:anywhere;
+      font-family:var(--mono);font-size:13.5px;line-height:1.7;color:#22262c}
+  .m,code{font-family:var(--mono);font-size:13.5px;background:var(--code-bg);
+          border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+  table{width:100%;border-collapse:collapse;margin:14px 0 18px;font-size:14.5px}
+  th,td{text-align:left;vertical-align:top;padding:9px 11px;border-bottom:1px solid var(--line)}
+  th{background:var(--accent-soft);color:var(--accent);font-size:13px;
+     text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid #c6ddd9}
+  td.m{background:none;border:none;font-family:var(--mono);font-size:13px;white-space:nowrap}
+  .note,.warn,.stop{border-radius:10px;padding:13px 16px;margin:16px 0;font-size:15px}
+  .note{background:var(--accent-soft);border:1px solid #c6ddd9}
+  .warn{background:var(--warn-soft);border:1px solid #f0dcb4}
+  .stop{background:var(--crit-soft);border:1px solid #f2c9c9}
+  .note p,.warn p,.stop p{margin:0}
+
+  /* the three machines, and which way the bytes go */
+  .flow{background:var(--surface);border:1px solid var(--line2);border-radius:12px;
+        padding:18px 16px 14px;margin:16px 0 20px}
+  .flow .cap{font-family:var(--mono);font-size:12px;letter-spacing:1px;text-transform:uppercase;
+             color:var(--faint);margin-bottom:12px}
+  .rail{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+  .box{flex:1 1 0;min-width:150px;border:1.5px solid var(--line2);border-radius:10px;
+       padding:10px 12px;background:var(--bg)}
+  .box.live{border-color:var(--accent);background:var(--accent-soft)}
+  .box.dead{border-color:var(--crit);background:var(--crit-soft);opacity:.85}
+  .box.hold{border-color:var(--warn);background:var(--warn-soft)}
+  .box .who{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:3px}
+  .box .id{font-family:var(--mono);font-size:17px;font-weight:700}
+  .box .what{font-size:13px;color:var(--muted);line-height:1.5;margin-top:3px}
+  .arr{flex:0 0 74px;display:flex;flex-direction:column;align-items:center;
+       justify-content:center;color:var(--accent);padding:0 4px}
+  .arr .sym{font-family:var(--mono);font-size:19px;line-height:1}
+  .arr .lbl{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;
+            margin-top:3px;line-height:1.3}
+  .arr.none{color:var(--faint)}
+  .hand{display:inline-block;font-family:var(--mono);font-size:12px;background:#fff;
+        border:1.5px solid var(--crit);color:var(--crit);border-radius:999px;
+        padding:1px 10px;margin-right:6px}
+  .auto{display:inline-block;font-family:var(--mono);font-size:12px;background:#fff;
+        border:1.5px solid var(--accent);color:var(--accent);border-radius:999px;
+        padding:1px 10px;margin-right:6px}
+  ol.steps{counter-reset:s;margin:12px 0 16px;padding:0;list-style:none}
+  ol.steps li{position:relative;padding-left:40px;margin:15px 0}
+  ol.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:2px;
+    width:26px;height:26px;background:var(--accent);color:#fff;border-radius:50%;
+    font-family:var(--mono);font-size:13px;font-weight:600;
+    display:flex;align-items:center;justify-content:center}
+  ul.clean{margin:8px 0 16px;padding:0;list-style:none}
+  ul.clean li{position:relative;padding-left:20px;margin:8px 0}
+  ul.clean li::before{content:"";position:absolute;left:2px;top:11px;width:6px;height:6px;
+                      background:var(--accent);border-radius:50%}
+  footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);
+         color:var(--faint);font-size:14px}
+  .code .cp{position:absolute;top:8px;right:8px;font-family:var(--sans);font-size:12px;
+    color:var(--muted);background:var(--surface);border:1px solid var(--line2);
+    border-radius:7px;padding:3px 11px;cursor:pointer;line-height:1.5}
+  .code .cp:hover{color:var(--accent);border-color:var(--accent)}
+  details.cmd{margin:14px 0 18px;border:1px solid var(--line2);border-radius:10px;
+              background:var(--surface);overflow:hidden}
+  details.cmd>summary{cursor:pointer;padding:10px 15px;font-family:var(--mono);
+    font-size:13px;color:var(--accent);list-style:none;user-select:none}
+  details.cmd>summary::-webkit-details-marker{display:none}
+  details.cmd>summary::before{content:"\25B8  ";color:var(--faint)}
+  details.cmd[open]>summary::before{content:"\25BE  "}
+  details.cmd>summary:hover{background:var(--accent-soft)}
+  details.cmd .code{margin:0 12px 12px}
+  .allcmds{font-family:var(--sans);font-size:13px;color:var(--muted);
+           background:var(--surface);border:1px solid var(--line2);border-radius:8px;
+           padding:4px 12px;cursor:pointer;margin:0 0 14px}
+  .allcmds:hover{color:var(--accent);border-color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="in">
+    <span class="name">03</span>
+    <a href="#cron">จังหวะปกติ</a>
+    <a href="#mail">เมล 3 แบบ</a>
+    <a href="#read">อ่านสถานะ</a>
+    <a href="#add">เพิ่ม CT</a>
+    <a href="#sync">sync + FORKED</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="doc">
+  <h1>03 — งานประจำวัน</h1>
+  <p>cron ทำอะไรเอง เมลจาก watch อ่านยังไง เพิ่ม CT ใหม่ และนิสัยของคำสั่งชุดนี้</p>
+  <div class="where">ทุกคำสั่งในหน้านี้พิมพ์บนเครื่อง storage (10.100.1.17)</div>
+</header>
+
+
+<section id="cron">
+  <div class="eyebrow"><span class="num">1</span><h2>จังหวะปกติ — ระบบทำอะไรเองบ้าง</h2></div>
+  <p>ทั้งหมดอยู่ใน crontab ของเครื่อง storage วันปกติไม่ต้องพิมพ์อะไรเลย</p>
+  <details class="cmd"><summary>crontab -l   # what a healthy master runs</summary><div class="code"><pre><span class="c"># copy every lane, every 15 minutes</span>
+*/15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-hdd-nas
+*/15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-ssd-nas
+
+<span class="c"># watch the fleet, mail on change</span>
+*/10 * * * * /root/ketsync/ketsync watch
+
+<span class="c"># doctor's whole report, once a morning</span>
+30 7 * * * /root/ketsync/ketsync watch --digest</pre></div></details>
+  <p>บรรทัด replica เรียก engine ตรงๆ (ไม่ต้องมี <code class="inl">-y</code> เพราะคำถามอยู่ชั้น ketsync)
+     ส่วน watch เป็นคำสั่งอ่านอย่างเดียว พิมพ์เปล่าๆ ถูกต้องแล้ว</p>
+</section>
+
+<section id="mail">
+  <div class="eyebrow"><span class="num">2</span><h2>เมล 3 แบบ อ่านยังไง</h2></div>
+  <p>watch ส่งเมลเมื่อมีอะไร<b>เปลี่ยน</b>เท่านั้น — RAISED ตอนปัญหาเกิด CLEARED ตอนหาย
+     ระหว่างนั้นเงียบ ไม่มีเมลซ้ำเรื่องเดิม</p>
+  <table>
+    <tr><th>เมล</th><th>แปลว่า</th><th>ทำอะไรก่อน</th></tr>
+    <tr><td class="m">[ketsync] INFRA ...</td>
+        <td>พื้นที่ทุกอย่างยืนอยู่มีปัญหา — เครื่อง backup เงียบ, PAUSE ค้าง, หรือมี 9xxx อยู่ในระบบ</td>
+        <td>อ่านเนื้อเมล ถ้าเกี่ยวกับ storage ตาย เปิด <a href="05-disaster-day.html">05</a> ทันที</td></tr>
+    <tr><td class="m">[ketsync] NODE ...</td>
+        <td>เครื่องเดียวมีปัญหา — node ไม่ตอบ ssh หรือ storage ถูกปิดค้างไว้จาก evacuate</td>
+        <td>ssh เข้าไปดูเครื่องที่เมลบอกชื่อ</td></tr>
+    <tr><td class="m">daily digest</td>
+        <td>รายงาน doctor ทั้งฉบับของเช้านั้น รวมเรื่องราย CT เช่นสำเนาเก่าเกินกำหนด</td>
+        <td>กวาดตาดูหัวข้อที่ไม่ใช่ ok — วันปกติใช้เวลาอ่านไม่ถึงนาที</td></tr>
+  </table>
+  <div class="warn"><p><b>ความเงียบก็เป็นสัญญาณ</b> ถ้าใช้ dead-man (healthchecks.io)
+     แล้วมันร้องว่า ping หาย แปลว่าตัว watch เองตาย หรือส่งเมลไม่ออก —
+     ระบบเตือนภัยพัง สำคัญกว่าเมลทุกฉบับที่เคยส่ง เข้าไปดู
+     <code class="inl">./ketsync watch --list</code> ที่เครื่อง storage</p></div>
+</section>
+
+<section id="read">
+  <div class="eyebrow"><span class="num">3</span><h2>สามคำสั่งอ่านสถานะ</h2></div>
+  <table>
+    <tr><th>คำสั่ง</th><th>ตอบคำถามว่า</th></tr>
+    <tr><td class="m">./ketsync status</td><td>รอบล่าสุดของแต่ละ CT เป็นยังไง ก๊อปเมื่อไหร่ ติดอะไร</td></tr>
+    <tr><td class="m">./ketsync doctor</td><td>ตอนนี้อะไรยังไม่ต่อกัน — ตรวจทั้งสองชั้น อ่านบนลงล่างแล้วแก้ทีละอัน</td></tr>
+    <tr><td class="m">./ketsync watch --list</td><td>watch กำลังถือเรื่องอะไรค้างอยู่ (เมลไปแล้ว ยังไม่ CLEARED)</td></tr>
+  </table>
+  <p>ทั้งสามอ่านอย่างเดียว สั่งซ้ำได้ไม่จำกัด</p>
+</section>
+
+<section id="add">
+  <div class="eyebrow"><span class="num">4</span><h2>เพิ่ม CT ใหม่เข้าระบบ</h2></div>
+  <ol class="steps">
+    <li>เพิ่มแถวใน <b>สองตาราง</b> ที่เครื่อง master — แผนที่ กับ ใบงาน
+      <details class="cmd"><summary>$EDITOR conf/fleet.tsv</summary><div class="code"><pre><span class="c"># conf/fleet.tsv - the map: ct, home, dr, dst (ALL required, tab-separated)</span>
+130	10.100.1.32	10.100.1.32	local-lvm
+
+<span class="c"># engines/inventory-replica.tsv - the work list: ct + dest pool</span>
+130	replica-hdd</pre></div></details>
+      <p>อย่าลืม bump บรรทัด <code class="inl"># generation:</code> ของไฟล์ที่แก้ขึ้นหนึ่ง</p></li>
+    <li>ส่งตารางไปทุกเครื่อง — ไม่มีอะไรส่งให้อัตโนมัติ
+      <details class="cmd"><summary>./ketsync sync</summary><div class="code"><pre>./ketsync sync</pre></div></details></li>
+    <li>ซ้อมตัวเดียว แล้วค่อยของจริง
+      <details class="cmd"><summary>./ketsync replica --dry-run --ctid 130</summary><div class="code"><pre>./ketsync replica --dry-run --ctid 130
+./ketsync replica --ctid 130</pre></div></details>
+      <p>รอบแรกก๊อปทั้งก้อน รอถึงจบ รอบต่อไป cron เก็บเอง</p></li>
+  </ol>
+</section>
+
+<section id="sync">
+  <div class="eyebrow"><span class="num">5</span><h2>แก้ตารางแล้ว sync เสมอ — และคำว่า FORKED</h2></div>
+  <p>แก้ตารางที่ master แล้วต้องพิมพ์ <code class="inl">./ketsync sync</code> เอง
+     ถ้าลืม เครื่อง backup ถือรายการของเดือนที่แล้วโดยไม่มีอะไรบอก
+     ที่ส่งคือตาราง 4 ไฟล์ ส่วน <code class="inl">.conf</code> กับ <code class="inl">nodes.map</code>
+     ไม่ส่งเด็ดขาด (มี KS_ROLE — ส่งไปทุกเครื่องจะคิดว่าตัวเองเป็น master)</p>
+  <p>เจอ <b>FORKED</b> = สองเครื่องถือ generation เท่ากันแต่เนื้อไฟล์ต่างกัน sync จะหยุดทั้งรอบ
+     เพราะไม่รู้ว่าฝั่งไหนถูก ไล่สามขั้น</p>
+  <details class="cmd"><summary>./ketsync sync --diff</summary><div class="code"><pre><span class="c"># 1. read what differs - changes nothing</span>
+./ketsync sync --diff
+
+<span class="c"># 2. edit THIS machine's copy until it is the right one</span>
+$EDITOR conf/fleet.tsv
+
+<span class="c"># 3. "mine is the one" - one file at a time, then it pushes</span>
+./ketsync sync --bump fleet.tsv</pre></div></details>
+  <div class="tip"><p>ระบุชื่อไฟล์เสมอ — <code class="inl">--bump</code> เปล่าๆ
+     ตัดสินทุกไฟล์ที่แตกกันในรอบเดียว ถูกต้องต่อเมื่ออ่าน diff ครบทุกไฟล์แล้วจริงๆ</p></div>
+</section>
+
+<section id="rules">
+  <div class="eyebrow"><span class="num">6</span><h2>สามนิสัยของคำสั่งชุดนี้</h2></div>
+  <ul class="clean">
+    <li><b>คำสั่งเปล่าปฏิเสธ</b> — <code class="inl">./ketsync replica</code> เฉยๆ ไม่ทำอะไร
+        มันพิมพ์เมนูแล้วออกรหัส 2 ต้องบอกขอบเขตเอง (<code class="inl">--all</code> /
+        <code class="inl">--ctid</code>) เพราะสี่ตัวอักษรที่พิมพ์เพิ่มคือหลักฐานว่าตั้งใจ</li>
+    <li><b>คำสั่งที่เขียนจะถามหนึ่งครั้ง</b> โดยบอกว่ามันกำลังจะเขียนอะไร ใน cron ต้องมี
+        <code class="inl">-y</code> ไม่งั้นปฏิเสธดังๆ (doctor ไล่ crontab เตือนให้เอง
+        ยกเว้นคำสั่งอ่านอย่างเดียวอย่าง watch ที่ไม่ต้องมี)</li>
+    <li><b>พัก CT รายตัวได้</b> — สร้างไฟล์ <code class="inl">engines/pause/&lt;ctid&gt;</code>
+        แล้ว cron ข้ามตัวนั้นพร้อมบอกเหตุผล ลบไฟล์เมื่อพร้อมกลับมา
+        ส่วน <code class="inl">engines/PAUSE</code> (ตัวใหญ่ไฟล์เดียว) หยุดทั้งระบบ
+        ใช้เฉพาะช่วง failback</li>
+  </ul>
+</section>
+<footer>
+  <a href="index.html">สารบัญ</a> ·
+  <a href="01-what-is-this.html">01 ระบบนี้คืออะไร</a> ·
+  <a href="02-install.html">02 ติดตั้ง</a> ·
+  <a href="04-drill.html">04 ซ้อมภัยพิบัติ</a> ·
+  <a href="05-disaster-day.html">05 วันเกิดเหตุ</a> ·
+  <a href="06-reference.html">06 อ้างอิง</a>
+</footer>
+
+</div>
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp'; btn.type = 'button'; btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.c').forEach(function(el){ el.remove(); });
+      var text = clone.textContent.split('\n').filter(function(l){ return l.trim() !== ''; }).join('\n');
+      var done = function(){ btn.textContent='copied'; setTimeout(function(){ btn.textContent='copy'; },1200); };
+      function fallback(){
+        var ta=document.createElement('textarea'); ta.value=text;
+        ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){ btn.textContent='select manually'; }
+        document.body.removeChild(ta);
+      }
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,fallback);}else{fallback();}
+    });
+    box.appendChild(btn);
+  });
+  var all = document.querySelectorAll('details.cmd');
+  if(all.length){
+    var b=document.createElement('button');
+    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    var open=false;
+    b.addEventListener('click',function(){
+      open=!open;
+      all.forEach(function(d){ d.open=open; });
+      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+    });
+    var first=document.querySelector('header.doc');
+    if(first) first.parentNode.insertBefore(b, first.nextSibling);
+  }
+})();
+</script>
+</body>
+</html>

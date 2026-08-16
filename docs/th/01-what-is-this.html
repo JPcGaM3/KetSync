@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>คู่มือทั้งชุด — ketsync</title>
+<title>01 — ระบบนี้คืออะไร — ketsync</title>
 <style>
   :root{
     --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
@@ -113,75 +113,90 @@
 
 <div class="topbar">
   <div class="in">
-    <span class="name">ketsync</span>
-    <a href="#ladder">อ่านตามลำดับ</a>
-    <a href="#find">หาเรื่องที่ต้องการ</a>
-    <a href="#appendix">ภาคผนวก</a>
+    <span class="name">01</span>
+    <a href="#m">เครื่อง 4 ตัว</a>
+    <a href="#l">สองชั้น</a>
+    <a href="#n">เลข 3 ชุด</a>
+    <a href="#r">กติกาเหล็ก</a>
   </div>
 </div>
 
 <div class="wrap">
 
 <header class="doc">
-  <h1>คู่มือทั้งชุด</h1>
-  <p>หกเล่ม เรียงตามชีวิตจริงของระบบ — เลือกจากสิ่งที่กำลังจะทำ ไม่ใช่จากชื่อไฟล์</p>
-  <div class="where">ทุกเล่มเป็นไฟล์ HTML ไฟล์เดียวจบ เปิดจากเครื่องไหนก็ได้ ไม่ต้องต่อเน็ต</div>
+  <h1>01 — ระบบนี้คืออะไร</h1>
+  <p>ห้านาที — เครื่อง 4 ตัว สองชั้น เลข 3 ชุด และกติกาเหล็ก 3 ข้อ</p>
+  <div class="where">อ่านหน้านี้ก่อนหน้าอื่นทั้งหมด ไม่มีคำสั่งต้องพิมพ์</div>
 </header>
 
 
-<section id="ladder">
-  <div class="eyebrow"><span class="num">1</span><h2>อ่านตามลำดับ 01 &rarr; 06</h2></div>
-  <p>หกเล่ม เรียงตามชีวิตจริงของระบบ — รู้จัก ติดตั้ง ใช้ทุกวัน ซ้อม วันเกิดเหตุ และเปิดค้นอ้างอิง
-     เล่มไหนจบในตัว ไม่ต้องอ่านเล่มอื่นก่อน</p>
+<section id="m">
+  <div class="eyebrow"><span class="num">1</span><h2>เครื่อง 4 ตัว</h2></div>
   <table>
-    <tr><th>เล่ม</th><th>เปิดตอนไหน</th><th>ใช้เวลา</th></tr>
-    <tr><td class="m"><a href="01-what-is-this.html">01-what-is-this</a></td>
-        <td>วันแรก — เครื่อง 4 ตัวต่อกันยังไง เลข 3 ชุดคืออะไร</td><td>5 นาที</td></tr>
-    <tr><td class="m"><a href="02-install.html">02-install</a></td>
-        <td>ตั้งระบบจากศูนย์จนก๊อปรอบแรกเขียว ทุกขั้นมีวิธีเช็ก</td><td>ทำตามทีละขั้น</td></tr>
-    <tr><td class="m"><a href="03-daily.html">03-daily</a></td>
-        <td>งานประจำวัน — cron, doctor, เมลจาก watch, เพิ่ม CT ใหม่</td><td>อ่านรวดเดียว</td></tr>
-    <tr><td class="m"><a href="04-drill.html">04-drill</a></td>
-        <td>ซ้อมดับ storage จริงๆ กับ CT ทดสอบ ตามสูตรที่เคยซ้อมจริง</td><td>ครึ่งวัน</td></tr>
-    <tr><td class="m"><a href="05-disaster-day.html">05-disaster-day</a></td>
-        <td>เครื่อง storage ตาย — หน้าที่เปิดตอนตี 3 หกขั้นจนกลับบ้าน</td><td>อ่านล่วงหน้า 10 นาที</td></tr>
-    <tr><td class="m"><a href="06-reference.html">06-reference</a></td>
-        <td>เปิดค้น — ทุก guard ทุกคำปฏิเสธ ทุก flag ทุกคีย์ conf</td><td>ไม่ต้องอ่านเรียง</td></tr>
+    <tr><th>เครื่อง</th><th>IP</th><th>หน้าที่</th></tr>
+    <tr><td class="m">storage</td><td class="m">10.100.1.17</td>
+        <td>เก็บไฟล์ดิสก์จริงของทุก CT และเป็นที่ที่ engine ทุกตัวรัน — <b>ตัวหลัก (master)</b></td></tr>
+    <tr><td class="m">backup</td><td class="m">10.100.1.9</td>
+        <td>เก็บสำเนา DR ที่ปิดอยู่ + PBS และเป็นเครื่องที่ใช้สั่งงานวันที่ storage ตาย</td></tr>
+    <tr><td class="m">compute</td><td class="m">10.100.1.32 / .33</td>
+        <td>รัน CT โดย mount ดิสก์จาก storage ผ่าน NFS ไม่ต้องติดตั้งอะไรเพิ่ม</td></tr>
   </table>
-  <div class="tip"><p>ฉบับภาษาอังกฤษอยู่ที่ <code class="inl">docs/en/</code> โครงเดียวกันหน้าต่อหน้า
-     ฉบับไทยคือฉบับหลัก</p></div>
+  <p>เครื่อง storage อยู่<b>นอก</b> cluster โดยตั้งใจ — ถ้ามันร่วมโหวตด้วยแล้วล่ม
+     cluster จะเสียเสียงโหวตไปพร้อมกับดิสก์ ทุกช่องที่คนกรอกในระบบนี้จึงเป็น IP ไม่มี hostname</p>
 </section>
 
-<section id="find">
-  <div class="eyebrow"><span class="num">2</span><h2>หาเรื่องที่ต้องการเร็วๆ</h2></div>
+<section id="l">
+  <div class="eyebrow"><span class="num">2</span><h2>สองชั้น — ตัดสินใจ กับ ลงมือ</h2></div>
   <table>
-    <tr><th>อยากทำ</th><th>เปิด</th></tr>
-    <tr><td>เพิ่ม CT เข้าไปในรายการก๊อป</td><td class="m">03-daily</td></tr>
-    <tr><td>ตั้งเมลเตือน (watch)</td><td class="m">02-install ขั้นสุดท้าย</td></tr>
-    <tr><td>เมลจาก watch มาถึง อ่านยังไง</td><td class="m">03-daily</td></tr>
-    <tr><td>เจอคำว่า FORKED</td><td class="m">03-daily</td></tr>
-    <tr><td>เครื่อง storage ตายอยู่ตอนนี้</td><td class="m">05-disaster-day</td></tr>
-    <tr><td>เอาข้อมูลกลับหลัง storage ฟื้น</td><td class="m">05-disaster-day ขั้น 4-6</td></tr>
-    <tr><td>เจอ GUARD อะไรสักอย่างแล้วไม่เข้าใจ</td><td class="m">06-reference</td></tr>
-    <tr><td>อยากรู้ว่าทำไมออกแบบแบบนี้</td><td class="m">docs/decisions.md</td></tr>
+    <tr><th>ชั้น</th><th>อยู่ที่</th><th>ทำอะไร</th></tr>
+    <tr><td class="m">ketsync</td><td class="m">bin/ + lib/</td>
+        <td><b>ตัดสินใจ</b> — ใครเป็นตัวหลัก, CT ไหนอยู่ไหน, ลำดับขั้นตอน, เมลเตือน</td></tr>
+    <tr><td class="m">engines</td><td class="m">engines/</td>
+        <td><b>ลงมือขน</b> — ย้าย/ก๊อป/เอากลับตัว rootfs จริง พร้อม guard ทุกด่าน</td></tr>
   </table>
-  <div class="ok"><p><b>ถ้าหาไม่เจอ</b> สั่ง <span class="m">./ketsync doctor</span> ก่อน
-     มันตอบคำถาม &ldquo;ตอนนี้อะไรยังไม่ต่อกัน&rdquo; ได้เร็วกว่าการไล่อ่าน และไม่แตะอะไรเลย</p></div>
+  <p>สั่งทุกอย่างผ่าน <code class="inl">./ketsync</code> ตัวเดียว ของที่แตะข้อมูลลูกค้าอยู่ฝั่ง engines ทั้งหมด</p>
+  <table>
+    <tr><th>คำสั่ง</th><th>ทำอะไร</th><th>สั่งจาก</th></tr>
+    <tr><td class="m">replica</td><td>ดิสก์จริง &rarr; สำเนาปิดบนเครื่อง backup (cron ทุก 15 นาที)</td><td>storage</td></tr>
+    <tr><td class="m">distribute</td><td>สำเนา &rarr; ดิสก์ในตัวเครื่อง compute (9xxx) — วัน storage ตาย</td><td>backup</td></tr>
+    <tr><td class="m">recall</td><td>9xxx &rarr; กลับเข้าสำเนา</td><td>backup</td></tr>
+    <tr><td class="m">failback</td><td>สำเนา &rarr; กลับเข้าดิสก์จริง</td><td>storage</td></tr>
+    <tr><td class="m">recover</td><td>ทางกลับทั้งสายในคำสั่งเดียว อ่านจากบันทึกจริงว่าเหลืออะไร</td><td>storage</td></tr>
+    <tr><td class="m">migrate</td><td>CT จากเครื่องเก่านอกฟลีต &rarr; ดิสก์บน storage</td><td>storage</td></tr>
+    <tr><td class="m">watch</td><td>เฝ้าฟลีตจาก cron แล้วเมลเมื่อมีอะไร<b>เปลี่ยน</b></td><td>storage</td></tr>
+    <tr><td class="m">doctor</td><td>ตรวจทุกอย่างที่ไม่มีใครจำได้ว่าต้องตรวจ อ่านอย่างเดียว</td><td>ที่ไหนก็ได้</td></tr>
+    <tr><td class="m">sync</td><td>ส่งตาราง 4 ไฟล์ไปทุกเครื่องที่มี ketsync</td><td>master</td></tr>
+  </table>
 </section>
 
-<section id="appendix">
-  <div class="eyebrow"><span class="num">3</span><h2>ภาคผนวก — เปิดเฉพาะตอนใช้</h2></div>
+<section id="n">
+  <div class="eyebrow"><span class="num">3</span><h2>เลข 3 ชุด ที่ไม่มีใครต้องพิมพ์เอง</h2></div>
   <table>
-    <tr><th>ไฟล์</th><th>คืออะไร</th></tr>
-    <tr><td class="m">how-it-works.html</td><td>แผนที่ละเอียดทั้งระบบ ไม่มีคำสั่งเลยสักบรรทัด อ่านตอนว่าง</td></tr>
-    <tr><td class="m">c2v-el.html</td><td>แปลง CT เป็น VM สาย EL (Rocky, Alma, CentOS)</td></tr>
-    <tr><td class="m">c2v-debian.html</td><td>อันเดียวกัน สาย Debian / Ubuntu</td></tr>
-    <tr><td class="m">../decisions.md</td><td>เหตุผลเบื้องหลังทุกด่าน หลายข้อมาจากเรื่องที่พลาดจริง</td></tr>
-    <tr><td class="m">../state-schema.md</td><td>สัญญาของไฟล์ state สำหรับคนแก้โค้ด</td></tr>
+    <tr><th>เลข</th><th>คืออะไร</th><th>อยู่ที่ไหน</th></tr>
+    <tr><td class="m">300</td><td>ตัวจริง</td><td>ดิสก์บนเครื่อง storage ผ่าน NFS</td></tr>
+    <tr><td class="m">8300</td><td>สำเนา DR ปิดอยู่เสมอ ก๊อปทุก 15 นาที</td><td>เครื่อง backup</td></tr>
+    <tr><td class="m">9300</td><td>ตัวชั่วคราวตอนฉุกเฉิน</td><td>ดิสก์ในตัวเครื่อง compute</td></tr>
   </table>
+  <p>ทุกคำสั่งรับเลขตัวจริงตัวเดียว ที่เหลือระบบคิดเองจาก OFFSET สองตัวใน conf
+     เห็นเลข 9 นำหน้าใน <code class="inl">pct list</code> เมื่อไหร่ = ของชั่วคราวที่ต้องมีคนเก็บ</p>
+</section>
+
+<section id="r">
+  <div class="eyebrow"><span class="num">4</span><h2>กติกาเหล็ก 3 ข้อ</h2></div>
+  <ul class="clean">
+    <li><b>ไม่มีคำสั่งไหนเปิดหรือปิด container ให้</b> ทุกตัวย้ายข้อมูล เขียน config
+        แล้วพิมพ์ <code class="inl">pct start</code> ออกมาให้คนกดเอง —
+        จังหวะที่บริการลูกค้ากลับมา ต้องมีคนนั่งดูหน้าจออยู่</li>
+    <li><b>ปฏิเสธเสียงดัง ดีกว่าทำต่อเงียบๆ</b> เจอ GUARD ไม่ได้แปลว่าพัง
+        แปลว่ามันกันไว้ให้แล้ว พร้อมบอกว่าทำไมและต้องทำอะไรต่อ ไม่มี <code class="inl">--force</code> ให้ใช้</li>
+    <li><b>ไม่มีค่า default ไม่มีการเดา</b> แถวที่ลืมกรอกหน้าตาเหมือนแถวที่ตั้งใจทุกอย่าง
+        ระบบจึงปฏิเสธทั้งไฟล์พร้อมบอกเลขบรรทัด แทนที่จะเดาแล้วเอาสำเนาลูกค้าไปวางที่ที่ไม่มีใครเลือก</li>
+  </ul>
+  <div class="tip"><p>อยากเห็นภาพทั้งระบบละเอียดกว่านี้ อ่าน <code class="inl">how-it-works.html</code>
+     (ไม่มีคำสั่ง อ่านตอนว่าง) อยากรู้เหตุผลเบื้องหลัง อ่าน <code class="inl">../decisions.md</code></p></div>
 </section>
 <footer>
-  <a href="01-what-is-this.html">01 ระบบนี้คืออะไร</a> ·
+  <a href="index.html">สารบัญ</a> ·
   <a href="02-install.html">02 ติดตั้ง</a> ·
   <a href="03-daily.html">03 งานประจำวัน</a> ·
   <a href="04-drill.html">04 ซ้อมภัยพิบัติ</a> ·

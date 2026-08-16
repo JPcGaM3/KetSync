@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ติดตั้งระบบตั้งแต่ศูนย์ — ketsync</title>
+<title>02 — ติดตั้งระบบตั้งแต่ศูนย์ — ketsync</title>
 <style>
   :root{
     --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
@@ -124,7 +124,7 @@
 <div class="wrap">
 
 <header class="doc">
-  <h1>ติดตั้งระบบตั้งแต่ศูนย์</h1>
+  <h1>02 — ติดตั้งระบบตั้งแต่ศูนย์</h1>
   <p>ทำตามทีละข้อ ข้อละไม่กี่นาที ทุกข้อมีวิธีเช็กว่าผ่านแล้วจริง — ไม่ต้องเข้าใจ Proxmox ลึกก็ทำได้</p>
   <div class="where">คำสั่งทุกอันบอกไว้ว่าพิมพ์บนเครื่องไหน ถ้าไม่ได้บอก แปลว่าเครื่อง storage</div>
 </header>
@@ -361,9 +361,9 @@ proxmox-backup-manager task list | head</pre></div></details>
 git clone &lt;this repo&gt; /root/ketsync
 cd /root/ketsync
 
-cp ketsync.conf.sample  ketsync.conf
-cp nodes.tsv.sample     nodes.tsv
-cp fleet.tsv.sample     fleet.tsv
+cp conf/ketsync.conf.sample  conf/ketsync.conf
+cp conf/nodes.tsv.sample     conf/nodes.tsv
+cp conf/fleet.tsv.sample     conf/fleet.tsv
 cp engines/inventory-replica.sample.tsv engines/inventory-replica.tsv</pre></div></details>
   <p>ไฟล์ที่ลงท้าย <code class="inl">.sample</code> คือตัวอย่าง ก๊อปแล้วตัดคำว่า sample ออกถึงใช้จริง
      ตัวอย่างจะถูกอัปเดตตอน <code class="inl">git pull</code> ส่วนตัวจริงของคุณจะไม่ถูกทับ</p>
@@ -372,14 +372,14 @@ cp engines/inventory-replica.sample.tsv engines/inventory-replica.tsv</pre></div
 <section id="s7">
   <div class="eyebrow"><span class="num">8</span><h2>กรอก 3 ไฟล์ แค่นี้พอ</h2></div>
 
-  <h3>ไฟล์ที่ 1 — ketsync.conf: เครื่องนี้เป็นตัวหลักรึเปล่า</h3>
+  <h3>ไฟล์ที่ 1 — conf/ketsync.conf: เครื่องนี้เป็นตัวหลักรึเปล่า</h3>
   <details class="cmd"><summary>KS_ROLE=master</summary><div class="code"><pre>KS_ROLE=master
 KS_MASTER_IP=10.100.1.17</pre></div></details>
   <p>เครื่อง storage คือ <code class="inl">master</code> เครื่อง backup ใส่
      <code class="inl">slave</code> ตัวหลักเท่านั้นที่แก้ตารางได้ เครื่องอื่นรับมาอย่างเดียว
      ระบบไม่สลับให้เอง — คนเปลี่ยนเองตอนจำเป็น ตั้งใจให้เป็นแบบนั้น</p>
 
-  <h3>ไฟล์ที่ 2 — nodes.tsv: ทุกเครื่องที่ระบบจะคุยด้วย</h3>
+  <h3>ไฟล์ที่ 2 — conf/nodes.tsv: ทุกเครื่องที่ระบบจะคุยด้วย</h3>
   <details class="cmd"><summary>10.100.1.17	storage</summary><div class="code"><pre># ip	role
 10.100.1.17	storage
 10.100.1.9	backup
@@ -449,8 +449,42 @@ tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div></details>
      <code class="inl">./ketsync</code> — เพราะ cron ไม่รู้ว่าตอนนี้อยู่โฟลเดอร์ไหน</p></div>
 </section>
 
+<section id="smail">
+  <div class="eyebrow"><span class="num">12</span><h2>ตั้งเมลเตือน — ให้ระบบพูดเองตอนไม่มีใครดู</h2></div>
+  <p>ถึงตรงนี้ระบบก๊อปเองได้แล้ว แต่ยังเงียบ <code class="inl">ketsync watch</code>
+     คือตัวที่เมลเมื่อมีอะไร<b>เปลี่ยน</b> — เครื่องหาย storage ถูกปิดค้าง หรือมีของ DR ค้างอยู่
+     ส่งครั้งเดียวตอนเกิด และอีกครั้งตอนหาย ไม่สแปมซ้ำ</p>
+  <ol class="steps">
+    <li>ตั้ง postfix ของเครื่อง storage ให้ relay ผ่าน SendGrid — key อยู่ในไฟล์เดียว ไม่อยู่ใน repo
+      <details class="cmd"><summary>./contrib/mail-satellite.sh --relay '[smtp.sendgrid.net]:587' ...</summary><div class="code"><pre><span class="c"># on the STORAGE node</span>
+echo 'SG.your-key-here' > /root/.sendgrid.key && chmod 600 /root/.sendgrid.key
+./contrib/mail-satellite.sh --relay '[smtp.sendgrid.net]:587' \
+    --user apikey --keyfile /root/.sendgrid.key --test you@example.co.th</pre></div></details>
+      <p>เมลทดสอบต้องถึงจริงก่อนไปขั้นถัดไป — ดู activity log ฝั่ง SendGrid ประกอบ</p></li>
+    <li>บอก watch ว่าใครรับเมลอะไร — เติมท้าย <code class="inl">conf/ketsync.conf</code>
+      <details class="cmd"><summary>KS_MAIL_FROM=...</summary><div class="code"><pre>KS_MAIL_FROM="ketsync@example.co.th"
+KS_MAIL_INFRA="infra@example.co.th"     <span class="c"># the floor everything stands on</span>
+KS_MAIL_NODE="node@example.co.th"       <span class="c"># one machine's problem</span>
+KS_MAIL_DIGEST="admin@example.co.th"    <span class="c"># doctor's daily report</span>
+<span class="c"># optional dead-man: green runs ping it, silence raises the alarm</span>
+KS_WATCH_HEALTHCHECK="https://hc-ping.com/&lt;uuid&gt;"</pre></div></details></li>
+    <li>ซ้อม แล้วของจริง แล้ว digest
+      <details class="cmd"><summary>./ketsync watch --dry-run</summary><div class="code"><pre>./ketsync watch --dry-run
+./ketsync watch
+./ketsync watch --digest</pre></div></details>
+      <p>รอบแรกของจริงคือ baseline — ฟลีตปกติจะไม่มีเมล ลองดึงสาย node ทดสอบสักตัวจะได้เมล RAISED
+         ภายในรอบถัดไป และ CLEARED ตอนเสียบกลับ</p></li>
+    <li>ใส่ cron — watch อ่านอย่างเดียว ไม่ต้องมี -y
+      <details class="cmd"><summary>*/10 * * * * /root/ketsync/ketsync watch</summary><div class="code"><pre>*/10 * * * * /root/ketsync/ketsync watch
+30 7 * * * /root/ketsync/ketsync watch --digest</pre></div></details></li>
+  </ol>
+  <div class="tip"><p><b>ความเงียบก็ถูกเฝ้า</b> ถ้าตั้ง KS_WATCH_HEALTHCHECK ไว้
+     เฉพาะรอบที่ส่งเมลสำเร็จเท่านั้นที่ ping — watch ตายหรือเมลพัง = ping หาย =
+     healthchecks.io ร้องแทน วิธีอ่านเมลอยู่ใน <a href="03-daily.html">03-daily</a></p></div>
+</section>
+
 <section id="s11">
-  <div class="eyebrow"><span class="num">12</span><h2>เจอแบบนี้ แปลว่าอะไร ทำไง</h2></div>
+  <div class="eyebrow"><span class="num">13</span><h2>เจอแบบนี้ แปลว่าอะไร ทำไง</h2></div>
   <p>โปรแกรมนี้เลือกที่จะ “ปฏิเสธเสียงดัง” มากกว่า “ทำต่อเงียบๆ” เจอ error ส่วนใหญ่จึงแปลว่ามันกันไว้ให้แล้ว
      ไม่ใช่ว่าพัง</p>
   <table>
@@ -468,7 +502,7 @@ tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div></details>
 </section>
 
 <section id="s12">
-  <div class="eyebrow"><span class="num">13</span><h2>ตรวจครั้งสุดท้าย</h2></div>
+  <div class="eyebrow"><span class="num">14</span><h2>ตรวจครั้งสุดท้าย</h2></div>
   <p>ตอบว่าใช่ได้ครบทุกข้อ ถือว่าติดตั้งเสร็จ</p>
   <table>
     <tr><th>ข้อ</th><th>เช็กยังไง</th></tr>
@@ -483,6 +517,7 @@ tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div></details>
     <tr><td>ของจริง 1 ตัวผ่าน</td><td class="m">./ketsync replica --ctid 105</td></tr>
     <tr><td>cron ใส่แล้ว ทีละ lane</td><td class="m">crontab -l</td></tr>
     <tr><td>เห็นผลใน status</td><td class="m">./ketsync status</td></tr>
+    <tr><td>เมลทดสอบของ watch ถึงจริง</td><td class="m">./ketsync watch --dry-run</td></tr>
   </table>
   <div class="ok"><p><b>สิ่งที่ควรทำเดือนละครั้ง</b> สั่ง
      <code class="inl">./ketsync failback --list</code> ดูเฉยๆ ไม่แตะอะไร
@@ -490,10 +525,12 @@ tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div></details>
 </section>
 
 <footer>
-  อ่านต่อ: <code class="inl">docs/index.html</code> สารบัญคู่มือทั้งชุด ·
-  <code class="inl">docs/start-here.html</code> ใช้งานประจำวัน ·
-
-  <code class="inl">docs/decisions.md</code> เหตุผลเบื้องหลังทุกการตัดสินใจ
+  <a href="index.html">สารบัญ</a> ·
+  <a href="01-what-is-this.html">01 ระบบนี้คืออะไร</a> ·
+  <a href="03-daily.html">03 งานประจำวัน</a> ·
+  <a href="04-drill.html">04 ซ้อมภัยพิบัติ</a> ·
+  <a href="05-disaster-day.html">05 วันเกิดเหตุ</a> ·
+  <a href="06-reference.html">06 อ้างอิง</a>
 </footer>
 
 </div>

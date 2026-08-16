@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>คู่มือทั้งชุด — ketsync</title>
+<title>04 — The drill — ketsync</title>
 <style>
   :root{
     --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
@@ -113,80 +113,112 @@
 
 <div class="topbar">
   <div class="in">
-    <span class="name">ketsync</span>
-    <a href="#ladder">อ่านตามลำดับ</a>
-    <a href="#find">หาเรื่องที่ต้องการ</a>
-    <a href="#appendix">ภาคผนวก</a>
+    <span class="name">04</span>
+    <a href="#why">preconditions</a>
+    <a href="#kill">1 kill</a>
+    <a href="#watchmail">2 mail</a>
+    <a href="#dr">3 into DR</a>
+    <a href="#back">4 back</a>
   </div>
 </div>
 
 <div class="wrap">
 
 <header class="doc">
-  <h1>คู่มือทั้งชุด</h1>
-  <p>หกเล่ม เรียงตามชีวิตจริงของระบบ — เลือกจากสิ่งที่กำลังจะทำ ไม่ใช่จากชื่อไฟล์</p>
-  <div class="where">ทุกเล่มเป็นไฟล์ HTML ไฟล์เดียวจบ เปิดจากเครื่องไหนก็ได้ ไม่ต้องต่อเน็ต</div>
+  <h1>04 — The drill</h1>
+  <p>Kill the storage with iptables and walk the whole loop — the recipe from the real pass</p>
+  <div class="where">Test CTs only. Read step 0 first.</div>
 </header>
 
 
-<section id="ladder">
-  <div class="eyebrow"><span class="num">1</span><h2>อ่านตามลำดับ 01 &rarr; 06</h2></div>
-  <p>หกเล่ม เรียงตามชีวิตจริงของระบบ — รู้จัก ติดตั้ง ใช้ทุกวัน ซ้อม วันเกิดเหตุ และเปิดค้นอ้างอิง
-     เล่มไหนจบในตัว ไม่ต้องอ่านเล่มอื่นก่อน</p>
-  <table>
-    <tr><th>เล่ม</th><th>เปิดตอนไหน</th><th>ใช้เวลา</th></tr>
-    <tr><td class="m"><a href="01-what-is-this.html">01-what-is-this</a></td>
-        <td>วันแรก — เครื่อง 4 ตัวต่อกันยังไง เลข 3 ชุดคืออะไร</td><td>5 นาที</td></tr>
-    <tr><td class="m"><a href="02-install.html">02-install</a></td>
-        <td>ตั้งระบบจากศูนย์จนก๊อปรอบแรกเขียว ทุกขั้นมีวิธีเช็ก</td><td>ทำตามทีละขั้น</td></tr>
-    <tr><td class="m"><a href="03-daily.html">03-daily</a></td>
-        <td>งานประจำวัน — cron, doctor, เมลจาก watch, เพิ่ม CT ใหม่</td><td>อ่านรวดเดียว</td></tr>
-    <tr><td class="m"><a href="04-drill.html">04-drill</a></td>
-        <td>ซ้อมดับ storage จริงๆ กับ CT ทดสอบ ตามสูตรที่เคยซ้อมจริง</td><td>ครึ่งวัน</td></tr>
-    <tr><td class="m"><a href="05-disaster-day.html">05-disaster-day</a></td>
-        <td>เครื่อง storage ตาย — หน้าที่เปิดตอนตี 3 หกขั้นจนกลับบ้าน</td><td>อ่านล่วงหน้า 10 นาที</td></tr>
-    <tr><td class="m"><a href="06-reference.html">06-reference</a></td>
-        <td>เปิดค้น — ทุก guard ทุกคำปฏิเสธ ทุก flag ทุกคีย์ conf</td><td>ไม่ต้องอ่านเรียง</td></tr>
-  </table>
-  <div class="tip"><p>ฉบับภาษาอังกฤษอยู่ที่ <code class="inl">docs/en/</code> โครงเดียวกันหน้าต่อหน้า
-     ฉบับไทยคือฉบับหลัก</p></div>
+<section id="why">
+  <div class="eyebrow"><span class="num">0</span><h2>Preconditions</h2></div>
+  <div class="stop"><p><b>Test CTs only.</b> Cutting the storage kills I/O for every CT on it,
+     not just the ones you meant. A fleet with customer CTs on that storage rehearses with
+     <code class="inl">--dry-run</code> only.</p></div>
+  <ul class="clean">
+    <li>doctor fully green, last replica round failed=0</li>
+    <li><code class="inl">conf/fleet.tsv</code> has complete rows for the drill CTs</li>
+    <li>watch configured — the drill proves the mail too</li>
+  </ul>
+  <p>Every step below ran for real on this fleet (last full pass 2026-08-16, CT 110/120).</p>
 </section>
 
-<section id="find">
-  <div class="eyebrow"><span class="num">2</span><h2>หาเรื่องที่ต้องการเร็วๆ</h2></div>
-  <table>
-    <tr><th>อยากทำ</th><th>เปิด</th></tr>
-    <tr><td>เพิ่ม CT เข้าไปในรายการก๊อป</td><td class="m">03-daily</td></tr>
-    <tr><td>ตั้งเมลเตือน (watch)</td><td class="m">02-install ขั้นสุดท้าย</td></tr>
-    <tr><td>เมลจาก watch มาถึง อ่านยังไง</td><td class="m">03-daily</td></tr>
-    <tr><td>เจอคำว่า FORKED</td><td class="m">03-daily</td></tr>
-    <tr><td>เครื่อง storage ตายอยู่ตอนนี้</td><td class="m">05-disaster-day</td></tr>
-    <tr><td>เอาข้อมูลกลับหลัง storage ฟื้น</td><td class="m">05-disaster-day ขั้น 4-6</td></tr>
-    <tr><td>เจอ GUARD อะไรสักอย่างแล้วไม่เข้าใจ</td><td class="m">06-reference</td></tr>
-    <tr><td>อยากรู้ว่าทำไมออกแบบแบบนี้</td><td class="m">docs/decisions.md</td></tr>
-  </table>
-  <div class="ok"><p><b>ถ้าหาไม่เจอ</b> สั่ง <span class="m">./ketsync doctor</span> ก่อน
-     มันตอบคำถาม &ldquo;ตอนนี้อะไรยังไม่ต่อกัน&rdquo; ได้เร็วกว่าการไล่อ่าน และไม่แตะอะไรเลย</p></div>
+<section id="kill">
+  <div class="eyebrow"><span class="num">1</span><h2>Kill the storage, artificially</h2></div>
+  <details class="cmd"><summary>iptables DROP on EVERY node</summary><div class="code"><pre><span class="c"># on EVERY compute node AND the backup node</span>
+iptables -I OUTPUT -d 10.100.1.17 -j DROP
+iptables -I INPUT  -s 10.100.1.17 -j DROP</pre></div></details>
+  <p>Every node — a node you skip still sees the storage alive, and its E2 refuses (correctly).</p>
 </section>
 
-<section id="appendix">
-  <div class="eyebrow"><span class="num">3</span><h2>ภาคผนวก — เปิดเฉพาะตอนใช้</h2></div>
-  <table>
-    <tr><th>ไฟล์</th><th>คืออะไร</th></tr>
-    <tr><td class="m">how-it-works.html</td><td>แผนที่ละเอียดทั้งระบบ ไม่มีคำสั่งเลยสักบรรทัด อ่านตอนว่าง</td></tr>
-    <tr><td class="m">c2v-el.html</td><td>แปลง CT เป็น VM สาย EL (Rocky, Alma, CentOS)</td></tr>
-    <tr><td class="m">c2v-debian.html</td><td>อันเดียวกัน สาย Debian / Ubuntu</td></tr>
-    <tr><td class="m">../decisions.md</td><td>เหตุผลเบื้องหลังทุกด่าน หลายข้อมาจากเรื่องที่พลาดจริง</td></tr>
-    <tr><td class="m">../state-schema.md</td><td>สัญญาของไฟล์ state สำหรับคนแก้โค้ด</td></tr>
-  </table>
+<section id="watchmail">
+  <div class="eyebrow"><span class="num">2</span><h2>Wait for the mail</h2></div>
+  <p>Within ~10 minutes watch should RAISE. Wait for it — the first half of the drill is
+     proving the fleet tells you by itself.</p>
+</section>
+
+<section id="dr">
+  <div class="eyebrow"><span class="num">3</span><h2>Into DR, one command from the backup node</h2></div>
+  <details class="cmd"><summary>./ketsync distribute --all</summary><div class="code"><pre>cd /root/ketsync
+./ketsync distribute --all --dry-run
+./ketsync distribute --all</pre></div></details>
+  <p>Expected, per node then per CT (from the real 2026-08-16 pass): E2 proves the storage dead,
+     the storage is disabled and unmounted, the CT gets 30s to stop, pct never answers (rc=124),
+     the CT is ISOLATED onto vmbr99 instead, and the stand-in is placed:</p>
+  <div class="out">[110] pct itself never returned (rc=124) - isolating CT 110 instead
+[110] <span class="g">ISOLATED</span>: net0 now on vmbr99, verified from /sys/class/net
+[110] placed: CT 9110 on pve-r32, local-lvm:vm-9110-disk-0, rsync rc=0
+[110]     ssh root@10.100.1.32 pct start 9110</div>
+  <div class="tip"><p><b>The CTs not stopping is correct.</b> Their processes sit in D state on
+     I/O that never returns; the shutdown signal is queued. Isolation removes the hazard DR
+     actually cares about — two machines answering one IP. When the storage returns, these
+     CTs die on their own as the queued signal lands.</p></div>
+  <p>Start the stand-ins by hand, verify the service actually answers.</p>
+</section>
+
+<section id="back">
+  <div class="eyebrow"><span class="num">4</span><h2>The way back — recall, then recover</h2></div>
+  <ol class="steps">
+    <li>Stop the stand-ins, pull their last delta into the copies (backup node)
+      <details class="cmd"><summary>pct shutdown 9xxx → recall --all --final</summary><div class="code"><pre>ssh root@10.100.1.32 pct shutdown 9110
+ssh root@10.100.1.33 pct shutdown 9120
+./ketsync recall --all --final</pre></div></details></li>
+    <li>Let the storage back — remove the iptables rules on every node
+      <details class="cmd"><summary>iptables -D ...</summary><div class="code"><pre>iptables -D OUTPUT -d 10.100.1.17 -j DROP
+iptables -D INPUT  -s 10.100.1.17 -j DROP</pre></div></details></li>
+    <li>The whole way home, one command (storage node)
+      <details class="cmd"><summary>./ketsync recover --all --destroy</summary><div class="code"><pre>cd /root/ketsync
+./ketsync recover --all --dry-run
+./ketsync recover --all --destroy</pre></div></details>
+      <p>restore the storages &rarr; fsck what needs it &rarr; failback --final &rarr; restore
+         networks &rarr; destroy the 9xxx &rarr; rm PAUSE &rarr; first replica round, failed=0.
+         It ends by printing the <code class="inl">pct start</code> lines.</p></li>
+    <li>Start the real CTs, close the drill
+      <details class="cmd"><summary>pct start + doctor</summary><div class="code"><pre>ssh root@10.100.1.32 pct start 110
+ssh root@10.100.1.33 pct start 120
+./ketsync doctor      <span class="c"># must end green, "nothing left over"</span></pre></div></details></li>
+  </ol>
+  <div class="ok"><p><b>The drill passes when</b> doctor is green, the files inside the real CTs
+     are intact, and watch mails CLEARED — three angles on the same answer.</p></div>
+</section>
+
+<section id="learn">
+  <div class="eyebrow"><span class="num">5</span><h2>What the real pass taught</h2></div>
+  <ul class="clean">
+    <li>Failing to stop a CT on dead storage is <b>normal</b> — grace, then isolate, is the design.</li>
+    <li>One rsync rc=23 is the snapshot transient; the next round picks it up. Twice on the same CT is real.</li>
+    <li>While a 9xxx serves, the nightly round stays red on that CT (R13) — that is the system saying DR is not over, not a fault.</li>
+    <li>Write the timings down; next time they answer "how much longer".</li>
+  </ul>
 </section>
 <footer>
-  <a href="01-what-is-this.html">01 ระบบนี้คืออะไร</a> ·
-  <a href="02-install.html">02 ติดตั้ง</a> ·
-  <a href="03-daily.html">03 งานประจำวัน</a> ·
-  <a href="04-drill.html">04 ซ้อมภัยพิบัติ</a> ·
-  <a href="05-disaster-day.html">05 วันเกิดเหตุ</a> ·
-  <a href="06-reference.html">06 อ้างอิง</a>
+  <a href="index.html">contents</a> ·
+  <a href="01-what-is-this.html">01 what is this</a> ·
+  <a href="02-install.html">02 install</a> ·
+  <a href="03-daily.html">03 daily</a> ·
+  <a href="05-disaster-day.html">05 disaster day</a> ·
+  <a href="06-reference.html">06 reference</a>
 </footer>
 
 </div>
@@ -216,12 +248,12 @@
   var all = document.querySelectorAll('details.cmd');
   if(all.length){
     var b=document.createElement('button');
-    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    b.className='allcmds'; b.type='button'; b.textContent='expand all commands';
     var open=false;
     b.addEventListener('click',function(){
       open=!open;
       all.forEach(function(d){ d.open=open; });
-      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+      b.textContent = open ? 'collapse all commands' : 'expand all commands';
     });
     var first=document.querySelector('header.doc');
     if(first) first.parentNode.insertBefore(b, first.nextSibling);

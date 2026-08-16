@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>คู่มือทั้งชุด — ketsync</title>
+<title>05 — Disaster day — ketsync</title>
 <style>
   :root{
     --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
@@ -113,80 +113,113 @@
 
 <div class="topbar">
   <div class="in">
-    <span class="name">ketsync</span>
-    <a href="#ladder">อ่านตามลำดับ</a>
-    <a href="#find">หาเรื่องที่ต้องการ</a>
-    <a href="#appendix">ภาคผนวก</a>
+    <span class="name">05</span>
+    <a href="#s0">0 is it dead</a>
+    <a href="#s1">1 evacuate</a>
+    <a href="#s2">2 place</a>
+    <a href="#s3">3 recall</a>
+    <a href="#s4">4 return</a>
+    <a href="#s5">5 cut over</a>
+    <a href="#s6">6 clean up</a>
   </div>
 </div>
 
 <div class="wrap">
 
 <header class="doc">
-  <h1>คู่มือทั้งชุด</h1>
-  <p>หกเล่ม เรียงตามชีวิตจริงของระบบ — เลือกจากสิ่งที่กำลังจะทำ ไม่ใช่จากชื่อไฟล์</p>
-  <div class="where">ทุกเล่มเป็นไฟล์ HTML ไฟล์เดียวจบ เปิดจากเครื่องไหนก็ได้ ไม่ต้องต่อเน็ต</div>
+  <h1>05 — Disaster day</h1>
+  <p>The storage node is dead. Six stages, all the way home — condensed; the Thai edition carries the full reasoning</p>
+  <div class="where">Type everything on the backup node (10.100.1.9) unless a step says otherwise</div>
 </header>
 
 
-<section id="ladder">
-  <div class="eyebrow"><span class="num">1</span><h2>อ่านตามลำดับ 01 &rarr; 06</h2></div>
-  <p>หกเล่ม เรียงตามชีวิตจริงของระบบ — รู้จัก ติดตั้ง ใช้ทุกวัน ซ้อม วันเกิดเหตุ และเปิดค้นอ้างอิง
-     เล่มไหนจบในตัว ไม่ต้องอ่านเล่มอื่นก่อน</p>
-  <table>
-    <tr><th>เล่ม</th><th>เปิดตอนไหน</th><th>ใช้เวลา</th></tr>
-    <tr><td class="m"><a href="01-what-is-this.html">01-what-is-this</a></td>
-        <td>วันแรก — เครื่อง 4 ตัวต่อกันยังไง เลข 3 ชุดคืออะไร</td><td>5 นาที</td></tr>
-    <tr><td class="m"><a href="02-install.html">02-install</a></td>
-        <td>ตั้งระบบจากศูนย์จนก๊อปรอบแรกเขียว ทุกขั้นมีวิธีเช็ก</td><td>ทำตามทีละขั้น</td></tr>
-    <tr><td class="m"><a href="03-daily.html">03-daily</a></td>
-        <td>งานประจำวัน — cron, doctor, เมลจาก watch, เพิ่ม CT ใหม่</td><td>อ่านรวดเดียว</td></tr>
-    <tr><td class="m"><a href="04-drill.html">04-drill</a></td>
-        <td>ซ้อมดับ storage จริงๆ กับ CT ทดสอบ ตามสูตรที่เคยซ้อมจริง</td><td>ครึ่งวัน</td></tr>
-    <tr><td class="m"><a href="05-disaster-day.html">05-disaster-day</a></td>
-        <td>เครื่อง storage ตาย — หน้าที่เปิดตอนตี 3 หกขั้นจนกลับบ้าน</td><td>อ่านล่วงหน้า 10 นาที</td></tr>
-    <tr><td class="m"><a href="06-reference.html">06-reference</a></td>
-        <td>เปิดค้น — ทุก guard ทุกคำปฏิเสธ ทุก flag ทุกคีย์ conf</td><td>ไม่ต้องอ่านเรียง</td></tr>
-  </table>
-  <div class="tip"><p>ฉบับภาษาอังกฤษอยู่ที่ <code class="inl">docs/en/</code> โครงเดียวกันหน้าต่อหน้า
-     ฉบับไทยคือฉบับหลัก</p></div>
+<section id="s0">
+  <div class="eyebrow"><span class="num">0</span><h2>Before anything: is it really dead?</h2></div>
+  <details class="cmd"><summary>ping + ssh probe from the backup node</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
+ping -c3 10.100.1.17
+ssh -o ConnectTimeout=5 root@10.100.1.17 true; echo "rc=$?"</pre></div></details>
+  <ul class="clean">
+    <li>Still answers? Stop here and fix the real cause — the copies are all still there.</li>
+    <li>Half-alive? <code class="inl">touch /root/ketsync/engines/PAUSE</code> on it first, so the
+        next cron tick cannot overwrite the copies you are about to lean on.</li>
+  </ul>
+  <p>If a <b>[ketsync] INFRA</b> mail from watch brought you here: yes, this is the page.
+     Copies are 15 minutes old at worst; work lost is bounded. Nothing here starts a container —
+     every start is yours.</p>
 </section>
 
-<section id="find">
-  <div class="eyebrow"><span class="num">2</span><h2>หาเรื่องที่ต้องการเร็วๆ</h2></div>
-  <table>
-    <tr><th>อยากทำ</th><th>เปิด</th></tr>
-    <tr><td>เพิ่ม CT เข้าไปในรายการก๊อป</td><td class="m">03-daily</td></tr>
-    <tr><td>ตั้งเมลเตือน (watch)</td><td class="m">02-install ขั้นสุดท้าย</td></tr>
-    <tr><td>เมลจาก watch มาถึง อ่านยังไง</td><td class="m">03-daily</td></tr>
-    <tr><td>เจอคำว่า FORKED</td><td class="m">03-daily</td></tr>
-    <tr><td>เครื่อง storage ตายอยู่ตอนนี้</td><td class="m">05-disaster-day</td></tr>
-    <tr><td>เอาข้อมูลกลับหลัง storage ฟื้น</td><td class="m">05-disaster-day ขั้น 4-6</td></tr>
-    <tr><td>เจอ GUARD อะไรสักอย่างแล้วไม่เข้าใจ</td><td class="m">06-reference</td></tr>
-    <tr><td>อยากรู้ว่าทำไมออกแบบแบบนี้</td><td class="m">docs/decisions.md</td></tr>
-  </table>
-  <div class="ok"><p><b>ถ้าหาไม่เจอ</b> สั่ง <span class="m">./ketsync doctor</span> ก่อน
-     มันตอบคำถาม &ldquo;ตอนนี้อะไรยังไม่ต่อกัน&rdquo; ได้เร็วกว่าการไล่อ่าน และไม่แตะอะไรเลย</p></div>
+<section id="s1">
+  <div class="eyebrow"><span class="num">1</span><h2>Get production out of the way</h2></div>
+  <details class="cmd"><summary>./ketsync evacuate — per node or the fleet</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
+./ketsync evacuate --all --dry-run
+./ketsync evacuate --node 10.100.1.32
+./ketsync evacuate --all</pre></div></details>
+  <p>Per node, in the only order that works: disable the dead storage, force the mount to fail,
+     restart pvestatd, then stop the CTs on it — a CT that will not stop is moved onto vmbr99
+     (ISOLATED) instead, with its real bridge written down. E2 refuses a storage that still
+     answers; healthy storages on the same node are never touched.</p>
 </section>
 
-<section id="appendix">
-  <div class="eyebrow"><span class="num">3</span><h2>ภาคผนวก — เปิดเฉพาะตอนใช้</h2></div>
-  <table>
-    <tr><th>ไฟล์</th><th>คืออะไร</th></tr>
-    <tr><td class="m">how-it-works.html</td><td>แผนที่ละเอียดทั้งระบบ ไม่มีคำสั่งเลยสักบรรทัด อ่านตอนว่าง</td></tr>
-    <tr><td class="m">c2v-el.html</td><td>แปลง CT เป็น VM สาย EL (Rocky, Alma, CentOS)</td></tr>
-    <tr><td class="m">c2v-debian.html</td><td>อันเดียวกัน สาย Debian / Ubuntu</td></tr>
-    <tr><td class="m">../decisions.md</td><td>เหตุผลเบื้องหลังทุกด่าน หลายข้อมาจากเรื่องที่พลาดจริง</td></tr>
-    <tr><td class="m">../state-schema.md</td><td>สัญญาของไฟล์ state สำหรับคนแก้โค้ด</td></tr>
-  </table>
+<section id="s2">
+  <div class="eyebrow"><span class="num">2</span><h2>Place the stand-ins</h2></div>
+  <details class="cmd"><summary>./ketsync distribute — list, one, all</summary><div class="code"><pre>./ketsync distribute --list
+./ketsync distribute --ctid 300 --dry-run
+./ketsync distribute --ctid 300
+./ketsync distribute --all</pre></div></details>
+  <p>Copy 8300 &rarr; CT 9300 on the compute node <code class="inl">fleet.tsv</code> names,
+     network taken from production's own config (or the isolate record). It prints the
+     <code class="inl">pct start 9300</code> for you to type, per CT, in your priority order.</p>
+</section>
+
+<section id="s3">
+  <div class="eyebrow"><span class="num">3</span><h2>Copy back while the stand-ins serve</h2></div>
+  <details class="cmd"><summary>./ketsync recall --all — repeatable</summary><div class="code"><pre>./ketsync recall --list
+./ketsync recall --all      <span class="c"># 9300 -&gt; 8300, run as often as you like</span></pre></div></details>
+  <div class="stop"><p><b>Do not skip this.</b> From the moment 9300 serves, every customer write
+     lives on one compute disk only. recall closes that hole; watch the
+     <code class="inl">changed=</code> number shrink.</p></div>
+</section>
+
+<section id="s4">
+  <div class="eyebrow"><span class="num">4</span><h2>The storage node returns</h2></div>
+  <details class="cmd"><summary>PAUSE first, then narrow the gap</summary><div class="code"><pre><span class="c"># on the STORAGE node, immediately after boot</span>
+touch /root/ketsync/engines/PAUSE
+zpool status &amp;&amp; pvesm status &amp;&amp; ./ketsync doctor
+<span class="c"># then, repeatedly, while customers keep working:</span>
+./ketsync recall --all        <span class="c"># on the backup node</span>
+./ketsync failback --all      <span class="c"># on the storage node</span></pre></div></details>
+  <p>R13 already protects every copy that has a live 9xxx — PAUSE is the cheap second fence,
+     and the one <code class="inl">failback --final</code> requires.</p>
+</section>
+
+<section id="s5">
+  <div class="eyebrow"><span class="num">5</span><h2>Cut over, per CT</h2></div>
+  <details class="cmd"><summary>shutdown 9300 → recall --final → failback --final → restore → start</summary><div class="code"><pre>pct shutdown 9300                          <span class="c"># on its compute node</span>
+./ketsync recall --ctid 300 --final        <span class="c"># backup node</span>
+./ketsync failback --ctid 300 --final      <span class="c"># storage node - snapshots first (B7)</span>
+./ketsync restore --ctid 300               <span class="c"># bridge + onboot from the record</span>
+pct start 300                              <span class="c"># a person decides this one</span></pre></div></details>
+  <p>Downtime is the gap between the shutdown and the start — seconds, if stages 3-4 were run.</p>
+</section>
+
+<section id="s6">
+  <div class="eyebrow"><span class="num">6</span><h2>Clean up — or let recover do 4-6 in one command</h2></div>
+  <details class="cmd"><summary>./ketsync recover — the checklist, executed</summary><div class="code"><pre><span class="c"># on the STORAGE node, once every 9xxx is stopped and recall --final ran</span>
+./ketsync recover --list
+./ketsync recover --all              <span class="c"># keeps each 9xxx as a fallback</span>
+./ketsync recover --all --destroy    <span class="c"># the complete return: destroy, unpause, replicate</span></pre></div></details>
+  <p>State-driven and re-runnable: what is already done is skipped and said. A kept 9xxx holds
+     that CT out of replication (R13) until somebody destroys it. watch mails CLEARED when the
+     records are truly gone — no CLEARED means something is left;
+     <code class="inl">./ketsync watch --list</code> names it.</p>
 </section>
 <footer>
-  <a href="01-what-is-this.html">01 ระบบนี้คืออะไร</a> ·
-  <a href="02-install.html">02 ติดตั้ง</a> ·
-  <a href="03-daily.html">03 งานประจำวัน</a> ·
-  <a href="04-drill.html">04 ซ้อมภัยพิบัติ</a> ·
-  <a href="05-disaster-day.html">05 วันเกิดเหตุ</a> ·
-  <a href="06-reference.html">06 อ้างอิง</a>
+  <a href="index.html">contents</a> ·
+  <a href="01-what-is-this.html">01 what is this</a> ·
+  <a href="02-install.html">02 install</a> ·
+  <a href="03-daily.html">03 daily</a> ·
+  <a href="04-drill.html">04 drill</a> ·
+  <a href="06-reference.html">06 reference</a>
 </footer>
 
 </div>
@@ -216,12 +249,12 @@
   var all = document.querySelectorAll('details.cmd');
   if(all.length){
     var b=document.createElement('button');
-    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    b.className='allcmds'; b.type='button'; b.textContent='expand all commands';
     var open=false;
     b.addEventListener('click',function(){
       open=!open;
       all.forEach(function(d){ d.open=open; });
-      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+      b.textContent = open ? 'collapse all commands' : 'expand all commands';
     });
     var first=document.querySelector('header.doc');
     if(first) first.parentNode.insertBefore(b, first.nextSibling);

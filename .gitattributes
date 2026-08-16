@@ -14,3 +14,4 @@ Makefile  text eol=lf
 # generated / vendored, so GitHub's language stats do not call this an HTML
 # project because of one very long operator guide
 docs/th/*.html linguist-documentation
+docs/en/*.html linguist-documentation

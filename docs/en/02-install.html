@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>คู่มือทั้งชุด — ketsync</title>
+<title>02 — Install from zero — ketsync</title>
 <style>
   :root{
     --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
@@ -113,80 +113,142 @@
 
 <div class="topbar">
   <div class="in">
-    <span class="name">ketsync</span>
-    <a href="#ladder">อ่านตามลำดับ</a>
-    <a href="#find">หาเรื่องที่ต้องการ</a>
-    <a href="#appendix">ภาคผนวก</a>
+    <span class="name">02</span>
+    <a href="#s1">cluster</a>
+    <a href="#s2">ssh</a>
+    <a href="#s3">storage</a>
+    <a href="#s4">bridge</a>
+    <a href="#s5">files</a>
+    <a href="#s6">first copy</a>
+    <a href="#s7">mail</a>
   </div>
 </div>
 
 <div class="wrap">
 
 <header class="doc">
-  <h1>คู่มือทั้งชุด</h1>
-  <p>หกเล่ม เรียงตามชีวิตจริงของระบบ — เลือกจากสิ่งที่กำลังจะทำ ไม่ใช่จากชื่อไฟล์</p>
-  <div class="where">ทุกเล่มเป็นไฟล์ HTML ไฟล์เดียวจบ เปิดจากเครื่องไหนก็ได้ ไม่ต้องต่อเน็ต</div>
+  <h1>02 — Install from zero</h1>
+  <p>Cluster, ssh, one storage name, the dead-end bridge, three files, first green copy, alert mail</p>
+  <div class="where">Condensed mirror - the Thai edition carries the full detail (PBS setup included). Every step says which machine.</div>
 </header>
 
 
-<section id="ladder">
-  <div class="eyebrow"><span class="num">1</span><h2>อ่านตามลำดับ 01 &rarr; 06</h2></div>
-  <p>หกเล่ม เรียงตามชีวิตจริงของระบบ — รู้จัก ติดตั้ง ใช้ทุกวัน ซ้อม วันเกิดเหตุ และเปิดค้นอ้างอิง
-     เล่มไหนจบในตัว ไม่ต้องอ่านเล่มอื่นก่อน</p>
-  <table>
-    <tr><th>เล่ม</th><th>เปิดตอนไหน</th><th>ใช้เวลา</th></tr>
-    <tr><td class="m"><a href="01-what-is-this.html">01-what-is-this</a></td>
-        <td>วันแรก — เครื่อง 4 ตัวต่อกันยังไง เลข 3 ชุดคืออะไร</td><td>5 นาที</td></tr>
-    <tr><td class="m"><a href="02-install.html">02-install</a></td>
-        <td>ตั้งระบบจากศูนย์จนก๊อปรอบแรกเขียว ทุกขั้นมีวิธีเช็ก</td><td>ทำตามทีละขั้น</td></tr>
-    <tr><td class="m"><a href="03-daily.html">03-daily</a></td>
-        <td>งานประจำวัน — cron, doctor, เมลจาก watch, เพิ่ม CT ใหม่</td><td>อ่านรวดเดียว</td></tr>
-    <tr><td class="m"><a href="04-drill.html">04-drill</a></td>
-        <td>ซ้อมดับ storage จริงๆ กับ CT ทดสอบ ตามสูตรที่เคยซ้อมจริง</td><td>ครึ่งวัน</td></tr>
-    <tr><td class="m"><a href="05-disaster-day.html">05-disaster-day</a></td>
-        <td>เครื่อง storage ตาย — หน้าที่เปิดตอนตี 3 หกขั้นจนกลับบ้าน</td><td>อ่านล่วงหน้า 10 นาที</td></tr>
-    <tr><td class="m"><a href="06-reference.html">06-reference</a></td>
-        <td>เปิดค้น — ทุก guard ทุกคำปฏิเสธ ทุก flag ทุกคีย์ conf</td><td>ไม่ต้องอ่านเรียง</td></tr>
-  </table>
-  <div class="tip"><p>ฉบับภาษาอังกฤษอยู่ที่ <code class="inl">docs/en/</code> โครงเดียวกันหน้าต่อหน้า
-     ฉบับไทยคือฉบับหลัก</p></div>
+<section id="s1">
+  <div class="eyebrow"><span class="num">1</span><h2>Cluster the compute + backup nodes</h2></div>
+  <p>The storage node stays out of the cluster, on purpose.</p>
+  <details class="cmd"><summary>pvecm create / add / qdevice</summary><div class="code"><pre><span class="c"># first compute node</span>
+pvecm create tomato
+<span class="c"># every other compute node, and the backup node</span>
+pvecm add 10.100.1.32
+<span class="c"># a third vote on a machine that is NOT a member, then on every member:</span>
+apt install -y corosync-qnetd          <span class="c"># voter machine</span>
+apt install -y corosync-qdevice        <span class="c"># every member</span>
+pvecm qdevice setup 10.100.1.40</pre></div></details>
+  <p><b>Verify:</b> <code class="inl">pvecm status</code> says <code class="inl">Quorate: Yes</code>
+     and lists every member.</p>
 </section>
 
-<section id="find">
-  <div class="eyebrow"><span class="num">2</span><h2>หาเรื่องที่ต้องการเร็วๆ</h2></div>
-  <table>
-    <tr><th>อยากทำ</th><th>เปิด</th></tr>
-    <tr><td>เพิ่ม CT เข้าไปในรายการก๊อป</td><td class="m">03-daily</td></tr>
-    <tr><td>ตั้งเมลเตือน (watch)</td><td class="m">02-install ขั้นสุดท้าย</td></tr>
-    <tr><td>เมลจาก watch มาถึง อ่านยังไง</td><td class="m">03-daily</td></tr>
-    <tr><td>เจอคำว่า FORKED</td><td class="m">03-daily</td></tr>
-    <tr><td>เครื่อง storage ตายอยู่ตอนนี้</td><td class="m">05-disaster-day</td></tr>
-    <tr><td>เอาข้อมูลกลับหลัง storage ฟื้น</td><td class="m">05-disaster-day ขั้น 4-6</td></tr>
-    <tr><td>เจอ GUARD อะไรสักอย่างแล้วไม่เข้าใจ</td><td class="m">06-reference</td></tr>
-    <tr><td>อยากรู้ว่าทำไมออกแบบแบบนี้</td><td class="m">docs/decisions.md</td></tr>
-  </table>
-  <div class="ok"><p><b>ถ้าหาไม่เจอ</b> สั่ง <span class="m">./ketsync doctor</span> ก่อน
-     มันตอบคำถาม &ldquo;ตอนนี้อะไรยังไม่ต่อกัน&rdquo; ได้เร็วกว่าการไล่อ่าน และไม่แตะอะไรเลย</p></div>
+<section id="s2">
+  <div class="eyebrow"><span class="num">2</span><h2>Passwordless ssh from the storage node</h2></div>
+  <details class="cmd"><summary>ssh-keygen + ssh-copy-id to every machine</summary><div class="code"><pre><span class="c"># on the storage node</span>
+ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519
+ssh-copy-id root@10.100.1.9     <span class="c"># backup - REQUIRED</span>
+ssh-copy-id root@10.100.1.32
+ssh-copy-id root@10.100.1.33</pre></div></details>
+  <p><b>Verify:</b> every line prints OK:</p>
+  <details class="cmd"><summary>for ip in ...; do ssh -o BatchMode=yes ...</summary><div class="code"><pre>for ip in 10.100.1.9 10.100.1.32 10.100.1.33; do
+  printf '%s ' "$ip"; ssh -o BatchMode=yes root@$ip true &amp;&amp; echo OK || echo FAIL
+done</pre></div></details>
 </section>
 
-<section id="appendix">
-  <div class="eyebrow"><span class="num">3</span><h2>ภาคผนวก — เปิดเฉพาะตอนใช้</h2></div>
+<section id="s3">
+  <div class="eyebrow"><span class="num">3</span><h2>One storage name, two sides</h2></div>
+  <p>Same id on both sides, different type — a CT's config remembers only the name.</p>
+  <details class="cmd"><summary>pvesm add dir / nfs tank-hdd-nas</summary><div class="code"><pre><span class="c"># storage node - the real files</span>
+pvesm add dir tank-hdd-nas --path /tank/hosting --is_mountpoint yes --content images,rootdir
+<span class="c"># EVERY compute node - same id, over NFS</span>
+pvesm add nfs tank-hdd-nas --server 10.100.1.17 --export /tank/hosting --content images,rootdir</pre></div></details>
+  <p><b>Verify:</b> <code class="inl">pvesm status | grep tank-hdd-nas</code> says active on both sides.</p>
+</section>
+
+<section id="s4">
+  <div class="eyebrow"><span class="num">4</span><h2>The dead-end bridge, on backup and every compute node</h2></div>
+  <p>Copies live on an island: a bridge with no uplink, so a copy started by mistake answers nobody.</p>
+  <details class="cmd"><summary>vmbr99 into /etc/network/interfaces</summary><div class="code"><pre>cat &gt;&gt; /etc/network/interfaces &lt;&lt;'EOF'
+
+auto vmbr99
+iface vmbr99 inet manual
+    bridge-ports none
+    bridge-stp off
+    bridge-fd 0
+EOF
+ifup vmbr99</pre></div></details>
+  <p><b>Verify:</b> <code class="inl">ls /sys/class/net/vmbr99/brif/</code> is EMPTY on every node.
+     On an OVS node build an OVS bridge instead and check
+     <code class="inl">ovs-vsctl --timeout=5 list-ifaces vmbr99</code>.</p>
+</section>
+
+<section id="s5">
+  <div class="eyebrow"><span class="num">5</span><h2>Install the tool, fill three files</h2></div>
+  <details class="cmd"><summary>git clone + copy the samples</summary><div class="code"><pre><span class="c"># on the storage node AND the backup node - same path on purpose</span>
+git clone &lt;this repo&gt; /root/ketsync
+cd /root/ketsync
+cp conf/ketsync.conf.sample  conf/ketsync.conf
+cp conf/nodes.tsv.sample     conf/nodes.tsv
+cp conf/fleet.tsv.sample     conf/fleet.tsv
+cp engines/inventory-replica.sample.tsv engines/inventory-replica.tsv</pre></div></details>
   <table>
-    <tr><th>ไฟล์</th><th>คืออะไร</th></tr>
-    <tr><td class="m">how-it-works.html</td><td>แผนที่ละเอียดทั้งระบบ ไม่มีคำสั่งเลยสักบรรทัด อ่านตอนว่าง</td></tr>
-    <tr><td class="m">c2v-el.html</td><td>แปลง CT เป็น VM สาย EL (Rocky, Alma, CentOS)</td></tr>
-    <tr><td class="m">c2v-debian.html</td><td>อันเดียวกัน สาย Debian / Ubuntu</td></tr>
-    <tr><td class="m">../decisions.md</td><td>เหตุผลเบื้องหลังทุกด่าน หลายข้อมาจากเรื่องที่พลาดจริง</td></tr>
-    <tr><td class="m">../state-schema.md</td><td>สัญญาของไฟล์ state สำหรับคนแก้โค้ด</td></tr>
+    <tr><th>file</th><th>what goes in</th></tr>
+    <tr><td class="m">conf/ketsync.conf</td><td>KS_ROLE=master on storage, slave on backup; KS_MASTER_IP=10.100.1.17. Never scp this file between machines.</td></tr>
+    <tr><td class="m">conf/nodes.tsv</td><td>one line per machine: ip TAB role (storage / backup / compute). No name column, on purpose.</td></tr>
+    <tr><td class="m">conf/fleet.tsv</td><td>the DR map: ct, home, dr, dst — every column required, no defaults</td></tr>
+    <tr><td class="m">engines/inventory-replica.tsv</td><td>what to copy nightly: ct + dest pool, every row</td></tr>
   </table>
+</section>
+
+<section id="s6">
+  <div class="eyebrow"><span class="num">6</span><h2>doctor until green, rehearse, then cron</h2></div>
+  <details class="cmd"><summary>./ketsync doctor → dry-run → real → cron</summary><div class="code"><pre>./ketsync doctor                          <span class="c"># fix top to bottom until green</span>
+./ketsync replica --dry-run --ctid 105    <span class="c"># every guard runs, nothing written</span>
+./ketsync replica --ctid 105              <span class="c"># first real copy</span>
+./ketsync replica --storage tank-hdd-nas  <span class="c"># then the whole lane</span></pre></div></details>
+  <details class="cmd"><summary>crontab: one line per lane</summary><div class="code"><pre>*/15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-hdd-nas
+*/15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-ssd-nas</pre></div></details>
+  <p><b>Verify:</b> <code class="inl">./ketsync status</code> shows the round; the log tails clean.</p>
+</section>
+
+<section id="s7">
+  <div class="eyebrow"><span class="num">7</span><h2>Alert mail — the system speaks when nobody is looking</h2></div>
+  <ol class="steps">
+    <li>Point postfix at SendGrid; the key lives in one root-readable file, never in the repo
+      <details class="cmd"><summary>contrib/mail-satellite.sh --relay ... --keyfile ...</summary><div class="code"><pre><span class="c"># on the storage node</span>
+echo 'SG.your-key-here' > /root/.sendgrid.key &amp;&amp; chmod 600 /root/.sendgrid.key
+./contrib/mail-satellite.sh --relay '[smtp.sendgrid.net]:587' \
+    --user apikey --keyfile /root/.sendgrid.key --test you@example.com</pre></div></details></li>
+    <li>Addresses into <code class="inl">conf/ketsync.conf</code>
+      <details class="cmd"><summary>KS_MAIL_* + optional dead-man</summary><div class="code"><pre>KS_MAIL_FROM="ketsync@example.com"
+KS_MAIL_INFRA="infra@example.com"
+KS_MAIL_NODE="node@example.com"
+KS_MAIL_DIGEST="admin@example.com"
+KS_WATCH_HEALTHCHECK="https://hc-ping.com/&lt;uuid&gt;"   <span class="c"># optional</span></pre></div></details></li>
+    <li>Rehearse, then cron
+      <details class="cmd"><summary>watch --dry-run → watch → cron</summary><div class="code"><pre>./ketsync watch --dry-run
+./ketsync watch
+./ketsync watch --digest
+<span class="c"># crontab - watch is read-only, no -y needed</span>
+*/10 * * * * /root/ketsync/ketsync watch
+30 7 * * * /root/ketsync/ketsync watch --digest</pre></div></details></li>
+  </ol>
+  <div class="tip"><p>Only green runs ping the dead-man — a dead watch or a broken transport
+     goes silent, and the silence is the alarm. How to read the mail: <a href="03-daily.html">03-daily</a>.</p></div>
 </section>
 <footer>
-  <a href="01-what-is-this.html">01 ระบบนี้คืออะไร</a> ·
-  <a href="02-install.html">02 ติดตั้ง</a> ·
-  <a href="03-daily.html">03 งานประจำวัน</a> ·
-  <a href="04-drill.html">04 ซ้อมภัยพิบัติ</a> ·
-  <a href="05-disaster-day.html">05 วันเกิดเหตุ</a> ·
-  <a href="06-reference.html">06 อ้างอิง</a>
+  <a href="index.html">contents</a> ·
+  <a href="01-what-is-this.html">01 what is this</a> ·
+  <a href="03-daily.html">03 daily</a> ·
+  <a href="04-drill.html">04 drill</a> ·
+  <a href="05-disaster-day.html">05 disaster day</a> ·
+  <a href="06-reference.html">06 reference</a>
 </footer>
 
 </div>
@@ -216,12 +278,12 @@
   var all = document.querySelectorAll('details.cmd');
   if(all.length){
     var b=document.createElement('button');
-    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    b.className='allcmds'; b.type='button'; b.textContent='expand all commands';
     var open=false;
     b.addEventListener('click',function(){
       open=!open;
       all.forEach(function(d){ d.open=open; });
-      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+      b.textContent = open ? 'collapse all commands' : 'expand all commands';
     });
     var first=document.querySelector('header.doc');
     if(first) first.parentNode.insertBefore(b, first.nextSibling);

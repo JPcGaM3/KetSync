@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>คู่มือทั้งชุด — ketsync</title>
+<title>06 — Reference — ketsync</title>
 <style>
   :root{
     --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
@@ -113,80 +113,116 @@
 
 <div class="topbar">
   <div class="in">
-    <span class="name">ketsync</span>
-    <a href="#ladder">อ่านตามลำดับ</a>
-    <a href="#find">หาเรื่องที่ต้องการ</a>
-    <a href="#appendix">ภาคผนวก</a>
+    <span class="name">06</span>
+    <a href="#exit">exit codes</a>
+    <a href="#flags">flags</a>
+    <a href="#guards">guards</a>
+    <a href="#conf">conf</a>
+    <a href="#files">files</a>
   </div>
 </div>
 
 <div class="wrap">
 
 <header class="doc">
-  <h1>คู่มือทั้งชุด</h1>
-  <p>หกเล่ม เรียงตามชีวิตจริงของระบบ — เลือกจากสิ่งที่กำลังจะทำ ไม่ใช่จากชื่อไฟล์</p>
-  <div class="where">ทุกเล่มเป็นไฟล์ HTML ไฟล์เดียวจบ เปิดจากเครื่องไหนก็ได้ ไม่ต้องต่อเน็ต</div>
+  <h1>06 — Reference</h1>
+  <p>Lookup, never read in order — exit codes, flags, every guard in a line, conf keys, files</p>
+  <div class="where">Every refusal in the system prints its own reason in the log; this page is the fast index</div>
 </header>
 
 
-<section id="ladder">
-  <div class="eyebrow"><span class="num">1</span><h2>อ่านตามลำดับ 01 &rarr; 06</h2></div>
-  <p>หกเล่ม เรียงตามชีวิตจริงของระบบ — รู้จัก ติดตั้ง ใช้ทุกวัน ซ้อม วันเกิดเหตุ และเปิดค้นอ้างอิง
-     เล่มไหนจบในตัว ไม่ต้องอ่านเล่มอื่นก่อน</p>
+<section id="exit">
+  <div class="eyebrow"><span class="num">1</span><h2>Exit codes</h2></div>
   <table>
-    <tr><th>เล่ม</th><th>เปิดตอนไหน</th><th>ใช้เวลา</th></tr>
-    <tr><td class="m"><a href="01-what-is-this.html">01-what-is-this</a></td>
-        <td>วันแรก — เครื่อง 4 ตัวต่อกันยังไง เลข 3 ชุดคืออะไร</td><td>5 นาที</td></tr>
-    <tr><td class="m"><a href="02-install.html">02-install</a></td>
-        <td>ตั้งระบบจากศูนย์จนก๊อปรอบแรกเขียว ทุกขั้นมีวิธีเช็ก</td><td>ทำตามทีละขั้น</td></tr>
-    <tr><td class="m"><a href="03-daily.html">03-daily</a></td>
-        <td>งานประจำวัน — cron, doctor, เมลจาก watch, เพิ่ม CT ใหม่</td><td>อ่านรวดเดียว</td></tr>
-    <tr><td class="m"><a href="04-drill.html">04-drill</a></td>
-        <td>ซ้อมดับ storage จริงๆ กับ CT ทดสอบ ตามสูตรที่เคยซ้อมจริง</td><td>ครึ่งวัน</td></tr>
-    <tr><td class="m"><a href="05-disaster-day.html">05-disaster-day</a></td>
-        <td>เครื่อง storage ตาย — หน้าที่เปิดตอนตี 3 หกขั้นจนกลับบ้าน</td><td>อ่านล่วงหน้า 10 นาที</td></tr>
-    <tr><td class="m"><a href="06-reference.html">06-reference</a></td>
-        <td>เปิดค้น — ทุก guard ทุกคำปฏิเสธ ทุก flag ทุกคีย์ conf</td><td>ไม่ต้องอ่านเรียง</td></tr>
+    <tr><td class="m">0</td><td>nothing needs attention</td></tr>
+    <tr><td class="m">1</td><td>something does — a CT skipped, a round not clean, DR leftovers</td></tr>
+    <tr><td class="m">2</td><td>refused before touching anything</td></tr>
   </table>
-  <div class="tip"><p>ฉบับภาษาอังกฤษอยู่ที่ <code class="inl">docs/en/</code> โครงเดียวกันหน้าต่อหน้า
-     ฉบับไทยคือฉบับหลัก</p></div>
+  <p>A filter that matches no row never exits 0.
+     rsync: 0 and 24 are success, 23 once is the snapshot transient (twice is a damaged image),
+     11 is out of space (the engine grows the image and retries).</p>
 </section>
 
-<section id="find">
-  <div class="eyebrow"><span class="num">2</span><h2>หาเรื่องที่ต้องการเร็วๆ</h2></div>
+<section id="flags">
+  <div class="eyebrow"><span class="num">2</span><h2>One flag set</h2></div>
   <table>
-    <tr><th>อยากทำ</th><th>เปิด</th></tr>
-    <tr><td>เพิ่ม CT เข้าไปในรายการก๊อป</td><td class="m">03-daily</td></tr>
-    <tr><td>ตั้งเมลเตือน (watch)</td><td class="m">02-install ขั้นสุดท้าย</td></tr>
-    <tr><td>เมลจาก watch มาถึง อ่านยังไง</td><td class="m">03-daily</td></tr>
-    <tr><td>เจอคำว่า FORKED</td><td class="m">03-daily</td></tr>
-    <tr><td>เครื่อง storage ตายอยู่ตอนนี้</td><td class="m">05-disaster-day</td></tr>
-    <tr><td>เอาข้อมูลกลับหลัง storage ฟื้น</td><td class="m">05-disaster-day ขั้น 4-6</td></tr>
-    <tr><td>เจอ GUARD อะไรสักอย่างแล้วไม่เข้าใจ</td><td class="m">06-reference</td></tr>
-    <tr><td>อยากรู้ว่าทำไมออกแบบแบบนี้</td><td class="m">docs/decisions.md</td></tr>
+    <tr><td class="m">--all / --ctid</td><td>scope — always the real id; a bare verb refuses</td></tr>
+    <tr><td class="m">--dry-run</td><td>every guard runs, nothing is written</td></tr>
+    <tr><td class="m">--list</td><td>read-only: who is where, what is left</td></tr>
+    <tr><td class="m">--storage</td><td>one lane (what cron uses)</td></tr>
+    <tr><td class="m">--final</td><td>the cutover round — recall needs the 9xxx stopped, failback needs PAUSE</td></tr>
+    <tr><td class="m">--destroy</td><td>remove the 9xxx for good = release R13; only after checking the real one</td></tr>
+    <tr><td class="m">--to / --dst</td><td>override fleet.tsv's placement (distribute)</td></tr>
+    <tr><td class="m">--node</td><td>whole machine, not per CT (evacuate, restore)</td></tr>
+    <tr><td class="m">--digest</td><td>mail doctor's report (watch)</td></tr>
+    <tr><td class="m">-y</td><td>skips the question and nothing else; there is no --force</td></tr>
   </table>
-  <div class="ok"><p><b>ถ้าหาไม่เจอ</b> สั่ง <span class="m">./ketsync doctor</span> ก่อน
-     มันตอบคำถาม &ldquo;ตอนนี้อะไรยังไม่ต่อกัน&rdquo; ได้เร็วกว่าการไล่อ่าน และไม่แตะอะไรเลย</p></div>
 </section>
 
-<section id="appendix">
-  <div class="eyebrow"><span class="num">3</span><h2>ภาคผนวก — เปิดเฉพาะตอนใช้</h2></div>
+<section id="guards">
+  <div class="eyebrow"><span class="num">3</span><h2>Every guard, one line</h2></div>
+  <p>Full reasoning lives in <code class="inl">CLAUDE.md</code> and <code class="inl">../decisions.md</code>.</p>
   <table>
-    <tr><th>ไฟล์</th><th>คืออะไร</th></tr>
-    <tr><td class="m">how-it-works.html</td><td>แผนที่ละเอียดทั้งระบบ ไม่มีคำสั่งเลยสักบรรทัด อ่านตอนว่าง</td></tr>
-    <tr><td class="m">c2v-el.html</td><td>แปลง CT เป็น VM สาย EL (Rocky, Alma, CentOS)</td></tr>
-    <tr><td class="m">c2v-debian.html</td><td>อันเดียวกัน สาย Debian / Ubuntu</td></tr>
-    <tr><td class="m">../decisions.md</td><td>เหตุผลเบื้องหลังทุกด่าน หลายข้อมาจากเรื่องที่พลาดจริง</td></tr>
-    <tr><td class="m">../state-schema.md</td><td>สัญญาของไฟล์ state สำหรับคนแก้โค้ด</td></tr>
+    <tr><td class="m">G1-G7</td><td>migrate: pool off the root fs and mounted; never onto a running CT;
+        unmount before resize; grow on ENOSPC; config only after a good sync, never overwritten;
+        target id free cluster-wide</td></tr>
+    <tr><td class="m">R1-R14</td><td>replica: snapshot+clone source; never into a running copy;
+        dest mounted; target id free everywhere; config written then read back; ro,noload mounts;
+        per-lane and per-copy locks; copy config must match the row; the mock bridge has no uplink;
+        a stopped copy off production bridges; a dead source storage is one fact; a live 9xxx
+        freezes that copy (R13); the copy is locked where it lives (R14)</td></tr>
+    <tr><td class="m">B0-B8</td><td>failback: production stopped (unreachable is not stopped);
+        B2 lifecycle; image on a real mount and already existing; unmount before resize; grow on
+        ENOSPC; --final refuses without its safety snapshot (B7); R14 again (B8)</td></tr>
+    <tr><td class="m">D1-D8</td><td>distribute: production cannot answer and cannot boot itself —
+        one exception, every veth verified on the dead-end bridge from the kernel; source copy
+        exists and is stopped; 9xxx free everywhere; dest active, off the root fs, space checked
+        first; config after a good transfer; nothing started; the 9xxx locked on the target (D8)</td></tr>
+    <tr><td class="m">C1-C8</td><td>recall: the 9xxx found by asking the cluster; stopped for --final;
+        direction from the provenance marker, never timestamps (C3); dest mounted; the right mount
+        for the CT's state; nothing started, stopped or destroyed; both ends locked, 9 then 8</td></tr>
+    <tr><td class="m">P/E/K</td><td>prepare: storage provably dead or nothing happens (P2/E2);
+        the island bridge verified before use (P4); the origin record never overwritten (P5);
+        a CT that will not stop is isolated, not forced (E4); cleanup needs failback's own state
+        as proof (K2) and never stops a serving 9xxx before the real one is up (K3)</td></tr>
   </table>
+</section>
+
+<section id="conf">
+  <div class="eyebrow"><span class="num">4</span><h2>Conf keys</h2></div>
+  <table>
+    <tr><td class="m">conf/ketsync.conf</td><td>KS_ROLE (master/slave, human-edited only), KS_MASTER_IP,
+        KS_MAIL_FROM/_INFRA/_NODE/_DIGEST (watch refuses without them), KS_WATCH_HEALTHCHECK
+        (optional dead-man; green runs only)</td></tr>
+    <tr><td class="m">engines/ctrep.conf</td><td>BKP_SSH (root@backup-ip — the artery), BW_TOTAL_MB
+        (per-machine ceiling, split per lane), OFFSET / DR_OFFSET (300 &rarr; 8300 / 9300),
+        MOCKNET_BRIDGE (vmbr99), SHUTDOWN_GRACE</td></tr>
+    <tr><td class="m">engines/ctmig.conf</td><td>the migrate-side twin; its BW ceiling is separate
+        (doctor nags until the conf merge lands)</td></tr>
+  </table>
+</section>
+
+<section id="files">
+  <div class="eyebrow"><span class="num">5</span><h2>Which file is what</h2></div>
+  <table>
+    <tr><td class="m">conf/nodes.tsv</td><td>ip + role, every machine; no name column on purpose</td></tr>
+    <tr><td class="m">conf/fleet.tsv</td><td>the DR map: ct, home, dr, dst — all required</td></tr>
+    <tr><td class="m">conf/nodes.map</td><td>ip &rarr; PVE node name, GENERATED — never hand-edited</td></tr>
+    <tr><td class="m">engines/inventory-replica.tsv</td><td>the nightly work list (replica + failback)</td></tr>
+    <tr><td class="m">engines/inventory-migrate.tsv</td><td>the intake work list, used while migrating</td></tr>
+    <tr><td class="m">engines/PAUSE · engines/pause/&lt;ctid&gt;</td><td>stop everything (failback windows) · pause one CT</td></tr>
+    <tr><td class="m">logs/ · state/watch.tsv</td><td>daily logs, self-pruned · what watch holds raised</td></tr>
+  </table>
+  <p><code class="inl">.sample</code> files are the tracked examples; copy and drop the suffix.
+     The real ones are per-site and never overwritten by git.</p>
 </section>
 <footer>
-  <a href="01-what-is-this.html">01 ระบบนี้คืออะไร</a> ·
-  <a href="02-install.html">02 ติดตั้ง</a> ·
-  <a href="03-daily.html">03 งานประจำวัน</a> ·
-  <a href="04-drill.html">04 ซ้อมภัยพิบัติ</a> ·
-  <a href="05-disaster-day.html">05 วันเกิดเหตุ</a> ·
-  <a href="06-reference.html">06 อ้างอิง</a>
+  <a href="index.html">contents</a> ·
+  <a href="01-what-is-this.html">01 what is this</a> ·
+  <a href="02-install.html">02 install</a> ·
+  <a href="03-daily.html">03 daily</a> ·
+  <a href="04-drill.html">04 drill</a> ·
+  <a href="05-disaster-day.html">05 disaster day</a>
 </footer>
 
 </div>
@@ -216,12 +252,12 @@
   var all = document.querySelectorAll('details.cmd');
   if(all.length){
     var b=document.createElement('button');
-    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    b.className='allcmds'; b.type='button'; b.textContent='expand all commands';
     var open=false;
     b.addEventListener('click',function(){
       open=!open;
       all.forEach(function(d){ d.open=open; });
-      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+      b.textContent = open ? 'collapse all commands' : 'expand all commands';
     });
     var first=document.querySelector('header.doc');
     if(first) first.parentNode.insertBefore(b, first.nextSibling);

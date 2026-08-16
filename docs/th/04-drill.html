@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>04 — ซ้อมภัยพิบัติ — ketsync</title>
+<style>
+  :root{
+    --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
+    --bg:#fbfaf8; --surface:#ffffff; --line:#e8e5de; --line2:#d9d5cc;
+    --accent:#0f766e; --accent-soft:#e6f1ef;
+    --warn:#a45309; --warn-soft:#fdf3e3;
+    --crit:#b02020; --crit-soft:#fceded;
+    --code-bg:#f5f4f0;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai","Sarabun",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.75;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto;padding:40px 24px 90px}
+  header.doc{padding-bottom:24px;border-bottom:2px solid var(--ink);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.35;margin:0 0 8px;font-weight:700}
+  header.doc p{color:var(--muted);margin:0;font-size:16.5px}
+  section{margin-top:44px}
+  .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:8px}
+  .num{font-family:var(--mono);font-size:13px;font-weight:600;color:#fff;background:var(--accent);
+       border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+  .num.crit{background:var(--crit)}
+  h2{font-size:21px;margin:0;font-weight:700}
+  h3{font-size:16.5px;margin:28px 0 6px;font-weight:700}
+  p{margin:0 0 13px}
+  .lead{color:var(--muted);margin-bottom:18px}
+  .part{margin-top:60px;padding:16px 0 0;border-top:3px solid var(--ink)}
+  .part .label{font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase;
+               color:var(--accent);margin-bottom:2px}
+  .part.red .label{color:var(--crit)}
+  .part h2{font-size:25px}
+  pre{background:var(--code-bg);border:1px solid var(--line2);border-radius:10px;
+      padding:14px 16px;margin:12px 0 16px;white-space:pre-wrap;overflow-wrap:anywhere;
+      font-family:var(--mono);font-size:13.5px;line-height:1.7;color:#22262c}
+  .m,code{font-family:var(--mono);font-size:13.5px;background:var(--code-bg);
+          border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+  table{width:100%;border-collapse:collapse;margin:14px 0 18px;font-size:14.5px}
+  th,td{text-align:left;vertical-align:top;padding:9px 11px;border-bottom:1px solid var(--line)}
+  th{background:var(--accent-soft);color:var(--accent);font-size:13px;
+     text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid #c6ddd9}
+  td.m{background:none;border:none;font-family:var(--mono);font-size:13px;white-space:nowrap}
+  .note,.warn,.stop{border-radius:10px;padding:13px 16px;margin:16px 0;font-size:15px}
+  .note{background:var(--accent-soft);border:1px solid #c6ddd9}
+  .warn{background:var(--warn-soft);border:1px solid #f0dcb4}
+  .stop{background:var(--crit-soft);border:1px solid #f2c9c9}
+  .note p,.warn p,.stop p{margin:0}
+
+  /* the three machines, and which way the bytes go */
+  .flow{background:var(--surface);border:1px solid var(--line2);border-radius:12px;
+        padding:18px 16px 14px;margin:16px 0 20px}
+  .flow .cap{font-family:var(--mono);font-size:12px;letter-spacing:1px;text-transform:uppercase;
+             color:var(--faint);margin-bottom:12px}
+  .rail{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+  .box{flex:1 1 0;min-width:150px;border:1.5px solid var(--line2);border-radius:10px;
+       padding:10px 12px;background:var(--bg)}
+  .box.live{border-color:var(--accent);background:var(--accent-soft)}
+  .box.dead{border-color:var(--crit);background:var(--crit-soft);opacity:.85}
+  .box.hold{border-color:var(--warn);background:var(--warn-soft)}
+  .box .who{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:3px}
+  .box .id{font-family:var(--mono);font-size:17px;font-weight:700}
+  .box .what{font-size:13px;color:var(--muted);line-height:1.5;margin-top:3px}
+  .arr{flex:0 0 74px;display:flex;flex-direction:column;align-items:center;
+       justify-content:center;color:var(--accent);padding:0 4px}
+  .arr .sym{font-family:var(--mono);font-size:19px;line-height:1}
+  .arr .lbl{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;
+            margin-top:3px;line-height:1.3}
+  .arr.none{color:var(--faint)}
+  .hand{display:inline-block;font-family:var(--mono);font-size:12px;background:#fff;
+        border:1.5px solid var(--crit);color:var(--crit);border-radius:999px;
+        padding:1px 10px;margin-right:6px}
+  .auto{display:inline-block;font-family:var(--mono);font-size:12px;background:#fff;
+        border:1.5px solid var(--accent);color:var(--accent);border-radius:999px;
+        padding:1px 10px;margin-right:6px}
+  ol.steps{counter-reset:s;margin:12px 0 16px;padding:0;list-style:none}
+  ol.steps li{position:relative;padding-left:40px;margin:15px 0}
+  ol.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:2px;
+    width:26px;height:26px;background:var(--accent);color:#fff;border-radius:50%;
+    font-family:var(--mono);font-size:13px;font-weight:600;
+    display:flex;align-items:center;justify-content:center}
+  ul.clean{margin:8px 0 16px;padding:0;list-style:none}
+  ul.clean li{position:relative;padding-left:20px;margin:8px 0}
+  ul.clean li::before{content:"";position:absolute;left:2px;top:11px;width:6px;height:6px;
+                      background:var(--accent);border-radius:50%}
+  footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);
+         color:var(--faint);font-size:14px}
+  .code .cp{position:absolute;top:8px;right:8px;font-family:var(--sans);font-size:12px;
+    color:var(--muted);background:var(--surface);border:1px solid var(--line2);
+    border-radius:7px;padding:3px 11px;cursor:pointer;line-height:1.5}
+  .code .cp:hover{color:var(--accent);border-color:var(--accent)}
+  details.cmd{margin:14px 0 18px;border:1px solid var(--line2);border-radius:10px;
+              background:var(--surface);overflow:hidden}
+  details.cmd>summary{cursor:pointer;padding:10px 15px;font-family:var(--mono);
+    font-size:13px;color:var(--accent);list-style:none;user-select:none}
+  details.cmd>summary::-webkit-details-marker{display:none}
+  details.cmd>summary::before{content:"\25B8  ";color:var(--faint)}
+  details.cmd[open]>summary::before{content:"\25BE  "}
+  details.cmd>summary:hover{background:var(--accent-soft)}
+  details.cmd .code{margin:0 12px 12px}
+  .allcmds{font-family:var(--sans);font-size:13px;color:var(--muted);
+           background:var(--surface);border:1px solid var(--line2);border-radius:8px;
+           padding:4px 12px;cursor:pointer;margin:0 0 14px}
+  .allcmds:hover{color:var(--accent);border-color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="in">
+    <span class="name">04</span>
+    <a href="#why">เงื่อนไข</a>
+    <a href="#kill">1 ตัด storage</a>
+    <a href="#watchmail">2 รอเมล</a>
+    <a href="#dr">3 เข้า DR</a>
+    <a href="#back">4 ทางกลับ</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="doc">
+  <h1>04 — ซ้อมภัยพิบัติ</h1>
+  <p>ดับ storage เทียมด้วย iptables แล้วเดินให้ครบวง — สูตรจากรอบที่ซ้อมจริง</p>
+  <div class="where">ต้องใช้ CT ทดสอบเท่านั้น อ่านข้อ 0 ก่อนเริ่ม</div>
+</header>
+
+
+<section id="why">
+  <div class="eyebrow"><span class="num">0</span><h2>ซ้อมทำไม และเงื่อนไขก่อนเริ่ม</h2></div>
+  <p>ทุกขั้นในหน้านี้เคยรันจริงบนฟลีตนี้แล้ว (ครั้งล่าสุด 2026-08-16 กับ CT 110/120)
+     สูตรนี้คือบันทึกของรอบนั้น — ซ้อมปีละสองครั้งก็พอ แต่ครั้งแรกต้องมี
+     เพราะหน้า <a href="05-disaster-day.html">05</a> อ่านง่ายขึ้นสิบเท่าเมื่อเคยเห็นของจริงมาแล้ว</p>
+  <div class="stop"><p><b>ใช้ CT ทดสอบเท่านั้น</b> การซ้อมตัด storage จริง CT บน storage
+     นั้นจะโดน I/O error ทุกตัว ไม่ใช่เฉพาะตัวที่ตั้งใจซ้อม ถ้าฟลีตมี CT ลูกค้าปนอยู่
+     ห้ามทำวิธีนี้ — ซ้อมได้แค่ระดับ <code class="inl">--dry-run</code></p></div>
+  <ul class="clean">
+    <li><code class="inl">./ketsync doctor</code> เขียวทั้งฉบับ และรอบ replica ล่าสุด failed=0</li>
+    <li><code class="inl">conf/fleet.tsv</code> มีแถวของ CT ที่จะซ้อมครบ (ct, home, dr, dst)</li>
+    <li>ตั้ง watch แล้ว จะได้เห็นเมลจริงระหว่างซ้อมด้วย</li>
+  </ul>
+</section>
+
+<section id="kill">
+  <div class="eyebrow"><span class="num">1</span><h2>ตัด storage ให้ตายเทียม</h2></div>
+  <p>ใช้ iptables ตัดทาง ไม่ต้องถอดปลั๊กจริง — ผลเหมือนกันในสายตาของทุก guard
+     (mount ค้าง, stat ไม่ตอบ, I/O ค้าง D state)</p>
+  <details class="cmd"><summary>iptables -I OUTPUT -d 10.100.1.17 -j DROP   # on EVERY node</summary><div class="code"><pre><span class="c"># on EVERY compute node AND the backup node</span>
+iptables -I OUTPUT -d 10.100.1.17 -j DROP
+iptables -I INPUT  -s 10.100.1.17 -j DROP</pre></div></details>
+  <p>ต้องตัด<b>ทุกเครื่อง</b> — เครื่องที่ลืมตัดจะยังเห็น storage ดีอยู่ แล้ว E2 ของเครื่องนั้นจะปฏิเสธ
+     (ซึ่งถูกแล้ว มันแปลว่า guard ทำงาน)</p>
+</section>
+
+<section id="watchmail">
+  <div class="eyebrow"><span class="num">2</span><h2>รอเมล — หรือถามเอง</h2></div>
+  <p>ภายใน ~10 นาที watch ควรส่งเมล RAISED มา ระหว่างรอ อย่าเพิ่งทำอะไร
+     นี่คือการซ้อมครึ่งแรก: ระบบเตือนเองได้จริงมั้ย</p>
+  <div class="out">Subject: [ketsync] NODE: 1 raised, 0 cleared - pve-storage-r17</div>
+  <p>(storage node ไม่ตอบ ssh = NODE tier ในสายตา watch เพราะ backup ยังอยู่)
+     ไม่อยากรอ cron ก็สั่ง <code class="inl">./ketsync watch</code> เองที่เครื่อง storage —
+     แต่รอบซ้อมจริงควรรอ เพื่อพิสูจน์ cron</p>
+</section>
+
+<section id="dr">
+  <div class="eyebrow"><span class="num">3</span><h2>เข้า DR — คำสั่งเดียวจากเครื่อง backup</h2></div>
+  <details class="cmd"><summary>./ketsync distribute --all   # on the BACKUP node</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
+cd /root/ketsync
+./ketsync distribute --all --dry-run    <span class="c"># read the plan first</span>
+./ketsync distribute --all</pre></div></details>
+  <p>สิ่งที่จะเห็นเรียงกัน ต่อโหนด แล้วต่อ CT — เทียบกับของจริงจากรอบซ้อม 2026-08-16:</p>
+  <div class="out">[10.100.1.32] E2: storage 'tank-hdd-nas' is dead here
+[10.100.1.32] disabled storage tank-hdd-nas
+[10.100.1.32] unmounted /mnt/pve/tank-hdd-nas
+[110]   pct: command 'lxc-stop -n 110 --nokill --timeout 30' failed
+[110] pct itself never returned (rc=124) - isolating CT 110 instead
+[110] <span class="g">ISOLATED</span>: net0 now on vmbr99, verified from /sys/class/net
+[110] placed: CT 9110 on pve-r32, local-lvm:vm-9110-disk-0, rsync rc=0
+[110]     ssh root@10.100.1.32 pct start 9110</div>
+  <div class="tip"><p><b>CT ทดสอบจะปิดไม่ลง — ถูกต้องแล้ว</b> โปรเซสของมันค้างอยู่ใน I/O
+     ที่ไม่มีวันตอบ (D state) สัญญาณปิดเข้าคิวไว้แล้วแต่ยังทำไม่ได้ เครื่องมือจึงตัดเน็ตแทน
+     (ISOLATED) ซึ่งกันอันตรายที่ DR สนใจจริงๆ คือสองเครื่องตอบ IP เดียวกัน
+     — และพอ storage กลับมา CT พวกนี้จะดับเองเพราะสัญญาณที่ค้างอยู่เพิ่งถูกส่งถึง</p></div>
+  <p>ปิดท้ายด้วยการเปิดตัวชั่วคราวเอง แล้วเช็กว่า service ใช้ได้จริง</p>
+  <details class="cmd"><summary>ssh root@10.100.1.32 pct start 9110</summary><div class="code"><pre>ssh root@10.100.1.32 pct start 9110
+ssh root@10.100.1.33 pct start 9120</pre></div></details>
+</section>
+
+<section id="back">
+  <div class="eyebrow"><span class="num">4</span><h2>ทางกลับ — recall แล้ว recover</h2></div>
+  <ol class="steps">
+    <li>ปิดตัวชั่วคราว แล้วดึงรอบสุดท้ายกลับเข้าสำเนา (บนเครื่อง backup)
+      <details class="cmd"><summary>pct shutdown 9110 && ./ketsync recall --all --final</summary><div class="code"><pre>ssh root@10.100.1.32 pct shutdown 9110
+ssh root@10.100.1.33 pct shutdown 9120
+./ketsync recall --all --final</pre></div></details></li>
+    <li>เปิดทางให้ storage กลับมา — ถอน iptables ทุกเครื่องที่ใส่ไว้
+      <details class="cmd"><summary>iptables -D OUTPUT -d 10.100.1.17 -j DROP   # on EVERY node</summary><div class="code"><pre>iptables -D OUTPUT -d 10.100.1.17 -j DROP
+iptables -D INPUT  -s 10.100.1.17 -j DROP</pre></div></details></li>
+    <li>ทางกลับทั้งสาย คำสั่งเดียว (บนเครื่อง storage)
+      <details class="cmd"><summary>./ketsync recover --all --destroy</summary><div class="code"><pre>cd /root/ketsync
+./ketsync recover --all --dry-run       <span class="c"># the checklist, rehearsed</span>
+./ketsync recover --all --destroy</pre></div></details>
+      <p>มันไล่เอง: เปิด storage คืนทุกโหนด &rarr; เช็ก superblock (ถ้า image มีแผลจะ
+         e2fsck ให้) &rarr; failback --final &rarr; คืน network &rarr; เก็บ 9xxx ทิ้ง
+         &rarr; ลบ PAUSE &rarr; รอบ replica แรกต้อง failed=0 จบด้วยพิมพ์คำสั่ง
+         <code class="inl">pct start</code> ของตัวจริงให้กด</p></li>
+    <li>เปิดตัวจริง แล้วปิดซ้อม
+      <details class="cmd"><summary>ssh root@10.100.1.32 pct start 110</summary><div class="code"><pre>ssh root@10.100.1.32 pct start 110
+ssh root@10.100.1.33 pct start 120
+./ketsync doctor          <span class="c"># must end green, "nothing left over"</span></pre></div></details></li>
+  </ol>
+  <div class="ok"><p><b>ซ้อมผ่านเมื่อ</b> doctor เขียวทั้งฉบับ, ไฟล์ในตัวจริงอยู่ครบ,
+     และ watch ส่งเมล CLEARED มาปิดเรื่อง — สามอย่างนี้คือคำตอบเดียวกันจากสามมุม</p></div>
+</section>
+
+<section id="learn">
+  <div class="eyebrow"><span class="num">5</span><h2>สิ่งที่รอบซ้อมจริงสอนไว้</h2></div>
+  <ul class="clean">
+    <li>ปิด CT ที่ storage ตายไม่ได้เป็นเรื่อง<b>ปกติ</b> — รอครบ 30+30 วิแล้ว isolate คือพฤติกรรมที่ออกแบบไว้ ไม่ใช่ข้อผิดพลาด</li>
+    <li>rc=23 จาก rsync ครั้งเดียวคืออาการชั่วคราวของ snapshot (ro,noload) — รอบถัดไปเก็บเอง ถ้าซ้ำสองรอบติดตัวเดิมค่อยเป็นเรื่อง</li>
+    <li>ระหว่าง 9xxx ให้บริการ สำเนา 8xxx จะไม่ถูก cron เขียนทับ (R13) และรอบ cron จะขึ้นแดงตลอด — นั่นคือระบบบอกว่า DR ยังไม่จบ ไม่ใช่พัง</li>
+    <li>จดเวลาแต่ละขั้นไว้ — ครั้งหน้าตัวเลขนี้คือคำตอบของคำถามว่า &ldquo;อีกนานมั้ย&rdquo;</li>
+  </ul>
+</section>
+<footer>
+  <a href="index.html">สารบัญ</a> ·
+  <a href="01-what-is-this.html">01 ระบบนี้คืออะไร</a> ·
+  <a href="02-install.html">02 ติดตั้ง</a> ·
+  <a href="03-daily.html">03 งานประจำวัน</a> ·
+  <a href="05-disaster-day.html">05 วันเกิดเหตุ</a> ·
+  <a href="06-reference.html">06 อ้างอิง</a>
+</footer>
+
+</div>
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp'; btn.type = 'button'; btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.c').forEach(function(el){ el.remove(); });
+      var text = clone.textContent.split('\n').filter(function(l){ return l.trim() !== ''; }).join('\n');
+      var done = function(){ btn.textContent='copied'; setTimeout(function(){ btn.textContent='copy'; },1200); };
+      function fallback(){
+        var ta=document.createElement('textarea'); ta.value=text;
+        ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){ btn.textContent='select manually'; }
+        document.body.removeChild(ta);
+      }
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,fallback);}else{fallback();}
+    });
+    box.appendChild(btn);
+  });
+  var all = document.querySelectorAll('details.cmd');
+  if(all.length){
+    var b=document.createElement('button');
+    b.className='allcmds'; b.type='button'; b.textContent='เปิดคำสั่งทั้งหมด';
+    var open=false;
+    b.addEventListener('click',function(){
+      open=!open;
+      all.forEach(function(d){ d.open=open; });
+      b.textContent = open ? 'ย่อคำสั่งทั้งหมด' : 'เปิดคำสั่งทั้งหมด';
+    });
+    var first=document.querySelector('header.doc');
+    if(first) first.parentNode.insertBefore(b, first.nextSibling);
+  }
+})();
+</script>
+</body>
+</html>

@@ -155,10 +155,13 @@ catches none of it, which is why `make lint` passes there and proves nothing.
                          fallback), nodes.map (GENERATED, never hand-edited)
     contrib/             one-shot tools, not the daily path: the three CT-to-VM
                          scripts, bkp02-setup.sh, add-storage-column.sh
-    docs/th/             the operator guides, Thai. index.html says which of
-                         the six to open; disaster-recovery.html is the page
-                         open at 3am; start-here.html is the front door - if
-                         you change what an operator types, change it too
+    docs/th/ docs/en/    the operator guides, a numbered ladder mirrored in
+                         two languages: 01-what-is-this, 02-install, 03-daily,
+                         04-drill, 05-disaster-day, 06-reference, plus each
+                         index.html. Thai is the source of truth; en mirrors
+                         the structure page for page. If you change what an
+                         operator types, change the ladder too. how-it-works
+                         and the c2v manuals stay Thai-only appendices
     docs/decisions.md    why both layers are shaped this way: Part I the
                          decision layer, Part II the engines. Engine comments
                          cite "section N" meaning Part II's numbering
@@ -246,7 +249,7 @@ If you add a mutation, remember that a shell function's opening brace cannot
 sit inside an `s{}{}` replacement — perl balances it against the closing
 delimiter. Use a different delimiter.
 
-**2. No Thai anywhere except `docs/*.html`.**
+**2. No Thai anywhere except `docs/th/*.html`.**
 Code, comments, commit messages, test names, briefs: English. The operator
 guides are Thai because the operator is Thai — that is the only exception, and
 inside them Thai belongs in the prose, never inside `<pre>` or `<code>`.
