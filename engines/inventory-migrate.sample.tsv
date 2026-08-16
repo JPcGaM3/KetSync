@@ -26,5 +26,4 @@
 #
 # example — CTs split across two target nodes and two storages:
 # old_node    old_ctid  new_ctid  new_node      storage
-10.100.1.23   300       99100     10.100.1.19   tank-hdd-nas
-10.100.1.23   998       99200     10.100.1.18   tank-ssd-nas
+# 10.100.1.23   300       300       10.100.1.33   tank-hdd-nas

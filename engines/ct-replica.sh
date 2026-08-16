@@ -164,7 +164,7 @@ INV="$BASE/inventory-replica.tsv"
 CONF="$BASE/ctrep.conf"
 
 # ---------- defaults (override in ctrep.conf, never here) ----------
-BKP_SSH="root@100.100.100.35"    # backup node, by IP. key auth required
+BKP_SSH="root@10.100.1.9"    # backup node, by IP. key auth required
 BKP_NODE=""                      # its pmxcfs name. LEAVE EMPTY: the engine asks
                                  # the node itself. Set it only to pin a value,
                                  # and it is then verified, never trusted

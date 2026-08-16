@@ -19,5 +19,6 @@
 # ip	role
 10.100.1.17	storage
 10.100.1.9	backup
+10.100.1.28	compute
 10.100.1.32	compute
 10.100.1.33	compute

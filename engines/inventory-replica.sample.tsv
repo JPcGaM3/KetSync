@@ -43,7 +43,4 @@
 #
 # examples:
 # src_ctid  [tgt_ctid]  [storage-assert]  dest        (extras in ANY order)
-105                                       replica-ssd
-112         9112                          replica-hdd
-113         8113        tank-ssd-nas      replica-ssd
-114                                       replica-hdd  # -> tgt 8114
+# 110         8110        tank-hdd-nas      replica-hdd

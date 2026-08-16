@@ -58,7 +58,8 @@
 # TAB separated; lines starting with # are ignored.
 #
 # ct	home	dr	dst
-110	10.100.1.32	10.100.1.32	local-lvm
-120	10.100.1.33	10.100.1.33	local-lvm
+# 110	10.100.1.32	10.100.1.32	local-lvm
+# 120	10.100.1.33	10.100.1.33	local-lvm
+
 # comes back on a different machine, onto a different kind of storage
-130	10.100.1.32	10.100.1.33	local-zfs
+# 130	10.100.1.32	10.100.1.33	local-zfs

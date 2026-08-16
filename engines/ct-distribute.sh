@@ -184,7 +184,7 @@ if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" ]]; then
 fi
 
 # ---------- defaults (ctrep.conf wins; they are the same knobs) ----------
-BKP_SSH="root@100.100.100.35"
+BKP_SSH="root@10.100.1.9"
 BKP_NODE=""                      # pmxcfs name, discovered - see ct-replica.sh
 # storage-id : dataset. The KEY is the PVE storage id itself - there is no
 # short alias any more. "hdd" and "ssd" meant nothing to anybody who had not

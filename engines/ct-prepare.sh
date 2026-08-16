@@ -179,7 +179,7 @@ if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" && -f "$BASE/../c
 fi
 
 # ---------- defaults; ctrep.conf wins ----------------------------------------
-BKP_SSH="root@100.100.100.35"
+BKP_SSH="root@10.100.1.9"
 MOCKNET_BRIDGE=vmbr99            # the isolated bridge. Same knob, same file,
                                  # as ct-replica R9 and ct-distribute D1
 SHUTDOWN_TIMEOUT=180             # cleanup's patience: seconds to wait for a

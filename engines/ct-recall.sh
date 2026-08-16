@@ -168,7 +168,7 @@ if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" && -f "$BASE/../c
 fi
 
 # ---------- defaults; ctrep.conf wins ----------------------------------------
-BKP_SSH="root@100.100.100.35"
+BKP_SSH="root@10.100.1.9"
 BKP_NODE=""                      # pmxcfs name, discovered - see ct-replica.sh
 BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"
 OFFSET=8000                      # production id -> DR copy id
