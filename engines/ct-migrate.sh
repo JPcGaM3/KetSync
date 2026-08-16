@@ -5,13 +5,17 @@
 #  Zero-downtime pre-sync of RUNNING LXC CTs into raw images on local ZFS
 #  (exported as NFS to the target nodes).
 #
-#  Also creates the target CT config on the new-node: mirrors the old CT
-#  but WITHOUT network and with onboot=0, kept STOPPED. Config is created
-#  ONLY after a successful sync (rc 0/24) — never from a failed one.
+#  Also creates the target CT config on the new-node: mirrors the old CT,
+#  with the source's real net lines moved onto MOCKNET_BRIDGE (the same
+#  island ct-replica.sh uses - same IP, same MAC, no uplink, so nothing can
+#  collide) and onboot=0, kept STOPPED. Config is created ONLY after a
+#  successful sync (rc 0/24) — never from a failed one. Set MOCKNET=0 in
+#  ctmig.conf for the old behaviour (no net lines at all).
 #
-#  This tool does NOT do cutover. Stopping the old CT, adding net0, starting
-#  the new CT and remapping the IP are all done by hand. The one exception is
-#  --stopped below, which is a data operation, not a lifecycle one.
+#  This tool does NOT do cutover. Stopping the old CT, pointing each net
+#  line back at its real bridge, starting the new CT - all done by hand.
+#  The one exception is --stopped below, which is a data operation, not a
+#  lifecycle one.
 #
 #  usage:
 #    ct-migrate.sh                            all rows, one lane
@@ -109,6 +113,10 @@ GROW_MAX_RETRY=3         # max ENOSPC grow-and-retry attempts per run
 POOL_RESERVE_GIB=100     # never alloc if it would eat into this much pool headroom
 RUNS_KEEP=200            # per-CT run history kept in state/<ctid>.runs.jsonl
 LOG_KEEP_DAYS=30         # daily log files older than this are deleted; 0 disables
+MOCKNET=1                # 1 = copy the source's net* onto the island bridge, so
+                         # go-live is a bridge swap instead of retyping MAC and IP;
+                         # 0 = the old behaviour, no net lines at all
+MOCKNET_BRIDGE=vmbr99    # must exist on the NEW node, and have NO uplink (G8)
 MNT_BASE=/mnt            # where images are loop-mounted; only moved by the simulator
 STORAGE_CFG=/etc/pve/storage.cfg   # read-only, for is_mountpoint; only moved by the simulator
 # Cipher list for the rsync transport. OpenSSH negotiates chacha20-poly1305
@@ -178,6 +186,15 @@ done
 # only character set a cipher list can legitimately be made of.
 if [[ -n "$SSH_CIPHERS" && ! "$SSH_CIPHERS" =~ ^[A-Za-z0-9@.,+-]+$ ]]; then
   echo "ctmig.conf: SSH_CIPHERS='$SSH_CIPHERS' is not a plain cipher list" >&2; exit 1
+fi
+# Same shapes ct-replica.sh enforces for its own island: the switch is a
+# boolean, and the bridge name is pasted into a remote shell snippet unquoted,
+# so it gets only the character set an interface name can be made of.
+if [[ "$MOCKNET" != 0 && "$MOCKNET" != 1 ]]; then
+  echo "ctmig.conf: MOCKNET='$MOCKNET' must be 0 or 1" >&2; exit 1
+fi
+if [[ ! "$MOCKNET_BRIDGE" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "ctmig.conf: MOCKNET_BRIDGE='$MOCKNET_BRIDGE' is not a plain interface name" >&2; exit 1
 fi
 
 # Static split, not dynamic. A lane that computed its share while alone would
@@ -727,6 +744,67 @@ st_fail(){ ST_STATUS=failed;  ST_REASON="$1"; failed=$(( failed + 1 )); FAILED_I
 st_skip(){ ST_STATUS=skipped; ST_REASON="$1"; skipped=$(( skipped + 1 )); }
 st_ok(){   ST_STATUS=ok;      ST_REASON="";   ok=$(( ok + 1 )); }
 
+# ---------- mock network ------------------------------------------------------
+# The source's net lines, verbatim, with ONE edit: the bridge becomes the
+# isolated one. hwaddr, ip and the VLAN tag are kept - same reasoning as
+# ct-replica.sh's island, where this function came from: same MAC means DHCP
+# reservations and MAC-keyed rules still work, and go-live becomes a one-field
+# edit (bridge back to the real one) instead of retyping a MAC where one wrong
+# character is a whole subnet's ARP gone strange.
+#
+# stdout of this function IS config text - it is captured into the file being
+# written. Nothing here may print anything else, not even through log(). That
+# is why the "no bridge=" case is refused up in the main loop (G8), before the
+# transfer and before this runs; by the time we are here every line has one.
+mocknet_lines(){   # $1 = source config text
+  printf '%s\n' "$1" | grep -E '^net[0-9]+:' | while IFS= read -r l; do
+    [[ "$l" == *bridge=* ]] || continue     # unreachable: refused in the main loop
+    printf '%s\n' "$l" | sed -E "s/bridge=[^,]*/bridge=$MOCKNET_BRIDGE/"
+  done
+}
+
+# --- G8: the island bridge must exist on the NEW node, and reach no wire ------
+# Same question R9 asks of the backup node, asked of every node this run will
+# write a config on. The config carries the PRODUCTION IP and MAC on purpose;
+# the only thing making that safe is the bridge those lines point at having no
+# uplink. Cached per node - a lane with thirty rows onto one target asks once.
+# Asked target-side, BEFORE any transfer: a refusal after 80G of rsync is the
+# kind of refusal that teaches people to turn a guard off.
+declare -A G8_SEEN=()
+g8_bridge_ok(){   # $1 = new_node -> 0 ok, 1 refused (already logged)
+  (( MOCKNET )) || return 0
+  case "${G8_SEEN[$1]:-}" in ok) return 0;; bad) return 1;; esac
+  local out
+  out=$(ssh $SSHOPT "root@$1" "
+    ip -br link show $MOCKNET_BRIDGE >/dev/null 2>&1 || { echo MISSING; exit 0; }
+    ports=\$(ovs-vsctl --timeout=5 list-ifaces $MOCKNET_BRIDGE 2>/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2>/dev/null)
+    for p in \$ports; do
+      if [ -e /sys/class/net/\$p/device ] || [ -d /sys/class/net/\$p/bonding ]; then echo \"UPLINK \$p\"; fi
+    done
+    echo OK
+  " </dev/null 2>/dev/null)
+  if [[ "$out" == *MISSING* ]]; then
+    log "GUARD G8: bridge $MOCKNET_BRIDGE does not exist on $1 - its rows are skipped"
+    log "GUARD G8:   create it there (isolated island, NO uplink) - see the setup guide -"
+    log "GUARD G8:   or set MOCKNET=0 in ctmig.conf to migrate with no network at all"
+    G8_SEEN[$1]=bad; return 1
+  fi
+  if [[ "$out" != *OK* ]]; then
+    log "GUARD G8: cannot inspect $MOCKNET_BRIDGE on $1 (ssh failed?) - its rows are skipped"
+    G8_SEEN[$1]=bad; return 1
+  fi
+  if [[ "$out" == *UPLINK* ]]; then
+    log "GUARD G8: $MOCKNET_BRIDGE on $1 HAS AN UPLINK - its rows are skipped"
+    printf '%s\n' "$out" | grep UPLINK | while read -r _ p; do
+      log "GUARD G8:   port '$p' is a physical NIC or a bond"
+    done
+    log "GUARD G8:   the config this would write carries the PRODUCTION IP and MAC;"
+    log "GUARD G8:   the only thing making that safe is this bridge reaching no wire"
+    G8_SEEN[$1]=bad; return 1
+  fi
+  G8_SEEN[$1]=ok; return 0
+}
+
 # What the config write WOULD do, printed where the real run would reach it.
 # The probe is G6's own check and is read-only, so a dry run makes it for real
 # - the answer is half the plan. Only the write below it is skipped.
@@ -741,7 +819,15 @@ dry_cfg_plan(){   # $1=ctid $2=new_node $3=storage $4=image size
   else
     log "[$1] DRY: would create /etc/pve/lxc/$1.conf on $2:"
     log "[$1] DRY:   rootfs: $3:$1/vm-$1-disk-0.raw,size=$4"
-    log "[$1] DRY:   onboot: 0, and no net line - you add net0 by hand at go-live"
+    if (( MOCKNET )); then
+      log "[$1] DRY:   onboot: 0, net kept from the source, moved onto $MOCKNET_BRIDGE:"
+      while IFS= read -r _nl; do
+        [[ -n "$_nl" ]] && log "[$1] DRY:     $_nl"
+      done <<< "$(mocknet_lines "$oldcfg")"
+      log "[$1] DRY:   at go-live: point each line back at its real bridge, then start it"
+    else
+      log "[$1] DRY:   onboot: 0, and no net line - you add net0 by hand at go-live"
+    fi
   fi
   return 0
 }
@@ -928,6 +1014,24 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   if [[ -z "$oldcfg" ]]; then
     log "[$new_ctid] CT $old_ctid NOT FOUND on $old_node (wrong id/node?) - skip"
     st_fail ct_not_found; continue
+  fi
+
+  # --- G8, both halves, BEFORE any transfer ----------------------------------
+  # The lines this run will write are decided here, not at the config step: a
+  # net line with no bridge= cannot be moved onto the island, and silently
+  # dropping it would hand go-live a CT that answers on fewer interfaces than
+  # production did - the miss nobody notices until a customer does.
+  if (( MOCKNET )); then
+    badnet=$(printf '%s\n' "$oldcfg" | grep -E '^net[0-9]+:' | grep -v 'bridge=' || true)
+    if [[ -n "$badnet" ]]; then
+      log "[$new_ctid] GUARD G8: net line(s) with no bridge= in CT $old_ctid's config:"
+      while IFS= read -r _bl; do [[ -n "$_bl" ]] && log "[$new_ctid] GUARD G8:   $_bl"; done <<< "$badnet"
+      log "[$new_ctid] GUARD G8:   fix the source config, or set MOCKNET=0 to migrate with no network"
+      st_fail g8_nobridge; continue
+    fi
+    if ! g8_bridge_ok "$new_node"; then
+      st_fail g8_bridge; continue
+    fi
   fi
 
   # --- pick the source: running CT via /proc, or stopped CT via pct mount ---
@@ -1143,11 +1247,17 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
     dry_cfg_plan "$new_ctid" "$new_node" "$storage" "$size"
     log "[$new_ctid] dry-run - nothing was written"
   elif ! ssh $SSHOPT "root@$new_node" "test -f /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null; then
-    log "[$new_ctid] create CT config on $new_node (no net, onboot=0, stopped)"
+    log "[$new_ctid] create CT config on $new_node ($( (( MOCKNET )) && echo "net on $MOCKNET_BRIDGE" || echo "no net" ), onboot=0, stopped)"
     newcfg=$( printf '%s\n' "$oldcfg" \
                 | grep -vE '^(rootfs|mp[0-9]+|net[0-9]+|onboot|unused[0-9]+|parent|lock|template|description):'
               echo "rootfs: $storage:$new_ctid/vm-$new_ctid-disk-0.raw,size=$size"
-              echo "onboot: 0" )
+              echo "onboot: 0"
+              (( MOCKNET )) && mocknet_lines "$oldcfg" )
+    if (( MOCKNET )); then
+      log "[$new_ctid]   net kept from the source, moved onto $MOCKNET_BRIDGE - at go-live,"
+      log "[$new_ctid]   point each line back at its real bridge (the old node still has it):"
+      log "[$new_ctid]   ssh root@$old_node 'pct config $old_ctid | grep ^net'"
+    fi
     # Written, then read back and compared. A write cut short by a dropped
     # connection or a full /etc/pve leaves a half config, and G6 above will never
     # rewrite a config that exists - so the damage would be permanent and every

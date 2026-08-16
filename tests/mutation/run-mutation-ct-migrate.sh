@@ -203,6 +203,19 @@ mutant "G7 trusts an existing config instead of checking whose rootfs it is" \
   's{\Qif [[ "\E\$exist_root\Q" != "\E\$storage:\$new_ctid\Q/vm-\E\$new_ctid\Q-disk-0.raw" ]]; then\E}{if false; then}' \
   50 51
 
+# ---------- G8: the island bridge on the target ------------------------------
+mutant "G8 never asks the target node about the island bridge" \
+  's{\Q    if ! g8_bridge_ok "\E\$new_node\Q"; then\E}{    if false; then}' \
+  66 67
+
+mutant "a net line with no bridge= is dropped instead of refused" \
+  's{\Q    if [[ -n "\E\$badnet\Q" ]]; then\E}{    if false; then}' \
+  68
+
+mutant "the net lines never reach the written config" \
+  's{\Q              (( MOCKNET )) && mocknet_lines "\E\$oldcfg\Q" )\E}{              true )}' \
+  1
+
 mutant "the written config is never read back" \
   's{\Q&& [[ "\E\$\Q(ssh \E\$SSHOPT\Q "root@\E\$new_node\Q" "cat /etc/pve/lxc/\E\$new_ctid\Q.conf" </dev/null 2>/dev/null)" == "\E\$newcfg\Q" ]]\E}{}' \
   52

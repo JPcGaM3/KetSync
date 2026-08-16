@@ -122,8 +122,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 413 tp simulator + 16 dispatcher + 125 c2v, 111 ketsync
-    make mutation # 471 known bugs put back. None may survive
+    make test     # both layers: 417 tp simulator + 16 dispatcher + 125 c2v, 111 ketsync
+    make mutation # 474 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -221,7 +221,7 @@ must be mirrored in its mutation file in the same change. Never "fix" a broken
 anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
-    ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     46 mutations
+    ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     49 mutations
     ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh     58 mutations
     ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    60 mutations
     ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  68 mutations
@@ -295,8 +295,12 @@ Do not extend the carve-out to a third verb without the same kind of proof,
 and do not weaken the proof to make a mode more useful.
 
 **4. A copy never reaches the wire by accident.**
-`migrate` writes the target config with no network and `onboot: 0`; the operator
-adds `net0` at go-live. `replica` does the opposite and gives the copy the
+`migrate` writes the target config with the source's net lines moved onto the
+island bridge and `onboot: 0` — the same island replica uses, so go-live is a
+bridge swap instead of retyping a MAC. G8 verifies the island on the NEW node
+before any transfer, and a net line with no `bridge=` refuses the row rather
+than being dropped; `MOCKNET=0` in ctmig.conf restores the old no-net shape.
+`replica` gives the copy the
 source's **real** network — same IP, same MAC, same VLAN — on an isolated
 bridge with no uplink. Both are the same rule from different directions: two
 copies of one host must never be reachable at once. R9 verifies the bridge has
@@ -395,7 +399,7 @@ and a dry run may mount only `ro`.
 
 ## Invariants the tests exist to protect
 
-`ct-migrate.sh` — G1..G7:
+`ct-migrate.sh` — G1..G8:
 
     G1  the storage pool must not sit on the node root filesystem, checked
         BEFORE anything is allocated. If PVE declares is_mountpoint for that
@@ -407,6 +411,10 @@ and a dry run may mount only `ro`.
     G6  an existing target config is never overwritten, only reported
     G7  the new_ctid must be free on the new node, or already own exactly the
         volume this row would write
+    G8  the net lines land on MOCKNET_BRIDGE, which must exist on the NEW
+        node and reach no wire - R9's question asked per target, cached per
+        node, BEFORE the transfer; and a net line with no bridge= refuses
+        the row instead of being silently dropped
 
 `ct-replica.sh` — R1..R13:
 

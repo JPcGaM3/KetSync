@@ -25,6 +25,12 @@ c="${cmd[*]}"; trace "ssh $host :: $c"
 export SIM_HOST="$host"
 case "$c" in
   true) exit 0;;
+  # the G8 island probe: bridge present? any port with a /device or /bonding?
+  # Default is a healthy island; the two knobs are per-node marker files.
+  *"ip -br link show"*)
+    [[ -f "$N/bridge.missing" ]] && { echo MISSING; exit 0; }
+    [[ -f "$N/bridge.uplink" ]] && echo "UPLINK $(cat "$N/bridge.uplink")"
+    echo OK; exit 0;;
   "pct status "*)
     id=$(awk '{print $3}' <<<"$c"); f="$N/ct/$id.status"
     [[ -f "$f" ]] || { echo "Configuration file 'nodes/x/lxc/$id.conf' does not exist" >&2; exit 2; }

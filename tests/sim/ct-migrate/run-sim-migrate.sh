@@ -121,6 +121,8 @@ inventory(){ printf '%s\n' "$@" > "$WORK/inventory-migrate.tsv"; }
 # the same, but the last line gets NO trailing newline: the shape some editors
 # leave behind, and the one that used to make the engine lose its last row
 inventory_nonl(){ local IFS=$'\n'; printf '%s' "$*" > "$WORK/inventory-migrate.tsv"; }
+bridge_missing(){ : > "$SIMROOT/nodes/$1/bridge.missing"; }   # no vmbr99 on that node
+bridge_uplink(){ echo "$2" > "$SIMROOT/nodes/$1/bridge.uplink"; } # vmbr99 there reaches a wire
 unmount_pool(){ grep -vxF "$(cat "$SIMROOT/storage/$1.path")" "$SIMROOT/mounted" > "$SIMROOT/.m"; mv "$SIMROOT/.m" "$SIMROOT/mounted"; }
 rsync_stats(){ echo "$1 $2 $3 $4" > "$SIMROOT/rsync.stats"; }   # files literal sent total
 kill_next_rsync(){ : > "$SIMROOT/rsync.kill"; }   # Ctrl-C the engine mid-transfer, once
@@ -375,7 +377,10 @@ if scenario "1: happy path, two CTs on two storages"; then
   cfg_exists 10.100.1.31 251; cfg_exists 10.100.1.32 253
   cfg_has 10.100.1.31 251 "rootfs: tank-hdd-nas:251/vm-251-disk-0.raw"
   cfg_has 10.100.1.31 251 "onboot: 0"
-  cfg_hasnt 10.100.1.31 251 '^net[0-9]+:'     # no network, by decision
+  # the source's net lines follow, on the island: same name, same ip, the
+  # bridge swapped for the one that reaches no wire - go-live is a bridge swap
+  cfg_has 10.100.1.31 251 "net0: name=eth0,bridge=vmbr99,ip=10.0.0.251/24"
+  cfg_hasnt 10.100.1.31 251 'bridge=vmbr0'
   cfg_hasnt 10.100.1.31 251 '^mp[0-9]+:'
     log_lands_here migrate
 done_scenario
@@ -1110,7 +1115,8 @@ if scenario "57: --dry-run over every row runs every guard and writes nothing"; 
   has "[251] DRY: would alloc"
   has "[251] DRY: first sync - the whole rootfs would transfer"
   has "[251] DRY: would create /etc/pve/lxc/251.conf on 10.100.1.31"
-  has "onboot: 0, and no net line"
+  has "net kept from the source, moved onto vmbr99"
+  has "[251] DRY:     net0: name=eth0,bridge=vmbr99,ip=10.0.0.251/24"
   untraced "alloc"
   untraced "mkfs.ext4"
   untraced "rsync"
@@ -1250,6 +1256,53 @@ if scenario "64b: with neither file, it points at the sample instead"; then
 fi
 
 echo
+if scenario "65: MOCKNET=0 restores the old shape - no net lines at all"; then
+  echo "MOCKNET=0" >> "$WORK/ctmig.conf"
+  run_engine
+  rc_is 0; clean
+  cfg_exists 10.100.1.31 251
+  cfg_hasnt 10.100.1.31 251 '^net[0-9]+:'
+  has "create CT config on 10.100.1.31 (no net, onboot=0, stopped)"
+done_scenario
+fi
+
+if scenario "66: G8 refuses a target with no island bridge, BEFORE the transfer"; then
+  bridge_missing 10.100.1.31
+  run_engine
+  rc_is 1
+  has "GUARD G8: bridge vmbr99 does not exist on 10.100.1.31"
+  has "or set MOCKNET=0 in ctmig.conf"
+  cfg_absent 10.100.1.31 251
+  untraced "rsync root@10.100.1.11"
+  # the OTHER row's target is healthy and must be untouched by this refusal
+  has "ok=1"
+  cfg_exists 10.100.1.32 253
+done_scenario
+fi
+
+if scenario "67: G8 refuses an island that reaches a wire, naming the port"; then
+  bridge_uplink 10.100.1.31 eno1
+  run_engine
+  rc_is 1
+  has "GUARD G8: vmbr99 on 10.100.1.31 HAS AN UPLINK"
+  has "port 'eno1' is a physical NIC or a bond"
+  cfg_absent 10.100.1.31 251
+  untraced "rsync root@10.100.1.11"
+done_scenario
+fi
+
+if scenario "68: a net line with no bridge= is refused, never silently dropped"; then
+  sed -i 's|^net0: name=eth0,bridge=vmbr0,ip=10.0.0.251/24|net0: name=eth0,ip=10.0.0.251/24|' \
+      "$SIMROOT/nodes/10.100.1.11/ct/251.config"
+  run_engine
+  rc_is 1
+  has "GUARD G8: net line(s) with no bridge= in CT 251's config"
+  has "net0: name=eth0,ip=10.0.0.251/24"
+  cfg_absent 10.100.1.31 251
+  untraced "rsync root@10.100.1.11"
+done_scenario
+fi
+
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi
 exit 0

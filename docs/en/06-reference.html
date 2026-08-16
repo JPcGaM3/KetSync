@@ -163,9 +163,10 @@
   <div class="eyebrow"><span class="num">3</span><h2>Every guard, one line</h2></div>
   <p>Full reasoning lives in <code class="inl">CLAUDE.md</code> and <code class="inl">../decisions.md</code>.</p>
   <table>
-    <tr><td class="m">G1-G7</td><td>migrate: pool off the root fs and mounted; never onto a running CT;
+    <tr><td class="m">G1-G8</td><td>migrate: pool off the root fs and mounted; never onto a running CT;
         unmount before resize; grow on ENOSPC; config only after a good sync, never overwritten;
-        target id free cluster-wide</td></tr>
+        target id free cluster-wide; the source's net lines land on the island bridge, verified
+        uplink-free on the NEW node before any transfer (go-live is a bridge swap)</td></tr>
     <tr><td class="m">R1-R14</td><td>replica: snapshot+clone source; never into a running copy;
         dest mounted; target id free everywhere; config written then read back; ro,noload mounts;
         per-lane and per-copy locks; copy config must match the row; the mock bridge has no uplink;

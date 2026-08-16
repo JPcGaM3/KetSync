@@ -181,6 +181,7 @@ ribute</td></tr>
     <tr><td class="m">G5</td><td>เขียน config ต่อเมื่อก๊อปจบดี (rc 0/24) เท่านั้น</td></tr>
     <tr><td class="m">G6</td><td>config ที่มีอยู่แล้วไม่ถูกเขียนทับ แค่รายงาน</td></tr>
     <tr><td class="m">G7</td><td>เลขปลายทางต้องว่างจริงทั้ง cluster</td></tr>
+    <tr><td class="m">G8</td><td>net จากต้นทางถูกวางบน vmbr99 ของเครื่องปลายทาง — bridge นั้นต้องมีจริงและไม่มีทางออก เช็กก่อนก๊อป และ net ที่ไม่มี bridge= = ปฏิเสธ ไม่ตัดทิ้งเงียบๆ (go-live = สลับ bridge กลับ)</td></tr>
   </table>
   <h3>replica — R</h3>
   <table>
