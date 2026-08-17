@@ -364,7 +364,7 @@ cd /root/ketsync
 cp conf/ketsync.conf.sample  conf/ketsync.conf
 cp conf/nodes.tsv.sample     conf/nodes.tsv
 cp conf/fleet.tsv.sample     conf/fleet.tsv
-cp engines/inventory-replica.sample.tsv engines/inventory-replica.tsv</pre></div></details>
+cp inventory/inventory-replica.sample.tsv inventory/inventory-replica.tsv</pre></div></details>
   <p>ไฟล์ที่ลงท้าย <code class="inl">.sample</code> คือตัวอย่าง ก๊อปแล้วตัดคำว่า sample ออกถึงใช้จริง
      ตัวอย่างจะถูกอัปเดตตอน <code class="inl">git pull</code> ส่วนตัวจริงของคุณจะไม่ถูกทับ</p>
 </section>
@@ -389,7 +389,7 @@ KS_MASTER_IP=10.100.1.17</pre></div></details>
      ชื่อ node ของ Proxmox ระบบจะไปถามมาเองแล้วเก็บไว้ที่ <code class="inl">nodes.map</code>
      ซึ่งห้ามแก้มือ</p>
 
-  <h3>ไฟล์ที่ 3 — engines/inventory-replica.tsv: จะก๊อป CT ตัวไหนบ้าง</h3>
+  <h3>ไฟล์ที่ 3 — inventory/inventory-replica.tsv: จะก๊อป CT ตัวไหนบ้าง</h3>
   <details class="cmd"><summary>105                                       replica-ssd</summary><div class="code"><pre># src_ctid  [tgt_ctid]  [storage-assert]  dest
 105                                       replica-ssd
 113                                       replica-hdd</pre></div></details>
@@ -455,26 +455,32 @@ tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div></details>
      คือตัวที่เมลเมื่อมีอะไร<b>เปลี่ยน</b> — เครื่องหาย storage ถูกปิดค้าง หรือมีของ DR ค้างอยู่
      ส่งครั้งเดียวตอนเกิด และอีกครั้งตอนหาย ไม่สแปมซ้ำ</p>
   <ol class="steps">
-    <li>ตั้ง postfix ของเครื่อง storage ให้ relay ผ่าน SendGrid — key อยู่ในไฟล์เดียว ไม่อยู่ใน repo
-      <details class="cmd"><summary>./contrib/mail-satellite.sh --relay '[smtp.sendgrid.net]:587' ...</summary><div class="code"><pre><span class="c"># on the STORAGE node</span>
-echo 'SG.your-key-here' > /root/.sendgrid.key && chmod 600 /root/.sendgrid.key
-apt-get install -y libsasl2-modules   <span class="c"># postfix needs these to AUTH; PVE ships without them</span>
-./contrib/mail-satellite.sh --relay '[smtp-relay.brevo.com]:587' \
-    --user 'b5c6b3001@smtp-brevo.com' --keyfile /root/.brevo.key \
-    --test you@example.co.th --from verified-sender@example.co.th</pre></div></details>
-      <p>--user คือ login ที่หน้า SMTP ของ provider แสดง (Brevo generate ให้, SendGrid
-         ใช้คำว่า apikey + relay smtp.sendgrid.net) และ --from ต้องเป็น address ที่
-         <b>verify เป็น sender กับ provider แล้ว</b> — relay ปฏิเสธ From ที่ไม่รู้จักเสมอ
-         ค่าเดียวกันนี้คือค่าที่จะใส่ KS_MAIL_FROM เมลทดสอบต้องถึงจริงก่อนไปขั้นถัดไป
-         (ถ้าเงียบ: <code class="inl">journalctl -u postfix -n 30</code> มีคำตอบของ provider —
-         535 = user/key ผิด, 550 sender = ยังไม่ verify)</p></li>
-    <li>บอก watch ว่าใครรับเมลอะไร — เติมท้าย <code class="inl">conf/ketsync.conf</code>
-      <details class="cmd"><summary>KS_MAIL_FROM=...</summary><div class="code"><pre>KS_MAIL_FROM="ketsync@example.co.th"
+    <li>บอกทุกอย่างใน <code class="inl">conf/ketsync.conf</code> ที่เดียว — ใครรับเมลอะไร และส่งออกทาง relay ไหน
+      <details class="cmd"><summary>KS_MAIL_FROM=... + KS_MAIL_RELAY=...</summary><div class="code"><pre>KS_MAIL_FROM="ketsync@example.co.th"    <span class="c"># must be VERIFIED as a sender at the provider</span>
 KS_MAIL_INFRA="infra@example.co.th"     <span class="c"># the floor everything stands on</span>
 KS_MAIL_NODE="node@example.co.th"       <span class="c"># one machine's problem</span>
 KS_MAIL_DIGEST="admin@example.co.th"    <span class="c"># doctor's daily report</span>
 <span class="c"># optional dead-man: green runs ping it, silence raises the alarm</span>
-KS_WATCH_HEALTHCHECK="https://hc-ping.com/&lt;uuid&gt;"</pre></div></details></li>
+KS_WATCH_HEALTHCHECK="https://hc-ping.com/&lt;uuid&gt;"
+<span class="c"># the transport - changing provider = edit these three, re-run mail-setup</span>
+KS_MAIL_RELAY="[smtp-relay.brevo.com]:587"
+KS_MAIL_USER="b5c6b3001@smtp-brevo.com" <span class="c"># the login the provider's SMTP page shows</span>
+KS_MAIL_KEYFILE="/root/.brevo.key"      <span class="c"># the PATH to the key, never the key</span></pre></div></details>
+      <p>KS_MAIL_USER คือ login ที่ provider generate ให้ (SendGrid ใช้คำว่า apikey +
+         relay smtp.sendgrid.net) และ KS_MAIL_FROM ต้องเป็น address ที่
+         <b>verify เป็น sender กับ provider แล้ว</b> — relay ตรวจ envelope sender เสมอ
+         และปฏิเสธ address ที่ไม่รู้จัก เปลี่ยน provider เมื่อไหร่ = แก้ 3 บรรทัด
+         KS_MAIL_RELAY/USER/KEYFILE แล้วรัน mail-setup ซ้ำ</p></li>
+    <li>วาง key แล้วให้ ketsync ตั้ง postfix ให้เอง — เมลทดสอบไปที่ KS_MAIL_INFRA
+      <details class="cmd"><summary>./ketsync mail-setup --test</summary><div class="code"><pre><span class="c"># on the STORAGE node - and again on the backup node</span>
+apt-get install -y libsasl2-modules   <span class="c"># postfix needs these to AUTH; PVE ships without them</span>
+echo 'xsmtpsib-your-key' > /root/.brevo.key && chmod 600 /root/.brevo.key
+./ketsync mail-setup --test</pre></div></details>
+      <p>เมลทดสอบต้องถึงจริงก่อนไปขั้นถัดไป (ถ้าเงียบ:
+         <code class="inl">journalctl -u postfix -n 30</code> มีคำตอบของ provider —
+         535 = user/key ผิด, 550 sender = ยังไม่ verify) เบื้องหลังคือ
+         <code class="inl">contrib/mail-satellite.sh</code> ตัวเดิม จะรันมือพร้อม flag
+         เองก็ยังได้เหมือนเดิม</p></li>
     <li>ซ้อม แล้วของจริง แล้ว digest
       <details class="cmd"><summary>./ketsync watch --dry-run</summary><div class="code"><pre>./ketsync watch --dry-run
 ./ketsync watch

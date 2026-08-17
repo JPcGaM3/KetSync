@@ -10,7 +10,10 @@
 #  container, never on an argv where `ps` can read it. The day the provider
 #  changes, this script runs again and no tool changes at all.
 #
-#  Run it BY HAND, once per infra machine, as root:
+#  The comfortable way to run it is `ketsync mail-setup [--test]`, which
+#  reads KS_MAIL_RELAY / KS_MAIL_USER / KS_MAIL_KEYFILE from conf/ketsync.conf
+#  and hands them here - so changing provider is a conf edit plus one
+#  command. By hand, once per infra machine, as root, it is:
 #
 #    ./contrib/mail-satellite.sh --relay '[smtp-relay.brevo.com]:587' \
 #                                --user 'b5c6b3001@smtp-brevo.com' \

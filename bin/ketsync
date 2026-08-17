@@ -32,6 +32,10 @@
 #                         State-driven, so re-running it finishes an
 #                         interrupted one. It never starts a container
 #
+#    ketsync mail-setup   point this machine's postfix at the relay named in
+#                         conf/ketsync.conf, so watch's mail has a road out.
+#                         --test proves it end to end. Run per infra machine
+#
 #    ketsync tp <anything>   pass straight through to the engines, for a flag
 #                            this dispatcher has not been taught
 #
@@ -187,9 +191,9 @@ prepare: get a production container out of the way, and put it back
   --dry-run              every guard runs, nothing is written
 MENU
 ;;
-    # sync is deliberately absent: "push the tables to everybody" is its only
-    # scope, so a bare `ketsync sync` is a complete instruction rather than an
-    # unfinished one. It still asks before it writes.
+    # sync and mail-setup are deliberately absent: each has exactly one scope
+    # ("everybody" and "this machine"), so the bare verb is a complete
+    # instruction rather than an unfinished one. Both still ask before writing.
     *) return 1;;
   esac
   return 0
@@ -214,7 +218,7 @@ ks_writes(){   # $1 = verb, rest = its arguments
     [[ "$a" == --dry-run || "$a" == --list ]] && return 1
   done
   case "$1" in
-    migrate|replica|failback|distribute|recall|prepare|isolate|restore|evacuate|cleanup|recover|sync) return 0;;
+    migrate|replica|failback|distribute|recall|prepare|isolate|restore|evacuate|cleanup|recover|sync|mail-setup) return 0;;
     *) return 1;;
   esac
 }
@@ -232,6 +236,7 @@ ks_what(){   # $1 = verb -> one line, in the present tense, about customer data
     cleanup)    echo "this STOPS each 9<id> that stood in during the outage and takes it off the wire. With --destroy it removes them for good.";;
     recover)    echo "this runs the WHOLE way back: fsck, failback --final, restores, cleanup. It assumes recall --final already ran - the copies must hold what the 9<id>s were serving.";;
     sync)       echo "this OVERWRITES the fleet tables on every other node.";;
+    mail-setup) echo "this REWRITES /etc/postfix on THIS machine: every sendmail here will relay through the conf's KS_MAIL_RELAY.";;
     *)          echo "this writes.";;
   esac
 }
@@ -282,6 +287,9 @@ case "${1:-}" in
   # watch is read-only toward the fleet and is MEANT for cron, so it is not in
   # ks_writes and a bare `ketsync watch` runs: the mail is the whole point.
   watch)      shift; . "$BASE/lib/cmd_watch.sh";    cmd_watch "$@";;
+  # mail-setup composes nothing: it hands conf values to ONE script. It lives
+  # here rather than in the script so the relay is written down in the conf.
+  mail-setup) shift; . "$BASE/lib/cmd_mail.sh";     cmd_mail_setup "$@";;
 
   version)    echo "ketsync $(cd "$BASE" && git describe --tags --always --dirty 2>/dev/null || echo dev)";;
   ""|-h|--help|help) usage;;

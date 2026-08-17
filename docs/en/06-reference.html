@@ -155,6 +155,7 @@
     <tr><td class="m">--to / --dst</td><td>override fleet.tsv's placement (distribute)</td></tr>
     <tr><td class="m">--node</td><td>whole machine, not per CT (evacuate, restore)</td></tr>
     <tr><td class="m">--digest</td><td>mail doctor's report (watch)</td></tr>
+    <tr><td class="m">--test</td><td>send a proof mail to KS_MAIL_INFRA after setup (mail-setup)</td></tr>
     <tr><td class="m">-y</td><td>skips the question and nothing else; there is no --force</td></tr>
   </table>
 </section>
@@ -194,11 +195,13 @@
   <table>
     <tr><td class="m">conf/ketsync.conf</td><td>KS_ROLE (master/slave, human-edited only), KS_MASTER_IP,
         KS_MAIL_FROM/_INFRA/_NODE/_DIGEST (watch refuses without them), KS_WATCH_HEALTHCHECK
-        (optional dead-man; green runs only)</td></tr>
-    <tr><td class="m">engines/ctrep.conf</td><td>BKP_SSH (root@backup-ip — the artery), BW_TOTAL_MB
+        (optional dead-man; green runs only), KS_MAIL_RELAY/_USER/_KEYFILE (the transport:
+        `ketsync mail-setup` reads these three and points postfix at the relay -
+        changing provider is an edit plus a re-run)</td></tr>
+    <tr><td class="m">conf/ctrep.conf</td><td>BKP_SSH (root@backup-ip — the artery), BW_TOTAL_MB
         (per-machine ceiling, split per lane), OFFSET / DR_OFFSET (300 &rarr; 8300 / 9300),
         MOCKNET_BRIDGE (vmbr99), SHUTDOWN_GRACE</td></tr>
-    <tr><td class="m">engines/ctmig.conf</td><td>the migrate-side twin; its BW ceiling is separate
+    <tr><td class="m">conf/ctmig.conf</td><td>the migrate-side twin; its BW ceiling is separate
         (doctor nags until the conf merge lands)</td></tr>
   </table>
 </section>
@@ -209,8 +212,8 @@
     <tr><td class="m">conf/nodes.tsv</td><td>ip + role, every machine; no name column on purpose</td></tr>
     <tr><td class="m">conf/fleet.tsv</td><td>the DR map: ct, home, dr, dst — all required</td></tr>
     <tr><td class="m">conf/nodes.map</td><td>ip &rarr; PVE node name, GENERATED — never hand-edited</td></tr>
-    <tr><td class="m">engines/inventory-replica.tsv</td><td>the nightly work list (replica + failback)</td></tr>
-    <tr><td class="m">engines/inventory-migrate.tsv</td><td>the intake work list, used while migrating</td></tr>
+    <tr><td class="m">inventory/inventory-replica.tsv</td><td>the nightly work list (replica + failback)</td></tr>
+    <tr><td class="m">inventory/inventory-migrate.tsv</td><td>the intake work list, used while migrating</td></tr>
     <tr><td class="m">engines/PAUSE · engines/pause/&lt;ctid&gt;</td><td>stop everything (failback windows) · pause one CT</td></tr>
     <tr><td class="m">logs/ · state/watch.tsv</td><td>daily logs, self-pruned · what watch holds raised</td></tr>
   </table>

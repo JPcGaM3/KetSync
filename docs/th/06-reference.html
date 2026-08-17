@@ -164,6 +164,7 @@
 ribute</td></tr>
     <tr><td class="m">--node &lt;ip&gt;</td><td>ทำทั้งเครื่อง ไม่ใช่ราย CT</td><td>evacuate, restore</td></tr>
     <tr><td class="m">--digest</td><td>ส่งรายงาน doctor ทั้งฉบับเข้าเมล</td><td>watch</td></tr>
+    <tr><td class="m">--test</td><td>ส่งเมลทดสอบไป KS_MAIL_INFRA หลังตั้ง postfix เสร็จ</td><td>mail-setup</td></tr>
     <tr><td class="m">-y</td><td>ตัดสินใจไปแล้ว — ข้ามแค่คำถาม ไม่ข้ามด่านสักด่าน ไม่มี --force</td><td>ทุกตัวที่เขียน</td></tr>
   </table>
 </section>
@@ -246,9 +247,10 @@ ribute</td></tr>
     <tr><td class="m">KS_ROLE</td><td>master / slave — คนเปลี่ยนเองเท่านั้น master คือเจ้าของตาราง</td></tr>
     <tr><td class="m">KS_MASTER_IP</td><td>IP ของเครื่องที่เป็น master ตอนนี้</td></tr>
     <tr><td class="m">KS_MAIL_FROM / _INFRA / _NODE / _DIGEST</td><td>ที่อยู่เมลของ watch — ไม่ครบ watch ปฏิเสธ</td></tr>
+    <tr><td class="m">KS_MAIL_RELAY / _USER / _KEYFILE</td><td>relay ของ provider + login + path ของ key — <span class="m">ketsync mail-setup</span> อ่านสามค่านี้ไปตั้ง postfix เปลี่ยน provider = แก้แล้วรันซ้ำ</td></tr>
     <tr><td class="m">KS_WATCH_HEALTHCHECK</td><td>URL dead-man (healthchecks.io) — รอบเขียวเท่านั้นที่ ping</td></tr>
   </table>
-  <h3>engines/ctrep.conf — replica / failback / distribute / recall</h3>
+  <h3>conf/ctrep.conf — replica / failback / distribute / recall</h3>
   <table>
     <tr><td class="m">BKP_SSH</td><td>root@&lt;IP เครื่อง backup&gt; — เส้นเลือดหลักของทั้งระบบ</td></tr>
     <tr><td class="m">BW_TOTAL_MB</td><td>เพดาน bandwidth รวมของเครื่องนี้ หารเป็น lane อัตโนมัติ</td></tr>
@@ -256,7 +258,7 @@ ribute</td></tr>
     <tr><td class="m">MOCKNET_BRIDGE</td><td>bridge ปิดตาย (vmbr99) ที่สำเนาและตัวที่ถูก isolate ไปอยู่</td></tr>
     <tr><td class="m">SHUTDOWN_GRACE</td><td>เวลารอ shutdown ตอน evacuate/isolate (สั้น เพราะสัญญาณเข้าคิวแล้ว)</td></tr>
   </table>
-  <p><code class="inl">engines/ctmig.conf</code> คือชุดเดียวกันฝั่ง migrate ที่ต่างคือ
+  <p><code class="inl">conf/ctmig.conf</code> คือชุดเดียวกันฝั่ง migrate ที่ต่างคือ
      BW ของมันแยกเพดานกับ ctrep (doctor เตือนเรื่องนี้อยู่จนกว่า conf จะรวมเป็นไฟล์เดียว)</p>
 </section>
 
@@ -268,8 +270,8 @@ ribute</td></tr>
     <tr><td class="m">conf/nodes.tsv</td><td>IP + บทบาท ของทุกเครื่อง — ไม่มีคอลัมน์ชื่อ ตั้งใจ</td><td>ตอนมีเครื่องใหม่</td></tr>
     <tr><td class="m">conf/fleet.tsv</td><td>แผนที่ DR: ct, home, dr, dst — ครบทุกคอลัมน์ ไม่มี default</td><td>ตอนรับลูกค้าใหม่</td></tr>
     <tr><td class="m">conf/nodes.map</td><td>IP &rarr; ชื่อ node ระบบสร้างเอง <b>ห้ามแก้มือ</b></td><td>ไม่ต้องแตะ</td></tr>
-    <tr><td class="m">engines/inventory-replica.tsv</td><td>ใบงานก๊อปทุกคืน (replica + failback ใช้ร่วม)</td><td>บ่อยที่สุด</td></tr>
-    <tr><td class="m">engines/inventory-migrate.tsv</td><td>ใบงานย้ายเข้าฟลีต ใช้เฉพาะช่วงย้าย</td><td>ช่วงย้ายของ</td></tr>
+    <tr><td class="m">inventory/inventory-replica.tsv</td><td>ใบงานก๊อปทุกคืน (replica + failback ใช้ร่วม)</td><td>บ่อยที่สุด</td></tr>
+    <tr><td class="m">inventory/inventory-migrate.tsv</td><td>ใบงานย้ายเข้าฟลีต ใช้เฉพาะช่วงย้าย</td><td>ช่วงย้ายของ</td></tr>
     <tr><td class="m">engines/PAUSE</td><td>มีไฟล์นี้ = replica หยุดทั้งระบบ ใช้ช่วง failback เท่านั้น</td><td>เฉพาะ DR</td></tr>
     <tr><td class="m">engines/pause/&lt;ctid&gt;</td><td>พักราย CT — ลบไฟล์เมื่อพร้อมกลับมา</td><td>ตามจำเป็น</td></tr>
     <tr><td class="m">logs/ · engines/logs/</td><td>log รายวัน ชื่อไฟล์บอกคำสั่งกับวันที่ ลบเองหลัง 14 วัน</td><td>อ่านอย่างเดียว</td></tr>

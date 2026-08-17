@@ -103,6 +103,9 @@ pins down is edge-triggering (a standing problem mails once), tiering (the
 right address), suppression (one story told once), and
 delivered-and-remembered-or-neither (a failed send keeps the state file
 untouched, exits red, and skips the dead-man ping so the silence is heard).
+`mail-setup` has 9 and 5: the verb is one boundary - conf keys in, satellite
+argv out, exit code back - and its fake satellite records the argv, which is
+the entire output under test.
 
 `doctor` has 21 and 20, and it went last for the wrong reason: it writes
 nothing, so nothing it does can corrupt anything. What it can do is stop
@@ -122,8 +125,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 417 tp simulator + 16 dispatcher + 125 c2v, 111 ketsync
-    make mutation # 475 known bugs put back. None may survive
+    make test     # both layers: 419 tp simulator + 16 dispatcher + 125 c2v, 120 ketsync
+    make mutation # 483 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -147,12 +150,19 @@ catches none of it, which is why `make lint` passes there and proves nothing.
                          out - because the sequencing IS this layer's job
     engines/             the six engines and their dispatcher `tp`. Every
                          guard that touches customer data lives here. Their
-                         runtime (state/, logs/, done/, PAUSE, the real
-                         inventories) sits beside them, gitignored
-    conf/                every table and sample in one place: ketsync.conf,
+                         runtime (state/, logs/, done/, PAUSE) sits beside
+                         them, gitignored
+    conf/                every conf, table and sample in one place: ketsync.conf,
+                         ctrep.conf and ctmig.conf (the engines' knobs - moved
+                         here from engines/, and an engine finding a copy at
+                         the old home REFUSES rather than ranking them),
                          nodes.tsv (ip -> role, no name column on purpose),
                          fleet.tsv (ct, home, dr, storage - all required, no
                          fallback), nodes.map (GENERATED, never hand-edited)
+    inventory/           the work lists: inventory-replica.tsv (what replica
+                         copies nightly) and inventory-migrate.tsv (the
+                         intake list), gitignored per-site next to their
+                         tracked samples. Same old-home refusal as the confs
     contrib/             one-shot tools, not the daily path: the three CT-to-VM
                          scripts, bkp02-setup.sh, add-storage-column.sh
     docs/th/ docs/en/    the operator guides, a numbered ladder mirrored in

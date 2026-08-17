@@ -196,13 +196,13 @@ cd /root/ketsync
 cp conf/ketsync.conf.sample  conf/ketsync.conf
 cp conf/nodes.tsv.sample     conf/nodes.tsv
 cp conf/fleet.tsv.sample     conf/fleet.tsv
-cp engines/inventory-replica.sample.tsv engines/inventory-replica.tsv</pre></div></details>
+cp inventory/inventory-replica.sample.tsv inventory/inventory-replica.tsv</pre></div></details>
   <table>
     <tr><th>file</th><th>what goes in</th></tr>
     <tr><td class="m">conf/ketsync.conf</td><td>KS_ROLE=master on storage, slave on backup; KS_MASTER_IP=10.100.1.17. Never scp this file between machines.</td></tr>
     <tr><td class="m">conf/nodes.tsv</td><td>one line per machine: ip TAB role (storage / backup / compute). No name column, on purpose.</td></tr>
     <tr><td class="m">conf/fleet.tsv</td><td>the DR map: ct, home, dr, dst — every column required, no defaults</td></tr>
-    <tr><td class="m">engines/inventory-replica.tsv</td><td>what to copy nightly: ct + dest pool, every row</td></tr>
+    <tr><td class="m">inventory/inventory-replica.tsv</td><td>what to copy nightly: ct + dest pool, every row</td></tr>
   </table>
 </section>
 
@@ -220,24 +220,31 @@ cp engines/inventory-replica.sample.tsv engines/inventory-replica.tsv</pre></div
 <section id="s7">
   <div class="eyebrow"><span class="num">7</span><h2>Alert mail — the system speaks when nobody is looking</h2></div>
   <ol class="steps">
-    <li>Point postfix at SendGrid; the key lives in one root-readable file, never in the repo
-      <details class="cmd"><summary>contrib/mail-satellite.sh --relay ... --keyfile ...</summary><div class="code"><pre><span class="c"># on the storage node</span>
-apt-get install -y libsasl2-modules   <span class="c"># postfix cannot AUTH without these; PVE ships bare</span>
-echo 'xsmtpsib-your-key' > /root/.brevo.key &amp;&amp; chmod 600 /root/.brevo.key
-./contrib/mail-satellite.sh --relay '[smtp-relay.brevo.com]:587' \
-    --user 'b5c6b3001@smtp-brevo.com' --keyfile /root/.brevo.key \
-    --test you@example.com --from verified-sender@example.com</pre></div></details>
-      <p>--user is whatever the provider's SMTP page shows as the login (Brevo generates
-         one; SendGrid uses the literal word apikey with relay smtp.sendgrid.net), and
-         --from must be an address the provider has VERIFIED as a sender - the same
-         address goes into KS_MAIL_FROM. If nothing arrives:
-         <code class="inl">journalctl -u postfix -n 30</code> has the provider's answer.</p></li>
-    <li>Addresses into <code class="inl">conf/ketsync.conf</code>
-      <details class="cmd"><summary>KS_MAIL_* + optional dead-man</summary><div class="code"><pre>KS_MAIL_FROM="ketsync@example.com"
+    <li>Everything into <code class="inl">conf/ketsync.conf</code> - who gets told, and which relay carries it
+      <details class="cmd"><summary>KS_MAIL_* + relay + optional dead-man</summary><div class="code"><pre>KS_MAIL_FROM="ketsync@example.com"      <span class="c"># must be VERIFIED as a sender at the provider</span>
 KS_MAIL_INFRA="infra@example.com"
 KS_MAIL_NODE="node@example.com"
 KS_MAIL_DIGEST="admin@example.com"
-KS_WATCH_HEALTHCHECK="https://hc-ping.com/&lt;uuid&gt;"   <span class="c"># optional</span></pre></div></details></li>
+KS_WATCH_HEALTHCHECK="https://hc-ping.com/&lt;uuid&gt;"   <span class="c"># optional</span>
+<span class="c"># the transport - changing provider = edit these three, re-run mail-setup</span>
+KS_MAIL_RELAY="[smtp-relay.brevo.com]:587"
+KS_MAIL_USER="b5c6b3001@smtp-brevo.com" <span class="c"># the login the provider's SMTP page shows</span>
+KS_MAIL_KEYFILE="/root/.brevo.key"      <span class="c"># the PATH to the key, never the key</span></pre></div></details>
+      <p>KS_MAIL_USER is whatever the provider generates (SendGrid: the literal word
+         apikey with relay smtp.sendgrid.net), and KS_MAIL_FROM must be an address the
+         provider has VERIFIED as a sender - relays validate the envelope sender and
+         reject one they have never heard of.</p></li>
+    <li>Drop the key in place, then let ketsync point postfix at the relay
+      <details class="cmd"><summary>ketsync mail-setup --test</summary><div class="code"><pre><span class="c"># on the storage node - and again on the backup node</span>
+apt-get install -y libsasl2-modules   <span class="c"># postfix cannot AUTH without these; PVE ships bare</span>
+echo 'xsmtpsib-your-key' > /root/.brevo.key &amp;&amp; chmod 600 /root/.brevo.key
+./ketsync mail-setup --test</pre></div></details>
+      <p>The test mail goes to KS_MAIL_INFRA from KS_MAIL_FROM - the exact path watch's
+         own mail will take. It has to actually arrive before the next step. If nothing
+         does: <code class="inl">journalctl -u postfix -n 30</code> has the provider's
+         answer (535 = wrong user/key, 550 sender = not verified). The script underneath
+         is <code class="inl">contrib/mail-satellite.sh</code>, still runnable by hand
+         with explicit flags.</p></li>
     <li>Rehearse, then cron
       <details class="cmd"><summary>watch --dry-run → watch → cron</summary><div class="code"><pre>./ketsync watch --dry-run
 ./ketsync watch
