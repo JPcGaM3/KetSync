@@ -371,6 +371,14 @@ mutant "the fallback log directory is not the engine's own" \
   's{\QLOGDIR="\E\$BASE\Q/logs"\E}{LOGDIR="\$BASE/../logs"}' \
   1
 
+
+# ---------- the moved homes ---------------------------------------------------
+# Same guard as ct-replica: ctmig.conf moved out of engines/, and a stale copy
+# left behind must be a refusal, not a file the engine silently outranks.
+mutant "a conf left at the OLD home is silently outranked instead of refused" \
+  's{\Q  if [[ -e "\E\$\QCONF" ]]; then\E\n\Q    echo "ERROR: \E\$\QCONF is the OLD home - the conf moved to conf/ctmig.conf." >&2\E}{  if false; then\n    echo "ERROR: \$CONF is the OLD home - the conf moved to conf/ctmig.conf." >&2}' \
+  71
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

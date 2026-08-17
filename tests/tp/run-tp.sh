@@ -46,7 +46,7 @@ new_world(){
   # is not there, so a sandbox that wants to dispatch has to carry them
   ln -s "$ROOT/engines/ct-migrate.sh" "$ROOT/engines/ct-replica.sh" \
         "$ROOT/engines/ct-failback.sh" "$ROOT/engines/ct-distribute.sh" "$HOME_DIR/"
-  cp "$ROOT/engines/ctmig.conf" "$ROOT/engines/ctrep.conf" "$HOME_DIR/" 2>/dev/null || true
+  cp "$ROOT/conf/ctmig.conf" "$ROOT/conf/ctrep.conf" "$HOME_DIR/" 2>/dev/null || true
   : > "$HOME_DIR/inventory-migrate.tsv"
   : > "$HOME_DIR/inventory-replica.tsv"
 }

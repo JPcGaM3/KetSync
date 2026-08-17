@@ -1086,9 +1086,12 @@ fi
 # scenario says so.
 if scenario "35: vendored under a ketsync, its tables win over the copies beside the engine"; then
   REPO="$SIMROOT/repo"
-  mkdir -p "$REPO/engines" "$REPO/lib" "$REPO/bin" "$REPO/conf"
+  mkdir -p "$REPO/engines" "$REPO/lib" "$REPO/bin" "$REPO/conf" "$REPO/inventory"
   : > "$REPO/bin/ketsync"; : > "$REPO/lib/common.sh"
-  cp "$WORK/ctrep.conf" "$WORK/inventory-replica.tsv" "$REPO/engines/"
+  # the conf and the work list live in their moved homes - a copy left beside
+  # the engine would be refused outright, which is its own scenario now
+  cp "$WORK/ctrep.conf" "$REPO/conf/"
+  cp "$WORK/inventory-replica.tsv" "$REPO/inventory/"
   ln -s "$ENGINE" "$REPO/engines/ct-distribute.sh"
   # beside the engine: the wrong answer. In the repo's conf/: the right one.
   printf '300\t10.100.1.31\t%s\tlocal-zfs\n' "$T2" > "$REPO/engines/fleet.tsv"

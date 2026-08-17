@@ -164,6 +164,28 @@ export PATH
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="$BASE/ctrep.conf"
 INV="$BASE/inventory-replica.tsv"
+# Repo shape: the per-site conf lives in conf/ and the work list in
+# inventory/, one level up - the same walk-up as nodes.map. A flat tree (the
+# simulators build one) keeps both beside the engine. A copy left at the OLD
+# home is refused rather than ranked: two files with one name is two places
+# to edit, and whichever one this engine did not read is the one somebody
+# just edited.
+if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" ]]; then
+  _ksroot="$(cd "$BASE/.." && pwd)"
+  if [[ -e "$CONF" ]]; then
+    echo "ERROR: $CONF is the OLD home - the conf moved to conf/ctrep.conf." >&2
+    echo "ERROR:   merge any local edits into $_ksroot/conf/ctrep.conf and remove" >&2
+    echo "ERROR:   the old file. Two files with one name is how an edit gets lost." >&2
+    exit 2
+  fi
+  if [[ -e "$INV" ]]; then
+    echo "ERROR: $INV is the OLD home - the work lists moved to inventory/." >&2
+    echo "ERROR:   mv $INV $_ksroot/inventory/inventory-replica.tsv" >&2
+    exit 2
+  fi
+  CONF="$_ksroot/conf/ctrep.conf"
+  INV="$_ksroot/inventory/inventory-replica.tsv"
+fi
 # ketsync's two tables, read where ketsync KEEPS them rather than from a copy.
 # There used to be a mirror: `ketsync doctor` cp'd both files down here and the
 # engines read the copies. It failed exactly where it mattered - `ketsync sync`
@@ -184,7 +206,7 @@ if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" ]]; then
 fi
 
 # ---------- defaults (ctrep.conf wins; they are the same knobs) ----------
-BKP_SSH="root@10.100.1.9"
+BKP_SSH="root@100.100.100.35"
 BKP_NODE=""                      # pmxcfs name, discovered - see ct-replica.sh
 # storage-id : dataset. The KEY is the PVE storage id itself - there is no
 # short alias any more. "hdd" and "ssd" meant nothing to anybody who had not

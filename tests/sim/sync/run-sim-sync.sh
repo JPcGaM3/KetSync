@@ -58,7 +58,7 @@ new_world(){
 
   # A whole ketsync install, because cmd_sync is sourced by the dispatcher and
   # the dispatcher is what sets KS_BASE.
-  mkdir -p "$MASTER/lib" "$MASTER/conf" "$MASTER/engines" "$MASTER/logs"
+  mkdir -p "$MASTER/lib" "$MASTER/conf" "$MASTER/engines" "$MASTER/inventory" "$MASTER/logs"
   # lib/ comes from beside the DISPATCHER, not from the repo. cmd_sync.sh is
   # sourced rather than executed, so the mutation suite hands this an otherwise
   # untouched ketsync tree with one file swapped - and taking lib/ from $ROOT
@@ -74,8 +74,8 @@ CONF
   table "$MASTER/conf/nodes.tsv" 1 \
     "$ME	storage" "$BKP	backup" "$C1	compute" "$C2	compute"
   table "$MASTER/conf/fleet.tsv" 1 "300	gold	$ME	$C1	local-lvm"
-  table "$MASTER/engines/inventory-replica.tsv" 1 "110	hdd" "120	hdd"
-  table "$MASTER/engines/inventory-migrate.tsv"  1 "251	tank-hdd-nas"
+  table "$MASTER/inventory/inventory-replica.tsv" 1 "110	hdd" "120	hdd"
+  table "$MASTER/inventory/inventory-migrate.tsv"  1 "251	tank-hdd-nas"
 
   # Three other machines. The backup node has an install at the SAME absolute
   # path; that is the case everything used to assume was universal.
@@ -101,12 +101,12 @@ add_host(){
   local d; d="$(host_dir_local "$1")"
   rm -rf "$d/fs"; mkdir -p "$d/fs"
   case "$2" in
-    same)      mkdir -p "$d/fs$MASTER/engines" "$d/fs$MASTER/conf"
+    same)      mkdir -p "$d/fs$MASTER/engines" "$d/fs$MASTER/conf" "$d/fs$MASTER/inventory"
                # The dispatcher itself, because "is there a ketsync here" is
                # what the master asks - an empty directory of the right name is
                # not an install and must not read as one.
                : > "$d/fs$MASTER/ketsync";;
-    elsewhere) mkdir -p "$d/fs/root/elsewhere/ketsync/engines" "$d/fs/root/elsewhere/ketsync/conf"
+    elsewhere) mkdir -p "$d/fs/root/elsewhere/ketsync/engines" "$d/fs/root/elsewhere/ketsync/conf" "$d/fs/root/elsewhere/ketsync/inventory"
                : > "$d/fs/root/elsewhere/ketsync/ketsync";;
     none)      : ;;
   esac
@@ -202,8 +202,8 @@ if scenario "1: the master pushes every fleet-wide table to a node that has one"
   rc_is 0; clean
   arrived "$BKP" conf/nodes.tsv 1
   arrived "$BKP" conf/fleet.tsv 1
-  arrived "$BKP" engines/inventory-replica.tsv 1
-  same_as_master "$BKP" engines/inventory-replica.tsv
+  arrived "$BKP" inventory/inventory-replica.tsv 1
+  same_as_master "$BKP" inventory/inventory-replica.tsv
   done_scenario
 fi
 
@@ -262,13 +262,13 @@ fi
 # disagreement survived every sync and the log said everything was fine.
 
 if scenario "7: equal generation but different content is a FORK, and it stops"; then
-  remote_table "$BKP" engines/inventory-replica.tsv 1 "110	hdd" "120	hdd" "130	hdd" "140	hdd"
+  remote_table "$BKP" inventory/inventory-replica.tsv 1 "110	hdd" "120	hdd" "130	hdd" "140	hdd"
   run_ks sync
   rc_is 1; clean
   has "FORKED"
-  has "engines/inventory-replica.tsv"
+  has "inventory/inventory-replica.tsv"
   # Nothing is chosen for the operator. The slave still holds what it held.
-  arrived "$BKP" engines/inventory-replica.tsv 1
+  arrived "$BKP" inventory/inventory-replica.tsv 1
   done_scenario
 fi
 
@@ -282,7 +282,7 @@ if scenario "8: the fork message says how to see it and how to settle it"; then
 fi
 
 if scenario "9: --diff shows what differs and writes nothing at all"; then
-  remote_table "$BKP" engines/inventory-replica.tsv 1 "110	hdd" "999	ssd"
+  remote_table "$BKP" inventory/inventory-replica.tsv 1 "110	hdd" "999	ssd"
   run_ks sync --diff
   rc_is 1; clean
   has "999"
@@ -291,13 +291,13 @@ if scenario "9: --diff shows what differs and writes nothing at all"; then
 fi
 
 if scenario "10: --bump raises this machine's generation so the push is legal"; then
-  remote_table "$BKP" engines/inventory-replica.tsv 1 "110	hdd" "999	ssd"
+  remote_table "$BKP" inventory/inventory-replica.tsv 1 "110	hdd" "999	ssd"
   run_ks sync --bump
   rc_is 0; clean
   # The master's own copy went up, and only the forked file moved.
   has "generation 1 -> 2"
-  arrived "$BKP" engines/inventory-replica.tsv 2
-  same_as_master "$BKP" engines/inventory-replica.tsv
+  arrived "$BKP" inventory/inventory-replica.tsv 2
+  same_as_master "$BKP" inventory/inventory-replica.tsv
   done_scenario
 fi
 
@@ -323,20 +323,20 @@ if scenario "10c: --bump <file> settles that one and leaves the other forked"; t
   # The ordinary shape of a real fork: both inventories disagree at once. One
   # command deciding both is how the file nobody read gets overwritten, so
   # naming one settles one - and the run still says it is not finished.
-  remote_table "$BKP" engines/inventory-replica.tsv 1 "110	hdd" "999	ssd"
-  remote_table "$BKP" engines/inventory-migrate.tsv 1 "888	tank-hdd-nas"
-  run_ks sync --bump engines/inventory-replica.tsv
+  remote_table "$BKP" inventory/inventory-replica.tsv 1 "110	hdd" "999	ssd"
+  remote_table "$BKP" inventory/inventory-migrate.tsv 1 "888	tank-hdd-nas"
+  run_ks sync --bump inventory/inventory-replica.tsv
   rc_is 1; clean
-  arrived "$BKP" engines/inventory-replica.tsv 2
-  same_as_master "$BKP" engines/inventory-replica.tsv
+  arrived "$BKP" inventory/inventory-replica.tsv 2
+  same_as_master "$BKP" inventory/inventory-replica.tsv
   # untouched: still theirs, still generation 1
-  arrived "$BKP" engines/inventory-migrate.tsv 1
+  arrived "$BKP" inventory/inventory-migrate.tsv 1
   has "inventory-migrate.tsv is still FORKED"
   done_scenario
 fi
 
 if scenario "10d: --bump on a file that has not forked refuses"; then
-  remote_table "$BKP" engines/inventory-replica.tsv 1 "110	hdd" "999	ssd"
+  remote_table "$BKP" inventory/inventory-replica.tsv 1 "110	hdd" "999	ssd"
   run_ks sync --bump conf/fleet.tsv
   rc_is 2; clean
   has "fleet.tsv has not forked"
@@ -419,7 +419,7 @@ fi
 # ---------- a table nobody can order ----------------------------------------
 
 if scenario "16: a table with no generation line stops the whole run"; then
-  printf '110\thdd\n' > "$MASTER/engines/inventory-replica.tsv"
+  printf '110\thdd\n' > "$MASTER/inventory/inventory-replica.tsv"
   run_ks sync
   rc_is 2; clean
   has "no '# generation: N' line"

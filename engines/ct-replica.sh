@@ -162,9 +162,31 @@ export PATH
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # folder is relocatable
 INV="$BASE/inventory-replica.tsv"
 CONF="$BASE/ctrep.conf"
+# Repo shape: the per-site conf lives in conf/ and the work list in
+# inventory/, one level up - the same walk-up as nodes.map. A flat tree (the
+# simulators build one) keeps both beside the engine. A copy left at the OLD
+# home is refused rather than ranked: two files with one name is two places
+# to edit, and whichever one this engine did not read is the one somebody
+# just edited.
+if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" ]]; then
+  _ksroot="$(cd "$BASE/.." && pwd)"
+  if [[ -e "$CONF" ]]; then
+    echo "ERROR: $CONF is the OLD home - the conf moved to conf/ctrep.conf." >&2
+    echo "ERROR:   merge any local edits into $_ksroot/conf/ctrep.conf and remove" >&2
+    echo "ERROR:   the old file. Two files with one name is how an edit gets lost." >&2
+    exit 2
+  fi
+  if [[ -e "$INV" ]]; then
+    echo "ERROR: $INV is the OLD home - the work lists moved to inventory/." >&2
+    echo "ERROR:   mv $INV $_ksroot/inventory/inventory-replica.tsv" >&2
+    exit 2
+  fi
+  CONF="$_ksroot/conf/ctrep.conf"
+  INV="$_ksroot/inventory/inventory-replica.tsv"
+fi
 
 # ---------- defaults (override in ctrep.conf, never here) ----------
-BKP_SSH="root@10.100.1.9"    # backup node, by IP. key auth required
+BKP_SSH="root@100.100.100.35"    # backup node, by IP. key auth required
 BKP_NODE=""                      # its pmxcfs name. LEAVE EMPTY: the engine asks
                                  # the node itself. Set it only to pin a value,
                                  # and it is then verified, never trusted

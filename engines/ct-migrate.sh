@@ -101,6 +101,28 @@ export PATH
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # everything lives next to this script
 INV="$BASE/inventory-migrate.tsv"
 CONF="$BASE/ctmig.conf"
+# Repo shape: the per-site conf lives in conf/ and the work list in
+# inventory/, one level up - the same walk-up as nodes.map. A flat tree (the
+# simulators build one) keeps both beside the engine. A copy left at the OLD
+# home is refused rather than ranked: two files with one name is two places
+# to edit, and whichever one this engine did not read is the one somebody
+# just edited.
+if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" ]]; then
+  _ksroot="$(cd "$BASE/.." && pwd)"
+  if [[ -e "$CONF" ]]; then
+    echo "ERROR: $CONF is the OLD home - the conf moved to conf/ctmig.conf." >&2
+    echo "ERROR:   merge any local edits into $_ksroot/conf/ctmig.conf and remove" >&2
+    echo "ERROR:   the old file. Two files with one name is how an edit gets lost." >&2
+    exit 2
+  fi
+  if [[ -e "$INV" ]]; then
+    echo "ERROR: $INV is the OLD home - the work lists moved to inventory/." >&2
+    echo "ERROR:   mv $INV $_ksroot/inventory/inventory-migrate.tsv" >&2
+    exit 2
+  fi
+  CONF="$_ksroot/conf/ctmig.conf"
+  INV="$_ksroot/inventory/inventory-migrate.tsv"
+fi
 
 # ---------- defaults (override in ctmig.conf, never here) ----------
 BW_TOTAL_MB=230          # tool-wide ceiling in MiB/s across ALL lanes (~1.93 Gbps)

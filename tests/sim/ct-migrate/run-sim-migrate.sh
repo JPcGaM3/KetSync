@@ -1303,6 +1303,26 @@ if scenario "68: a net line with no bridge= is refused, never silently dropped";
 done_scenario
 fi
 
+
+if scenario "71: repo shape - a file left at the OLD home is refused, not ranked"; then
+  # Same guard as ct-replica scenario 79, on the migrate side: ctmig.conf and
+  # inventory-migrate.tsv moved out of engines/, and a stale copy left behind
+  # is two files with one name - refused before anything runs.
+  mkdir -p "$WORK/bin" "$WORK/lib" "$WORK/engines" "$WORK/conf" "$WORK/inventory"
+  : > "$WORK/bin/ketsync"; : > "$WORK/lib/common.sh"
+  ln -s "$ENGINE" "$WORK/engines/ct-migrate.sh"
+  cp "$WORK/ctmig.conf" "$WORK/conf/ctmig.conf"
+  mv "$WORK/ctmig.conf" "$WORK/engines/ctmig.conf"          # the stale copy
+  OUT="$("$WORK/engines/ct-migrate.sh" --all 2>&1)"; RC=$?
+  rc_is 2
+  has "is the OLD home"
+  has "conf/ctmig.conf"
+  rm "$WORK/engines/ctmig.conf"
+  OUT="$("$WORK/engines/ct-migrate.sh" --help 2>&1)"; RC=$?
+  rc_is 0
+  done_scenario
+fi
+
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi
 exit 0

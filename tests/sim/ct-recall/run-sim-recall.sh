@@ -854,9 +854,12 @@ if scenario "48: vendored under a ketsync, its nodes.map wins over the copy besi
   # else, so a machine that had been SENT the tables was still reading a file
   # nobody had written.
   REPO="$SIMROOT/repo"
-  mkdir -p "$REPO/engines" "$REPO/lib" "$REPO/bin" "$REPO/conf"
+  mkdir -p "$REPO/engines" "$REPO/lib" "$REPO/bin" "$REPO/conf" "$REPO/inventory"
   : > "$REPO/bin/ketsync"; : > "$REPO/lib/common.sh"
-  cp "$WORK/ctrep.conf" "$WORK/inventory-replica.tsv" "$REPO/engines/"
+  # conf and work list in their moved homes - left beside the engine they
+  # would be refused outright, which is ct-replica scenario 79's job to prove
+  cp "$WORK/ctrep.conf" "$REPO/conf/"
+  cp "$WORK/inventory-replica.tsv" "$REPO/inventory/"
   mkdir -p "$REPO/engines/state"
   ln -s "$ENGINE" "$REPO/engines/ct-recall.sh"
   printf '# ip\tpve node name\n10.100.9.99\tpve01\n' > "$REPO/engines/nodes.map"

@@ -81,7 +81,7 @@ cmd_doctor(){
   fi
 
   say "== the files that must carry a generation"
-  for f in conf/nodes.tsv conf/fleet.tsv engines/inventory-replica.tsv engines/inventory-migrate.tsv; do
+  for f in conf/nodes.tsv conf/fleet.tsv inventory/inventory-replica.tsv inventory/inventory-migrate.tsv; do
     [[ -f "$KS_BASE/$f" ]] || { say "  $f: missing"; rc=1; continue; }
     gen="$(sed -n 's/^#[[:space:]]*generation:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$KS_BASE/$f" | head -1)"
     [[ -n "$gen" ]] && say "  $f: generation $gen" || { say "  $f: NO generation line - sync cannot order it"; rc=1; }

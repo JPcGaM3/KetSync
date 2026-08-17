@@ -506,6 +506,19 @@ mutant "the OLD key=dataset:storage-id map is read as though it worked" \
   's{\Q  if [[ "\E\$_kv\Q" == *=* ]]; then\E}{  if false; then}' \
   78
 
+
+# ---------- the moved homes ---------------------------------------------------
+# ctrep.conf and the work list moved out of engines/. A copy left at the old
+# path is refused, because two files with one name is two places to edit and
+# the engine reading the one nobody edits is a fleet configured by a ghost.
+mutant "a conf left at the OLD home is silently outranked instead of refused" \
+  's{\Q  if [[ -e "\E\$\QCONF" ]]; then\E\n\Q    echo "ERROR: \E\$\QCONF is the OLD home - the conf moved to conf/ctrep.conf." >&2\E}{  if false; then\n    echo "ERROR: \$CONF is the OLD home - the conf moved to conf/ctrep.conf." >&2}' \
+  79
+
+mutant "a work list left at the OLD home is silently outranked instead of refused" \
+  's{\Q  if [[ -e "\E\$\QINV" ]]; then\E\n\Q    echo "ERROR: \E\$\QINV is the OLD home - the work lists moved to inventory/." >&2\E}{  if false; then\n    echo "ERROR: \$INV is the OLD home - the work lists moved to inventory/." >&2}' \
+  79
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

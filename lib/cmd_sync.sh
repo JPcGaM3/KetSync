@@ -71,8 +71,8 @@
 # the whole file stays here, because syncing a bandwidth ceiling onto a machine
 # whose link cannot carry it is a worse failure than maintaining it twice.
 KS_SYNCED=(conf/nodes.tsv conf/fleet.tsv
-           engines/inventory-replica.tsv
-           engines/inventory-migrate.tsv)
+           inventory/inventory-replica.tsv
+           inventory/inventory-migrate.tsv)
 
 # A denylist rather than a comment, because the comment above is exactly the
 # kind of thing that gets skimmed. Anything per-machine that reaches KS_SYNCED

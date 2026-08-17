@@ -5,7 +5,12 @@
 # generated from the cluster, never edited by hand
 /conf/nodes.map
 
-# the engines' own per-site work lists and local overrides
+# the engines' own per-site work lists and local overrides. The engines/
+# lines stay although the files moved to inventory/: a stale copy on a
+# deployed machine must never be staged by a git add -A before the engine's
+# own refusal makes somebody move it
+/inventory/inventory-migrate.tsv
+/inventory/inventory-replica.tsv
 /engines/inventory-migrate.tsv
 /engines/inventory-replica.tsv
 /engines/bridgemap.tsv

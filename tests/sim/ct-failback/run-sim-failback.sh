@@ -1084,9 +1084,12 @@ fi
 # purpose: reading it sends the ssh to the wrong machine.
 if scenario "57: vendored under a ketsync, its nodes.map wins over the copy beside the engine"; then
   REPO="$SIMROOT/repo"
-  mkdir -p "$REPO/engines" "$REPO/lib" "$REPO/bin" "$REPO/conf"
+  mkdir -p "$REPO/engines" "$REPO/lib" "$REPO/bin" "$REPO/conf" "$REPO/inventory"
   : > "$REPO/bin/ketsync"; : > "$REPO/lib/common.sh"
-  cp "$WORK/ctrep.conf" "$WORK/inventory-replica.tsv" "$REPO/engines/"
+  # conf and work list in their moved homes - left beside the engine they
+  # would be refused outright, which is ct-replica scenario 79's job to prove
+  cp "$WORK/ctrep.conf" "$REPO/conf/"
+  cp "$WORK/inventory-replica.tsv" "$REPO/inventory/"
   cp -r "$WORK/state" "$REPO/engines/" 2>/dev/null || mkdir -p "$REPO/engines/state"
   ln -s "$ENGINE" "$REPO/engines/ct-failback.sh"
   printf '# ip\tpve node name\n10.100.9.99\tpve01\n' > "$REPO/engines/nodes.map"

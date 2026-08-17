@@ -1491,6 +1491,33 @@ if scenario "78: the OLD BKP_DESTS format is named, not read as a working map"; 
   done_scenario
 fi
 
+
+if scenario "79: repo shape - a file left at the OLD home is refused, not ranked"; then
+  # Rebuild the sandbox as a repo-shaped tree: bin/ and lib/ beside engines/,
+  # the conf in conf/, the work list in inventory/ - and then a stale copy
+  # left where they used to live. The refusal fires before anything else
+  # runs, so no fake fleet is needed here: the tree itself is the scenario.
+  mkdir -p "$WORK/bin" "$WORK/lib" "$WORK/engines" "$WORK/conf" "$WORK/inventory"
+  : > "$WORK/bin/ketsync"; : > "$WORK/lib/common.sh"
+  ln -s "$ENGINE" "$WORK/engines/ct-replica.sh"
+  cp "$WORK/ctrep.conf" "$WORK/conf/ctrep.conf"
+  mv "$WORK/inventory-replica.tsv" "$WORK/inventory/inventory-replica.tsv"
+  mv "$WORK/ctrep.conf" "$WORK/engines/ctrep.conf"          # the stale copy
+  OUT="$("$WORK/engines/ct-replica.sh" --all 2>&1)"; RC=$?
+  rc_is 2
+  has "is the OLD home"
+  has "merge any local edits"
+  rm "$WORK/engines/ctrep.conf"
+  printf '105\treplica-hdd\n' > "$WORK/engines/inventory-replica.tsv"
+  OUT="$("$WORK/engines/ct-replica.sh" --all 2>&1)"; RC=$?
+  rc_is 2
+  has "the work lists moved to inventory/"
+  rm "$WORK/engines/inventory-replica.tsv"
+  OUT="$("$WORK/engines/ct-replica.sh" --help 2>&1)"; RC=$?
+  rc_is 0
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

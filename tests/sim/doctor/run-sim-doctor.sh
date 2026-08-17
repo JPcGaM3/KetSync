@@ -50,7 +50,7 @@ new_world(){
   MASTER="$SIMROOT/master"
   : > "$SIMROOT/violations"; : > "$SIMROOT/trace"
 
-  mkdir -p "$MASTER/lib" "$MASTER/conf" "$MASTER/engines/state" "$MASTER/logs"
+  mkdir -p "$MASTER/lib" "$MASTER/conf" "$MASTER/engines/state" "$MASTER/inventory" "$MASTER/logs"
   local ksdir; ksdir="$(cd "$(dirname "$KS")" && pwd)"
   cp "$KS" "$MASTER/ketsync"; chmod +x "$MASTER/ketsync"
   cp "$ksdir"/lib/*.sh "$MASTER/lib/"
@@ -62,8 +62,8 @@ CONF
   table "$MASTER/conf/nodes.tsv" 1 \
     "$ME	storage" "$BKP	backup" "$C1	compute" "$C2	compute"
   table "$MASTER/conf/fleet.tsv" 5 "110	$C1	$C2	local-lvm" "120	$C2	$C1	local-lvm"
-  table "$MASTER/engines/inventory-replica.tsv" 5 "110	replica-hdd" "120	replica-hdd"
-  table "$MASTER/engines/inventory-migrate.tsv"  2 "251	tank-hdd-nas"
+  table "$MASTER/inventory/inventory-replica.tsv" 5 "110	replica-hdd" "120	replica-hdd"
+  table "$MASTER/inventory/inventory-migrate.tsv"  2 "251	tank-hdd-nas"
 
   # The engines have to exist and be runnable, because "cron would exit 126" is
   # one of the things doctor is for. tp itself is a stub: what the execution

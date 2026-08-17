@@ -135,7 +135,7 @@ go through it.
 ```bash
 cd /root/ketsync
 cp ketsync.conf.sample  ketsync.conf     # KS_ROLE=slave, KS_MASTER_IP=<the storage node>
-$EDITOR engines/ctrep.conf            # BW_TOTAL_MB for THIS machine's link
+$EDITOR conf/ctrep.conf            # BW_TOTAL_MB for THIS machine's link
 ./ketsync doctor                          # builds nodes.map here
 ```
 
@@ -163,7 +163,7 @@ the storage node is gone — usually the same machine, because what died is the
 disk and not the CPU. `dst` is the storage on that machine, spelled exactly as
 `pvesm status` there spells it.
 
-`engines/inventory-replica.tsv` — which containers get copied, and to which
+`inventory/inventory-replica.tsv` — which containers get copied, and to which
 pool on the backup node. The dest is required on every row; there is no
 default, for the same reason `fleet.tsv` has no fallback storage:
 
