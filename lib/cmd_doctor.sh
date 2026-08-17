@@ -243,11 +243,26 @@ cmd_doctor(){
   # the one worth asking about.
   say "== images whose filesystem recorded an error"
   local imgs=0 img_bad=0 state
+  # A dead storage node leaves the image path on a mount that BLOCKS: the
+  # stat never returns and neither would this check - minutes per row, on the
+  # fleet where it runs against every container, during exactly the outage a
+  # doctor is run in. So the stat gets the engines' STAT_TIMEOUT treatment (a
+  # live mount answers in microseconds; five seconds is not a tuning knob, it
+  # is the difference between answered and blocked forever), and a node whose
+  # storage blocked once is not asked about its remaining rows - the answer
+  # would be the same block, one timeout at a time. Every skipped row is SAID:
+  # a silent skip reads as clean, which is the lie this section exists to
+  # never tell.
+  local -A KS_IMG_BLOCKED=()
   if [[ -f "$KS_INV" ]]; then
     while read -r ct home _ _ _; do
       [[ "$ct" =~ ^# || -z "${ct:-}" ]] && continue
       [[ "$home" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
       imgs=1
+      if [[ -n "${KS_IMG_BLOCKED[$home]:-}" ]]; then
+        say "  CT $ct: skipped - $home's storage is already known to block"
+        continue
+      fi
       # One round trip: the rootfs volume out of the config, the path out of
       # the storage layer, the state out of the superblock. Asking in three
       # calls would be three times the round trips on a fleet where this runs
@@ -256,12 +271,22 @@ cmd_doctor(){
         v=\$(pct config $ct 2>/dev/null | sed -n 's/^rootfs: \([^,]*\).*/\1/p')
         [ -n \"\$v\" ] || { echo NOCONFIG; exit 0; }
         p=\$(pvesm path \"\$v\" 2>/dev/null)
-        [ -n \"\$p\" ] && [ -f \"\$p\" ] || { echo NOIMAGE; exit 0; }
+        [ -n \"\$p\" ] || { echo NOIMAGE; exit 0; }
+        timeout 5 test -f \"\$p\"; trc=\$?
+        [ \"\$trc\" = 124 ] && { echo \"BLOCKED \$p\"; exit 0; }
+        [ \"\$trc\" = 0 ] || { echo NOIMAGE; exit 0; }
         echo \"PATH \$p\"
-        dumpe2fs -h \"\$p\" 2>/dev/null | sed -n 's/^Filesystem state: *//p'
+        timeout 15 dumpe2fs -h \"\$p\" 2>/dev/null | sed -n 's/^Filesystem state: *//p'
       " 2>/dev/null)"
       if [[ -z "$state" ]]; then
         say "  CT $ct: could not ask $home - unanswered is not the same as clean"; rc=1; img_bad=1
+      elif [[ "$state" == BLOCKED* ]]; then
+        say "  CT $ct: its storage did not answer within 5s - the mount is BLOCKED, not clean"
+        say "    ${state#BLOCKED }"
+        say "    this is what a dead storage node looks like from $home. The rest of"
+        say "    $home's rows are skipped rather than waited on, one timeout at a time."
+        KS_IMG_BLOCKED[$home]=1
+        rc=1; img_bad=1
       elif [[ "$state" == *"with errors"* ]]; then
         say "  CT $ct: its image says \"$(sed -n 's/^Filesystem state: *//p;$p' <<<"$state" | tail -1)\""
         say "    $(sed -n 's/^PATH //p' <<<"$state")"

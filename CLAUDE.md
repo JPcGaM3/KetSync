@@ -107,7 +107,7 @@ untouched, exits red, and skips the dead-man ping so the silence is heard).
 argv out, exit code back - and its fake satellite records the argv, which is
 the entire output under test.
 
-`doctor` has 21 and 20, and it went last for the wrong reason: it writes
+`doctor` has 22 and 22, and it went last for the wrong reason: it writes
 nothing, so nothing it does can corrupt anything. What it can do is stop
 noticing, and a check that stops noticing prints exactly what a healthy fleet
 prints. Writing the simulator found one immediately - a compute node nobody
@@ -125,8 +125,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 419 tp simulator + 16 dispatcher + 125 c2v, 120 ketsync
-    make mutation # 483 known bugs put back. None may survive
+    make test     # both layers: 419 tp simulator + 16 dispatcher + 125 c2v, 121 ketsync
+    make mutation # 485 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -159,10 +159,11 @@ catches none of it, which is why `make lint` passes there and proves nothing.
                          nodes.tsv (ip -> role, no name column on purpose),
                          fleet.tsv (ct, home, dr, storage - all required, no
                          fallback), nodes.map (GENERATED, never hand-edited)
-    inventory/           the work lists: inventory-replica.tsv (what replica
-                         copies nightly) and inventory-migrate.tsv (the
-                         intake list), gitignored per-site next to their
-                         tracked samples. Same old-home refusal as the confs
+    inventory/           the per-site tables: inventory-replica.tsv (what
+                         replica copies nightly), inventory-migrate.tsv (the
+                         intake list) and bridgemap.tsv (c2v's old-bridge ->
+                         new-bridge map), gitignored next to their tracked
+                         samples. Same old-home refusal as the confs
     contrib/             one-shot tools, not the daily path: the three CT-to-VM
                          scripts, bkp02-setup.sh, add-storage-column.sh
     docs/th/ docs/en/    the operator guides, a numbered ladder mirrored in

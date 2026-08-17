@@ -125,6 +125,10 @@ ct_image(){   # ctid node-ip state
   rm -f "$d/$1.fsstate"
   [[ "$3" == none ]] || printf '%s\n' "$3" > "$d/$1.fsstate"
 }
+ct_image_blocked(){   # ctid node-ip - the stat on its path blocks (dead mount)
+  ct_image "$1" "$2" clean
+  : > "$(host_dir_local "$2")/ct/$1.blocked"
+}
 ct_no_config(){ rm -f "$(host_dir_local "$2")/ct/$1.rootfs"; }
 ct_no_image(){  rm -f "$(host_dir_local "$2")/ct/$1.path"; }
 
@@ -407,6 +411,29 @@ if scenario "21: a cron line for a read-only verb needs no -y and is not nagged"
   run_ks
   rc_is 0; clean
   hasnt "these would REFUSE"
+  done_scenario
+fi
+
+
+if scenario "22: a dead mount is a BLOCKED probe and one timeout, not one per row"; then
+  # The storage node dies and every image path it exported blocks. The first
+  # row on a blocked node pays one 5s timeout and says BLOCKED; the remaining
+  # rows on the SAME node are skipped OUT LOUD, because their answer would be
+  # the same block one timeout at a time; a healthy node's rows are still
+  # really probed. This is the check that took minutes per row on the
+  # 2026-08-17 outage, run at exactly the moment nobody has minutes.
+  table "$MASTER/conf/fleet.tsv" 6 \
+    "110	$C1	$C2	local-lvm" "120	$C1	$C2	local-lvm" "130	$C2	$C1	local-lvm"
+  ct_image_blocked 110 "$C1"
+  ct_image_blocked 120 "$C1"
+  ct_image 130 "$C2" clean
+  run_ks
+  rc_is 1
+  has "CT 110: its storage did not answer within 5s - the mount is BLOCKED, not clean"
+  has "CT 120: skipped - $C1's storage is already known to block"
+  hasnt "CT 120: its storage did not answer"
+  hasnt "CT 130: skipped"
+  hasnt "CT 130: its storage did not answer"
   done_scenario
 fi
 

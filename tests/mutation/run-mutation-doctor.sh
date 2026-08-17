@@ -187,6 +187,20 @@ mutant "the execution layer's exit code is dropped on the floor" \
   's{\Q    "\E\$KS_BASE\Q/engines/tp" doctor || rc=1\E}{    "\$KS_BASE/engines/tp" doctor || true}' \
   19
 
+
+# ---------- the blocked mount ------------------------------------------------
+# The 2026-08-17 outage: a dead storage node makes the stat on every image
+# path BLOCK, and this check ran minutes per row at exactly the moment nobody
+# has minutes. Two ways to lose what was fixed: read the block as clean, or
+# keep paying the timeout once per row on a node already known to block.
+mutant "a blocked mount reads as clean" \
+  's{\Q      elif [[ "\E\$state\Q" == BLOCKED* ]]; then\E}{      elif false; then}' \
+  22
+
+mutant "a node that blocked once is asked again, one timeout at a time" \
+  's{\Q      if [[ -n "\E\$\Q{KS_IMG_BLOCKED[\E\$\Qhome]:-}" ]]; then\E}{      if false; then}' \
+  22
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

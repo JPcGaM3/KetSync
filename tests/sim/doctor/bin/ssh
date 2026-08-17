@@ -74,6 +74,10 @@ case "$c" in
     id="$(sed -n 's/.*pct config \([0-9][0-9]*\).*/\1/p' <<<"$(printf '%s' "$c" | tr '\n' ' ')")"
     [[ -n "$id" ]] || { violation "image probe with no container id on $host: $c"; exit 1; }
     [[ -f "$H/ct/$id.rootfs" ]] || { echo NOCONFIG; exit 0; }
+    # The mount is dead and the stat blocked until the probe's timeout killed
+    # it. The fake answers instantly with what the engine's own remote script
+    # would have printed - a sim that really slept would be testing sleep.
+    [[ -f "$H/ct/$id.blocked" ]] && { printf 'BLOCKED %s\n' "$(cat "$H/ct/$id.path" 2>/dev/null || echo /dead/mount)"; exit 0; }
     [[ -f "$H/ct/$id.path"   ]] || { echo NOIMAGE;  exit 0; }
     printf 'PATH %s\n' "$(cat "$H/ct/$id.path")"
     # No state file at all means dumpe2fs printed nothing - an image that is
