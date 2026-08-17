@@ -458,9 +458,16 @@ tail -f /root/ketsync/logs/replica-*-$(date +%F).log</pre></div></details>
     <li>ตั้ง postfix ของเครื่อง storage ให้ relay ผ่าน SendGrid — key อยู่ในไฟล์เดียว ไม่อยู่ใน repo
       <details class="cmd"><summary>./contrib/mail-satellite.sh --relay '[smtp.sendgrid.net]:587' ...</summary><div class="code"><pre><span class="c"># on the STORAGE node</span>
 echo 'SG.your-key-here' > /root/.sendgrid.key && chmod 600 /root/.sendgrid.key
-./contrib/mail-satellite.sh --relay '[smtp.sendgrid.net]:587' \
-    --user apikey --keyfile /root/.sendgrid.key --test you@example.co.th</pre></div></details>
-      <p>เมลทดสอบต้องถึงจริงก่อนไปขั้นถัดไป — ดู activity log ฝั่ง SendGrid ประกอบ</p></li>
+apt-get install -y libsasl2-modules   <span class="c"># postfix needs these to AUTH; PVE ships without them</span>
+./contrib/mail-satellite.sh --relay '[smtp-relay.brevo.com]:587' \
+    --user 'b5c6b3001@smtp-brevo.com' --keyfile /root/.brevo.key \
+    --test you@example.co.th --from verified-sender@example.co.th</pre></div></details>
+      <p>--user คือ login ที่หน้า SMTP ของ provider แสดง (Brevo generate ให้, SendGrid
+         ใช้คำว่า apikey + relay smtp.sendgrid.net) และ --from ต้องเป็น address ที่
+         <b>verify เป็น sender กับ provider แล้ว</b> — relay ปฏิเสธ From ที่ไม่รู้จักเสมอ
+         ค่าเดียวกันนี้คือค่าที่จะใส่ KS_MAIL_FROM เมลทดสอบต้องถึงจริงก่อนไปขั้นถัดไป
+         (ถ้าเงียบ: <code class="inl">journalctl -u postfix -n 30</code> มีคำตอบของ provider —
+         535 = user/key ผิด, 550 sender = ยังไม่ verify)</p></li>
     <li>บอก watch ว่าใครรับเมลอะไร — เติมท้าย <code class="inl">conf/ketsync.conf</code>
       <details class="cmd"><summary>KS_MAIL_FROM=...</summary><div class="code"><pre>KS_MAIL_FROM="ketsync@example.co.th"
 KS_MAIL_INFRA="infra@example.co.th"     <span class="c"># the floor everything stands on</span>

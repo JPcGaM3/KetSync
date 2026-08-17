@@ -222,9 +222,16 @@ cp engines/inventory-replica.sample.tsv engines/inventory-replica.tsv</pre></div
   <ol class="steps">
     <li>Point postfix at SendGrid; the key lives in one root-readable file, never in the repo
       <details class="cmd"><summary>contrib/mail-satellite.sh --relay ... --keyfile ...</summary><div class="code"><pre><span class="c"># on the storage node</span>
-echo 'SG.your-key-here' > /root/.sendgrid.key &amp;&amp; chmod 600 /root/.sendgrid.key
-./contrib/mail-satellite.sh --relay '[smtp.sendgrid.net]:587' \
-    --user apikey --keyfile /root/.sendgrid.key --test you@example.com</pre></div></details></li>
+apt-get install -y libsasl2-modules   <span class="c"># postfix cannot AUTH without these; PVE ships bare</span>
+echo 'xsmtpsib-your-key' > /root/.brevo.key &amp;&amp; chmod 600 /root/.brevo.key
+./contrib/mail-satellite.sh --relay '[smtp-relay.brevo.com]:587' \
+    --user 'b5c6b3001@smtp-brevo.com' --keyfile /root/.brevo.key \
+    --test you@example.com --from verified-sender@example.com</pre></div></details>
+      <p>--user is whatever the provider's SMTP page shows as the login (Brevo generates
+         one; SendGrid uses the literal word apikey with relay smtp.sendgrid.net), and
+         --from must be an address the provider has VERIFIED as a sender - the same
+         address goes into KS_MAIL_FROM. If nothing arrives:
+         <code class="inl">journalctl -u postfix -n 30</code> has the provider's answer.</p></li>
     <li>Addresses into <code class="inl">conf/ketsync.conf</code>
       <details class="cmd"><summary>KS_MAIL_* + optional dead-man</summary><div class="code"><pre>KS_MAIL_FROM="ketsync@example.com"
 KS_MAIL_INFRA="infra@example.com"

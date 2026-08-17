@@ -12,12 +12,17 @@
 #
 #  Run it BY HAND, once per infra machine, as root:
 #
-#    ./contrib/mail-satellite.sh --relay '[smtp.sendgrid.net]:587' \
-#                                --user apikey --keyfile /root/.sendgrid.key \
-#                                [--test you@example.com]
+#    ./contrib/mail-satellite.sh --relay '[smtp-relay.brevo.com]:587' \
+#                                --user 'b5c6b3001@smtp-brevo.com' \
+#                                --keyfile /root/.brevo.key \
+#                                [--test you@example.com --from verified@you.com]
 #
-#  The key file holds the bare secret, one line. For SendGrid the SMTP user
-#  is the literal word `apikey` - the key is the password.
+#  The key file holds the bare secret, one line. The user is whatever the
+#  provider's SMTP page shows as the login: Brevo generates one, SendGrid
+#  uses the literal word `apikey`. --from must be an address the provider
+#  has VERIFIED as a sender - relays reject a From they have never heard
+#  of, and a test mail with no From goes out as root@<hostname>, which no
+#  provider has.
 #
 #  Everything has to be said; nothing is defaulted. A relay this script
 #  guessed would be a fleet quietly mailing through the wrong provider.
@@ -31,13 +36,14 @@ hr(){  printf '%s\n' "$LOGSEP"; }
 log(){ printf '%s %s\n' "$(date '+%F %T')" "$*"; }
 die(){ log "ERROR: $*"; exit 2; }
 
-RELAY=""; SMTPUSER=""; KEYFILE=""; TESTTO=""
+RELAY=""; SMTPUSER=""; KEYFILE=""; TESTTO=""; FROMADDR=""
 while (( $# )); do
   case "$1" in
     --relay)   RELAY="${2:-}";    shift 2 || die "--relay needs a value";;
     --user)    SMTPUSER="${2:-}"; shift 2 || die "--user needs a value";;
     --keyfile) KEYFILE="${2:-}";  shift 2 || die "--keyfile needs a value";;
     --test)    TESTTO="${2:-}";   shift 2 || die "--test needs an address";;
+    --from)    FROMADDR="${2:-}"; shift 2 || die "--from needs an address";;
     *) die "unknown argument '$1' - see the header of this script";;
   esac
 done
@@ -48,10 +54,20 @@ done
 [[ -r "$KEYFILE" ]]  || die "cannot read $KEYFILE"
 [[ -s "$KEYFILE" ]]  || die "$KEYFILE is empty - that would configure a relay that rejects everything"
 [[ "$(id -u)" == 0 ]] || die "this rewrites /etc/postfix - run it as root"
+if [[ -n "$TESTTO" && -z "$FROMADDR" ]]; then
+  die "--test needs --from <address the provider has VERIFIED as a sender> - without it the mail goes out as root@$(hostname 2>/dev/null || echo '?'), which every relay rejects"
+fi
 
 for c in postconf postmap systemctl sendmail; do
   command -v "$c" >/dev/null || die "$c is missing - install postfix first (apt-get install postfix, choose 'Satellite system')"
 done
+# postfix's smtp client does the AUTH, and on a minimal install (PVE included)
+# the SASL plugins it needs are a separate package. Without them every attempt
+# ends in "SASL authentication failed ... no mechanism available" - AFTER the
+# queue has already accepted the mail, which is the silent half. Found the hard
+# way on this fleet; refused here, before anything is configured.
+ls /usr/lib/*/sasl2/libplain*.so* >/dev/null 2>&1 \
+  || die "libsasl2-modules is missing - postfix cannot AUTH to any relay. Fix: apt-get install -y libsasl2-modules"
 
 KEY="$(head -1 "$KEYFILE")"
 
@@ -84,10 +100,13 @@ if [[ -n "$TESTTO" ]]; then
   hr
   log "test mail -> $TESTTO (watch the provider's activity log, not just this exit code)"
   {
+    printf 'From: %s\n' "$FROMADDR"
     printf 'To: %s\n' "$TESTTO"
     printf 'Subject: [ketsync] mail-satellite test from %s\n' "$(hostname 2>/dev/null || echo '?')"
     printf '\nIf you can read this, %s relays through %s.\n' "$(hostname 2>/dev/null || echo '?')" "$RELAY"
   } | sendmail -t -i || die "sendmail refused the test mail - the relay is not working yet"
+  log "if nothing arrives: journalctl -u postfix -n 30 has the provider's answer"
+  log "  535 = wrong user/key . 550 sender = --from is not a VERIFIED sender there"
   log "handed to postfix - delivery is the provider's half; check the inbox"
 fi
 hr
