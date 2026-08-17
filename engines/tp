@@ -51,6 +51,15 @@ export PATH
 TP_HOME="${TP_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 export TP_HOME
 
+# Repo shape: the confs live in conf/ and the work lists in inventory/, one
+# level up - the same walk-up the engines make. A flat TP_HOME (a simulator
+# sandbox, or a standalone folder) keeps everything beside tp, as before.
+CONF_DIR="$TP_HOME"; INV_DIR="$TP_HOME"
+if [[ -f "$TP_HOME/../bin/ketsync" && -f "$TP_HOME/../lib/common.sh" ]]; then
+  CONF_DIR="$(cd "$TP_HOME/.." && pwd)/conf"
+  INV_DIR="$(cd "$TP_HOME/.." && pwd)/inventory"
+fi
+
 # Printed by walking the header until the first line that is not a comment,
 # rather than by a line range. A range is a number that has to be edited every
 # time somebody adds a line above it, and the failure is silent: the usage just
@@ -111,7 +120,7 @@ cmd_status(){
 #  roof. Each one is a question that used to have no owner.
 # ---------------------------------------------------------------------------
 cmd_doctor(){
-  local rc=0 mig_inv="$TP_HOME/inventory-migrate.tsv" rep_inv="$TP_HOME/inventory-replica.tsv"
+  local rc=0 mig_inv="$INV_DIR/inventory-migrate.tsv" rep_inv="$INV_DIR/inventory-replica.tsv"
   echo "== live in the hybrid but not replicated"
   # The dangerous gap: `tp migrate` finished, somebody marked the CT done and it
   # is now serving customers from the new infrastructure - and nobody added it
@@ -137,8 +146,8 @@ cmd_doctor(){
   # Until the engines share one config, two tools each believe they own the
   # whole link. Running both at once quietly doubles the real ceiling.
   local m r
-  m=$(sed -n 's/^BW_TOTAL_MB=\([0-9]*\).*/\1/p' "$TP_HOME/ctmig.conf" 2>/dev/null | tail -1)
-  r=$(sed -n 's/^BW_TOTAL_MB=\([0-9]*\).*/\1/p' "$TP_HOME/ctrep.conf" 2>/dev/null | tail -1)
+  m=$(sed -n 's/^BW_TOTAL_MB=\([0-9]*\).*/\1/p' "$CONF_DIR/ctmig.conf" 2>/dev/null | tail -1)
+  r=$(sed -n 's/^BW_TOTAL_MB=\([0-9]*\).*/\1/p' "$CONF_DIR/ctrep.conf" 2>/dev/null | tail -1)
   if [[ -n "$m" && -n "$r" ]]; then
     echo "  ctmig.conf=${m}m  ctrep.conf=${r}m  -> up to $(( m + r ))m if both run at once"
     echo "  (one shared ceiling lands with the shared library - see CLAUDE.md)"
@@ -201,7 +210,16 @@ cmd_doctor(){
   local f
   for f in "$mig_inv" "$rep_inv"; do
     if [[ -f "$f" ]]; then echo "  $(basename "$f"): $(grep -cvE '^\s*(#|$)' "$f") rows"
-    else echo "  $(basename "$f"): not present"; fi
+    else
+      echo "  $(basename "$f"): not present"
+      # The work lists moved out of engines/. A copy still at the old home is
+      # a file every engine will refuse - say so HERE, where somebody is
+      # already reading, instead of at three in the morning.
+      if [[ "$INV_DIR" != "$TP_HOME" && -f "$TP_HOME/$(basename "$f")" ]]; then
+        echo "    found at the OLD home - mv $TP_HOME/$(basename "$f") $INV_DIR/"
+        rc=1
+      fi
+    fi
   done
   return $rc
 }

@@ -404,7 +404,7 @@ declare -a CTS=(); declare -A SRC_MAP=() DEST_MAP=()
 if [[ ! -f "$INV" ]]; then
   log "ERROR: no inventory at $INV - NOTHING was run"
   log "ERROR:   this is ct-replica's file, not ct-migrate's inventory-migrate.tsv"
-  log "ERROR:   start from the sample:  cp $BASE/inventory-replica.sample.tsv $INV"
+  log "ERROR:   start from the sample:  cp ${INV%/*}/inventory-replica.sample.tsv $INV"
   exit 2
 fi
 declare -a INV_ERRS=(); ln=0

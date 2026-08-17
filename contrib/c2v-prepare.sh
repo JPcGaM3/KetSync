@@ -128,6 +128,20 @@ ROOT="$(cd "$SELF/.." && pwd)"
 # it the CT's bridge names are carried across unchanged, which is right when both
 # nodes name their networks the same way and wrong the moment they do not.
 BRIDGEMAP="$ROOT/bridgemap.tsv"
+# In the ketsync repo the per-site tables live in inventory/ - the same home
+# as the work lists, resolved the same way the engines resolve theirs. A
+# standalone copy of these scripts (an old node's folder) keeps the flat
+# path above. A map left at the old flat home in a repo is refused, not
+# ranked: this table decides which SEGMENT a machine lands on, and the one
+# file nobody edits winning silently is the worst version of that.
+if [[ -f "$ROOT/bin/ketsync" && -f "$ROOT/lib/common.sh" ]]; then
+  if [[ -f "$BRIDGEMAP" ]]; then
+    echo "ERROR: $BRIDGEMAP is the OLD home - the bridge map moved to inventory/." >&2
+    echo "ERROR:   mv $BRIDGEMAP $ROOT/inventory/bridgemap.tsv" >&2
+    exit 2
+  fi
+  BRIDGEMAP="$ROOT/inventory/bridgemap.tsv"
+fi
 THIS_NODE="$(hostname -s 2>/dev/null || hostname)"
 
 OLD_NODE=""; OLD_CTID=""; VMID=""; STORAGE=""; ISO=""

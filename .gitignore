@@ -11,6 +11,7 @@
 # own refusal makes somebody move it
 /inventory/inventory-migrate.tsv
 /inventory/inventory-replica.tsv
+/inventory/bridgemap.tsv
 /engines/inventory-migrate.tsv
 /engines/inventory-replica.tsv
 /engines/bridgemap.tsv

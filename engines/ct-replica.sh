@@ -470,7 +470,7 @@ declare -a INV_ERRS=()
 if [[ ! -f "$INV" ]] && (( ! AUTO_DISCOVER )); then
   log "ERROR: no inventory at $INV - NOTHING was run"
   log "ERROR:   this file is NOT ct-migrate's inventory-migrate.tsv; the columns differ"
-  log "ERROR:   start from the sample:  cp $BASE/inventory-replica.sample.tsv $INV"
+  log "ERROR:   start from the sample:  cp ${INV%/*}/inventory-replica.sample.tsv $INV"
   log "ERROR:   or set AUTO_DISCOVER=1 in $CONF to replicate every CT in the cluster"
   exit 2
 fi

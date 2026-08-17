@@ -381,7 +381,7 @@ if [[ ! -f "$INV" ]]; then
     log "ERROR:   $BASE/inventory.tsv exists. That is the OLD name for this file."
     log "ERROR:   rename it:  mv $BASE/inventory.tsv $INV"
   else
-    log "ERROR:   start from the sample:  cp $BASE/inventory-migrate.sample.tsv $INV"
+    log "ERROR:   start from the sample:  cp ${INV%/*}/inventory-migrate.sample.tsv $INV"
   fi
   exit 1
 fi
