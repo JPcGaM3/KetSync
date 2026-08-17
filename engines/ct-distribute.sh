@@ -1238,9 +1238,24 @@ do_ct(){   # $1 = production ctid
   # visiting.
   local t0 t1 out
   t0=$(date +%s)
-  out=$(rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --bwlimit=${bw}m --stats \
-      -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
-      '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?")
+  if [[ -t 1 ]]; then
+    # A person is at this terminal, and 132G with nothing on the screen reads
+    # as a hang - asked for, out loud, on the first big placement this fleet
+    # ran. Same arrangement as ct-replica: a live progress line while it
+    # moves, and the whole stream kept, because the stats summary below is
+    # parsed out of it. The tee lands on THIS machine, which is home - the
+    # no-temp-file rule above protects the machine this engine is VISITING.
+    local _rsout; _rsout=$(mktemp /tmp/ctdist-rsync.XXXXXX)
+    rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --bwlimit=${bw}m --stats \
+        --info=progress2 --no-inc-recursive \
+        -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
+        '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?" | tee "$_rsout"
+    out=$(cat "$_rsout"); rm -f "$_rsout"
+  else
+    out=$(rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --bwlimit=${bw}m --stats \
+        -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
+        '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?")
+  fi
   t1=$(date +%s); RS_SECS=$(( t1 - t0 ))
   rc=$(printf '%s\n' "$out" | sed -n 's/^rc=//p' | head -1)
   [[ "$rc" =~ ^[0-9]+$ ]] || rc=1
