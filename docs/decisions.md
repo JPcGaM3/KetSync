@@ -971,18 +971,20 @@ about three seconds and D1 accepts. And the shutdown request is a SIGNAL that
 outlives the wait: the same drill watched both containers, asked to stop
 during the outage, shut themselves down hours later the moment the storage
 returned, on the strength of that queued signal - so cutting the wait loses
-nothing that was ever going to happen inside it. → SHUTDOWN_GRACE, 30s, on
+nothing that was ever going to happen inside it. → SHUTDOWN_GRACE, 10s, on
 the evacuate and isolate paths: long enough for a guest whose writes already
 fail fast to run an orderly shutdown, an order of magnitude shorter than the
-horizon it used to wait for. At two hundred containers the difference is
-eleven hours of customer downtime against two. SHUTDOWN_TIMEOUT stays 180 for
+horizon it used to wait for. First cut to 30; trimmed to 10 on 2026-08-17
+after operating the evacuate path live - the wait itself was the slow part,
+and the queued signal covers whatever the extra twenty seconds would have
+caught. SHUTDOWN_TIMEOUT stays 180 for
 `--cleanup` alone: that path runs after the disaster on healthy storage,
 nothing is waiting on it, and a database flushing for two minutes deserves
 its two minutes.
 
 ## 6. Numbers calibrated on the real fleet
 
-    SHUTDOWN_GRACE     30s     evacuate/isolate: ask, give a fast-failing
+    SHUTDOWN_GRACE     10s     evacuate/isolate: ask, give a fast-failing
                                guest room for an orderly shutdown, isolate the
                                rest. The signal outlives the wait - see the
                                2026-08-15 entries in section 5

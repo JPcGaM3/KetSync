@@ -164,7 +164,7 @@ iptables -I INPUT  -s 10.100.1.17 -j DROP</pre></div></details>
 ./ketsync distribute --all --dry-run
 ./ketsync distribute --all</pre></div></details>
   <p>Expected, per node then per CT (from the real 2026-08-16 pass): E2 proves the storage dead,
-     the storage is disabled and unmounted, the CT gets 30s to stop, pct never answers (rc=124),
+     the storage is disabled and unmounted, the CT gets 10s to stop, pct never answers (rc=124),
      the CT is ISOLATED onto vmbr99 instead, and the stand-in is placed:</p>
   <div class="out">[110] pct itself never returned (rc=124) - isolating CT 110 instead
 [110] <span class="g">ISOLATED</span>: net0 now on vmbr99, verified from /sys/class/net

@@ -179,7 +179,7 @@ if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" && -f "$BASE/../c
 fi
 
 # ---------- defaults; ctrep.conf wins ----------------------------------------
-BKP_SSH="root@10.100.1.9"
+BKP_SSH="root@100.100.100.35"
 MOCKNET_BRIDGE=vmbr99            # the isolated bridge. Same knob, same file,
                                  # as ct-replica R9 and ct-distribute D1
 SHUTDOWN_TIMEOUT=180             # cleanup's patience: seconds to wait for a
@@ -187,10 +187,10 @@ SHUTDOWN_TIMEOUT=180             # cleanup's patience: seconds to wait for a
                                  # path is after the disaster, nothing is
                                  # waiting on it, and a database flushing for
                                  # two minutes deserves its two minutes.
-SHUTDOWN_GRACE=30                # the DISASTER path's patience - evacuate and
+SHUTDOWN_GRACE=10                # the DISASTER path's patience - evacuate and
                                  # the stop after an isolate - and it is short
                                  # on purpose. This engine used to wait 180
-                                 # here too, sized against the fleet's measured
+                                 # here, sized against the fleet's measured
                                  # I/O-error horizon (hard,timeo=600,retrans=2:
                                  # the write fails at ~132s, ext4 aborts, the
                                  # kill lands - measured 15:47:11 unmount,
@@ -209,12 +209,18 @@ SHUTDOWN_GRACE=30                # the DISASTER path's patience - evacuate and
                                  # themselves down hours later, the moment the
                                  # storage returned, on the strength of that
                                  # queued signal. So the ask is made, a guest
-                                 # whose writes already fail fast gets long
-                                 # enough to run an orderly shutdown, and
+                                 # whose writes already fail fast gets a few
+                                 # seconds to run an orderly shutdown, and
                                  # everything else is isolated instead of
-                                 # waited on. At two hundred containers the
+                                 # waited on. Ten, not the thirty it was first
+                                 # cut to: the operator running the 2026-08-17
+                                 # evacuate named the wait itself as the slow
+                                 # part, and the signal argument cuts both ways
+                                 # - anything twenty more seconds would have
+                                 # caught still stops later on the queued
+                                 # signal. At two hundred containers the
                                  # difference is eleven hours of customer
-                                 # downtime against two.
+                                 # downtime against under one.
 STAT_TIMEOUT=5                   # seconds to wait for a storage to answer. A
                                  # live mount answers in microseconds; this is
                                  # not a tuning knob, it is the difference
