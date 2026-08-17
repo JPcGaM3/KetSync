@@ -135,6 +135,10 @@ mutant "the exit code forgets the mail that never went out" \
   's{\Q  return \E\$sendfail\E}{  return 0}' \
   12
 
+mutant "the envelope sender stays root@hostname, and the relay rejects every mail" \
+  's!\Q    } | sendmail -t -i -f "\E\$KS_MAIL_FROM\Q"\E!    } | sendmail -t -i!' \
+  3
+
 # ---------- the dead-man -------------------------------------------------------
 mutant "the dead-man is pinged with no URL configured" \
   's{\Q    if [[ -n "\E\$\Q{KS_WATCH_HEALTHCHECK:-}" ]]; then\E}{    if true; then}' \

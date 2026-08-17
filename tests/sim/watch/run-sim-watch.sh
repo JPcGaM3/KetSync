@@ -94,7 +94,7 @@ run_ks(){
     # under test. curl records the dead-man ping the same way.
     sendmail(){
       local n; n="$(ls "$SIMROOT"/mail.* 2>/dev/null | wc -l)"
-      cat > "$SIMROOT/mail.$((n+1))"
+      { printf 'ARGS %s\n' "$*"; cat; } > "$SIMROOT/mail.$((n+1))"
       return "$(cat "$SIMROOT/rc.sendmail" 2>/dev/null || echo 0)"
     }
     curl(){ printf 'curl %s\n' "$*" >> "$SIMROOT/pings"; }
@@ -159,6 +159,9 @@ if scenario "3: a node that stops answering is one NODE mail"; then
   rc_is 0
   mail_count 1
   mail_has "To: node@sim"
+  # the envelope sender is what relays validate - a From: header alone leaves
+  # it as root@<hostname>, which no provider has verified
+  mail_has "ARGS -t -i -f ketsync@sim"
   mail_has "RAISED"
   mail_has "node-unreachable:$N1"
   mail_has "does not answer ssh"

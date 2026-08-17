@@ -104,7 +104,7 @@ if [[ -n "$TESTTO" ]]; then
     printf 'To: %s\n' "$TESTTO"
     printf 'Subject: [ketsync] mail-satellite test from %s\n' "$(hostname 2>/dev/null || echo '?')"
     printf '\nIf you can read this, %s relays through %s.\n' "$(hostname 2>/dev/null || echo '?')" "$RELAY"
-  } | sendmail -t -i || die "sendmail refused the test mail - the relay is not working yet"
+  } | sendmail -t -i -f "$FROMADDR" || die "sendmail refused the test mail - the relay is not working yet"
   log "if nothing arrives: journalctl -u postfix -n 30 has the provider's answer"
   log "  535 = wrong user/key . 550 sender = --from is not a VERIFIED sender there"
   log "handed to postfix - delivery is the provider's half; check the inbox"

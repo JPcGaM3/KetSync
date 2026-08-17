@@ -100,8 +100,11 @@ cmd_watch(){
       printf 'Subject: %s\n' "$2"
       printf 'Content-Type: text/plain; charset=UTF-8\n'
       printf '\n%s\n' "$3"
-    } | sendmail -t -i
+    } | sendmail -t -i -f "$KS_MAIL_FROM"
   }
+  # -f sets the ENVELOPE sender, which is what relays actually validate; the
+  # From: header alone leaves the envelope as root@<hostname>, an address no
+  # provider has verified - Brevo rejected exactly that on this fleet.
 
   # ---- the daily digest: doctor's whole report, mailed ----------------------
   # Per-container events live here by design: a copy one day stale is not a
