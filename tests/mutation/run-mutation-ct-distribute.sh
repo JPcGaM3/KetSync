@@ -453,6 +453,15 @@ mutant "a bridge name out of the record is pasted into the config unchecked" \
   's{\Q^[A-Za-z0-9._-]+\E}{^.*}' \
   28i
 
+
+# ---------- the storage layer names what it allocates -------------------------
+# A dir storage answers pvesm alloc with the owner's vmid inside the volume
+# name; rebuilding the id by hand asked about a volume that did not exist,
+# which failed every placement of the 2026-08-18 run AFTER allocating.
+mutant "the volume id is rebuilt by hand instead of read from the storage's answer" \
+  's{\Q  if [[ "\E\$allocout\Q" =~ \E\$\Q{CT_DST}:([0-9]+/)?\E\$\Q{volname} ]]; then\E\n\Q    volid="\E\$\Q{BASH_REMATCH[0]}"\E}{  if true; then\n    volid="\$CT_DST:\$volname"}' \
+  32
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

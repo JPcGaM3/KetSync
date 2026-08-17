@@ -194,6 +194,13 @@ case "$c" in
     # node's root disk.
     [[ "$(st_field "$host" "$sid" status)" == active ]] \
       || { violation "pvesm alloc into INACTIVE storage $sid on $host"; exit 1; }
+    # A path storage (dir, nfs, cifs) owns the vmid as part of the volume
+    # name it creates - local-dir:9300/vm-9300-disk-0.raw - and the real
+    # pvesm answers with THAT name. This fake answering the bare name was
+    # exactly kind enough to hide the 2026-08-18 failure, so it stopped.
+    case "$(st_field "$host" "$sid" type)" in
+      dir|nfs|cifs) volname="$_vmid/$volname";;
+    esac
     mkdir -p "$T/vols/$sid"
     [[ -e "$T/vols/$sid/$volname" ]] && { echo "volume '$volname' already exists" >&2; exit 2; }
     # A directory whatever the real shape is. A block device and a raw file are
@@ -205,7 +212,7 @@ case "$c" in
     # Remember what shape this is. A block device mounted with -o loop, or a
     # raw file mounted without it, both fail on a real node - and both look
     # exactly like a correct run in a simulator that does not check.
-    printf '%s\n' "$(st_field "$host" "$sid" type)" > "$T/vols/$sid/.$volname.type"
+    printf '%s\n' "$(st_field "$host" "$sid" type)" > "$T/vols/$sid/$(dirname "$volname")/.$(basename "$volname").type"
     printf '%s\n' "successfully created '$sid:$volname'"
     printf '%s:%s\n' "$sid" "$volname"
     exit 0;;

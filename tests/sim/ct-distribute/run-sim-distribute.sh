@@ -1047,7 +1047,11 @@ if scenario "32: a dir target gets a raw file, mkfs'd and loop-mounted"; then
   rc_is 0; clean
   has "storage  local-dir (dir, image)"
   traced "mount -o loop"
-  vol_has "$T2" local-dir vm-9300-disk-0.raw "customer data for 300"
+  # A dir storage names its volume WITH the owner's vmid, and that exact name
+  # has to reach the config: the bare name resolves to nothing on a real node,
+  # which is how the 2026-08-18 run failed all three placements.
+  vol_has "$T2" local-dir 9300/vm-9300-disk-0.raw "customer data for 300"
+  cfg_has pve02 9300 "rootfs: local-dir:9300/vm-9300-disk-0.raw,size=20G"
   nothing_mounted
   done_scenario
 fi

@@ -1180,14 +1180,27 @@ do_ct(){   # $1 = production ctid
     image)   volname="vm-$CT_DR-disk-0.raw";;
     dataset) volname="subvol-$CT_DR-disk-0";;
   esac
-  volid=$(rsh "$CT_TO" "pvesm alloc $CT_DST $CT_DR $volname ${CT_SIZE} 2>&1" | tail -1)
-  if [[ "$volid" != *"$volname"* ]]; then
-    log "[$ct] ERROR: pvesm alloc failed on $CT_TONODE: ${volid:-<no output>}"
+  # The storage layer NAMES what it allocates, and the name is not ours to
+  # rebuild: a dir storage answers with the owner's vmid inside the volume
+  # name (local-ssd:9110/vm-9110-disk-0.raw), zfspool and lvm answer with
+  # the bare one. Rebuilding it by hand is how the 2026-08-18 run allocated
+  # three volumes and then could not resolve a single path: the allocation
+  # succeeded under one name and everything after it asked about another.
+  local allocout
+  allocout=$(rsh "$CT_TO" "pvesm alloc $CT_DST $CT_DR $volname ${CT_SIZE} 2>&1" | tail -1)
+  if [[ "$allocout" != *"$volname"* ]]; then
+    log "[$ct] ERROR: pvesm alloc failed on $CT_TONODE: ${allocout:-<no output>}"
     st_fail "$ct" alloc_failed; return 1
   fi
-  path=$(rsh "$CT_TO" "pvesm path $CT_DST:$volname 2>/dev/null")
+  if [[ "$allocout" =~ ${CT_DST}:([0-9]+/)?${volname} ]]; then
+    volid="${BASH_REMATCH[0]}"
+  else
+    log "[$ct] ERROR: pvesm alloc answered, but named no volume this recognises: $allocout"
+    st_fail "$ct" alloc_failed; return 1
+  fi
+  path=$(rsh "$CT_TO" "pvesm path $volid 2>/dev/null")
   if [[ -z "$path" ]]; then
-    log "[$ct] ERROR: allocated $CT_DST:$volname on $CT_TONODE but pvesm cannot resolve its path"
+    log "[$ct] ERROR: allocated $volid on $CT_TONODE but pvesm cannot resolve its path"
     st_fail "$ct" no_path; return 1
   fi
 
@@ -1243,8 +1256,8 @@ do_ct(){   # $1 = production ctid
     printf '%s\n' "$out" | grep -v '^rc=' | grep -v '^ *$' | tail -4 | while IFS= read -r _l; do
       log "[$ct] ERROR:   rsync: $_l"
     done
-    log "[$ct] ERROR:   nothing will use $CT_DST:$volname until you either retry or remove it:"
-    log "[$ct] ERROR:     ssh root@$CT_TO pvesm free $CT_DST:$volname"
+    log "[$ct] ERROR:   nothing will use $volid until you either retry or remove it:"
+    log "[$ct] ERROR:     ssh root@$CT_TO pvesm free $volid"
     rs_stats_line "$ct"
     cleanup_ct
     st_fail "$ct" xfer "$rc"; return 1
@@ -1259,7 +1272,7 @@ do_ct(){   # $1 = production ctid
   # start by itself.
   local newcfg
   newcfg=$(printf '%s\n' "$cfg" \
-    | sed -e "s|^rootfs:.*|rootfs: $CT_DST:$volname,size=$CT_SIZE|" \
+    | sed -e "s|^rootfs:.*|rootfs: $volid,size=$CT_SIZE|" \
           -e "s|^onboot:.*|onboot: 0|")
   # And the network, which does not come from the copy at all - see where
   # CT_PNET is read. The copy's net lines are REMOVED rather than edited: a
@@ -1283,7 +1296,7 @@ do_ct(){   # $1 = production ctid
   fi
 
   # ---- GUARD D7: a human starts it ---------------------------------------
-  log "[$ct] placed: CT $CT_DR on $CT_TONODE, $CT_DST:$volname, rsync rc=$rc in ${RS_SECS}s"
+  log "[$ct] placed: CT $CT_DR on $CT_TONODE, $volid, rsync rc=$rc in ${RS_SECS}s"
   if [[ -n "$CT_PNET" ]]; then
     local _n
     while IFS= read -r _n; do
