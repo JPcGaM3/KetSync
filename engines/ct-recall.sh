@@ -937,9 +937,27 @@ do_ct(){   # $1 = production ctid
   # path is the container's own root, so everything it has mounted is under it
   # - /proc, /sys, /dev, and any mp0 the operator added. A copy is the rootfs
   # and nothing else, which is the same rule ct-replica follows.
-  out=$(rsh "$CT_FROM" "rsync -aHAX -x --numeric-ids --sparse --delete --bwlimit=${bw}m --stats \
+  # One command string, used by both branches below, so every flag lives in
+  # exactly one place - the mutation suite anchors on this line, and a flag
+  # that existed only in the branch the simulator does not run would be a
+  # flag nothing could prove wrong.
+  local rscmd="rsync -aHAX -x --numeric-ids --sparse --delete --bwlimit=${bw}m --stats"
+  if [[ -t 1 ]]; then
+    # A person is at this terminal - and a --final round is exactly when one
+    # is. Same arrangement as ct-replica and ct-distribute: a live progress
+    # line from the far side, the whole stream kept because the numbers below
+    # are parsed out of it. The tee lands on THIS machine, which is home; the
+    # no-temp-file rule above protects the compute node this engine visits.
+    local _rsout; _rsout=$(mktemp /tmp/ctrecall-rsync.XXXXXX)
+    rsh "$CT_FROM" "$rscmd --info=progress2 --no-inc-recursive \
+      -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
+      '$mnt/' '$BKP_SSH:$CT_DSTMNT/' 2>/dev/null; echo rc=\$?" | tee "$_rsout"
+    out=$(cat "$_rsout"); rm -f "$_rsout"
+  else
+    out=$(rsh "$CT_FROM" "$rscmd \
       -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
       '$mnt/' '$BKP_SSH:$CT_DSTMNT/' 2>/dev/null; echo rc=\$?")
+  fi
   t1=$(date +%s); RS_SECS=$(( t1 - t0 ))
   rc=$(printf '%s\n' "$out" | sed -n 's/^rc=//p' | head -1)
   [[ "$rc" =~ ^[0-9]+$ ]] || rc=1

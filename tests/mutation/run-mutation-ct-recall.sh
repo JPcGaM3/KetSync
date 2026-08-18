@@ -237,8 +237,12 @@ mutant "rsync loses --delete, so the copy keeps what the DR container deleted" \
   's{\Qrsync -aHAX -x --numeric-ids --sparse --delete --bwlimit=\E}{rsync -aHAX -x --numeric-ids --sparse --bwlimit=}' \
   1 5
 
+# /g, because the source-destination pair now exists in BOTH transfer
+# branches (tty progress and cron): inverting only the first would mutate
+# the branch the simulator never runs, and the suite would call that a
+# survivor.
 mutant "the direction is inverted: the stale copy is written over the DR data" \
-  "s!\\Q'\\E\\\$mnt\\Q/' '\\E\\\$BKP_SSH\\Q:\\E\\\$CT_DSTMNT\\Q/'\\E!'\\\$BKP_SSH:\\\$CT_DSTMNT/' '\\\$mnt/'!" \
+  "s!\\Q'\\E\\\$mnt\\Q/' '\\E\\\$BKP_SSH\\Q:\\E\\\$CT_DSTMNT\\Q/'\\E!'\\\$BKP_SSH:\\\$CT_DSTMNT/' '\\\$mnt/'!g" \
   1
 
 mutant "the compute node's path to the backup node is no longer checked first" \
