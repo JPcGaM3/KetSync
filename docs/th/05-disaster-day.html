@@ -121,6 +121,9 @@
 <header class="doc">
   <h1>05 — เครื่อง storage ตาย ทำยังไง</h1>
   <p>อ่านหน้านี้ตอนยังไม่เกิดเหตุ แล้วเปิดซ้ำตอนเกิด — ทุกขั้นเป็นคำสั่งที่พิมพ์ได้เลย ถ้ามาถึงหน้านี้เพราะเมล <b>[ketsync] INFRA</b> จาก watch มาถึงคุณ: ใช่ หน้านี้แหละ</p>
+  <p>ถ้าเมลใบนั้นเขียนว่า <code class="inl">master-unreachable</code> แปลว่ามัน<b>ส่งมาจากเครื่อง backup</b>
+     เพราะเครื่อง storage เงียบไปแล้ว — คำสั่งทุกอันข้างล่างนี้พิมพ์ที่เครื่อง backup ได้เลย
+     นั่นคือที่ที่ DR ถูกสั่งอยู่แล้วโดยการออกแบบ</p>
   <div class="where">ทุกคำสั่งในหน้านี้พิมพ์บนเครื่อง backup (10.100.1.9) เว้นแต่จะเขียนบอกไว้</div>
 </header>
 
@@ -173,7 +176,7 @@
   <p>สามอย่างนี้ทำวันธรรมดา ใช้เวลารวมไม่ถึง 10 นาที และเป็นตัวตัดสินว่าคืนนั้นจะราบรื่นหรือไม่</p>
   <ol class="steps">
     <li>ก๊อปตัวโปรแกรมไว้ที่เครื่อง backup ด้วย ถ้ารอไปทำตอนเกิดเหตุ เครื่องที่เก็บโค้ดอาจตายไปแล้ว
-      <details class="cmd"><summary>git clone <this repo> /root/ketsync</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
+      <details class="cmd"><summary>git clone &lt;this repo&gt; /root/ketsync</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
 git clone &lt;this repo&gt; /root/ketsync</pre></div></details>
       <p>ต้องเป็น <code class="inl">/root/ketsync</code> เท่ากันทุกเครื่อง เพราะ
          <span class="m">ketsync sync</span> ส่งตารางไปที่ path ที่ตัวเองติดตั้งอยู่

@@ -143,6 +143,9 @@ ssh -o ConnectTimeout=5 root@10.100.1.17 true; echo "rc=$?"</pre></div></details
     <li>Half-alive? <code class="inl">touch /root/ketsync/engines/PAUSE</code> on it first, so the
         next cron tick cannot overwrite the copies you are about to lean on.</li>
   </ul>
+  <p>If that mail said <code>master-unreachable</code>, it came from the BACKUP node - the
+     storage node has gone quiet. Every command below is typed there, which is where the DR
+     is driven from by design.</p>
   <p>If a <b>[ketsync] INFRA</b> mail from watch brought you here: yes, this is the page.
      Copies are 15 minutes old at worst; work lost is bounded. Nothing here starts a container —
      every start is yours.</p>

@@ -140,7 +140,7 @@
 </section>
 
 <section id="mail">
-  <div class="eyebrow"><span class="num">2</span><h2>Three kinds of mail</h2></div>
+  <div class="eyebrow"><span class="num">2</span><h2>Four kinds of mail</h2></div>
   <p>watch mails on <b>change</b> only: RAISED when a problem appears, CLEARED when it goes,
      silence in between.</p>
   <table>
@@ -153,7 +153,14 @@
         <td>ssh into the machine it names</td></tr>
     <tr><td class="m">daily digest</td><td>doctor's full report, per-CT items included</td>
         <td>skim the non-ok sections; under a minute on a good day</td></tr>
+    <tr><td class="m">INFRA: master-unreachable</td>
+        <td><b>sent by the BACKUP node</b>, not the master: the storage node missed three
+            ssh probes, and nothing is watching the fleet right now</td>
+        <td>open <a href="05-disaster-day.html">05</a> - the DR is driven from the backup</td></tr>
   </table>
+  <div class="note"><p><b>Who watches whom.</b> The master watches the fleet; the backup node
+     watches one thing - does the master answer - because the machine that reports the fleet
+     cannot report its own death. The scopes never overlap, so nothing arrives twice.</p></div>
   <div class="warn"><p><b>Silence is a signal too.</b> If healthchecks.io says the ping stopped,
      the watcher itself is down or its mail is broken — worse than any mail it ever sent.
      Check <code class="inl">./ketsync watch --list</code> on the master.</p></div>

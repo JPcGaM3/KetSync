@@ -195,7 +195,9 @@
   <div class="eyebrow"><span class="num">4</span><h2>Conf keys</h2></div>
   <table>
     <tr><td class="m">conf/ketsync.conf</td><td>KS_ROLE (master/slave, human-edited only), KS_MASTER_IP,
-        KS_MAIL_FROM/_INFRA/_NODE/_DIGEST (watch refuses without them), KS_WATCH_HEALTHCHECK
+        KS_MAIL_FROM/_INFRA/_NODE/_DIGEST (watch refuses without them; a SLAVE watch needs
+        only FROM+INFRA), KS_MASTER_TRIES/_GAP (3/5 - how hard a slave asks before it
+        believes the master is gone), KS_WATCH_HEALTHCHECK
         (optional dead-man; green runs only), KS_MAIL_RELAY/_USER/_KEYFILE (the transport:
         `ketsync mail-setup` reads these three and points postfix at the relay -
         changing provider is an edit plus a re-run)</td></tr>

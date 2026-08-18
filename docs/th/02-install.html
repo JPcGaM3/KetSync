@@ -357,7 +357,7 @@ proxmox-backup-manager task list | head</pre></div></details>
 <section id="s6">
   <div class="eyebrow"><span class="num">7</span><h2>ลงตัวโปรแกรม</h2></div>
   <p>ลงที่เครื่อง storage เครื่องเดียว clone ครั้งเดียวได้ครบ ไม่ต้อง clone ซ้ำที่ไหนอีก</p>
-  <details class="cmd"><summary>git clone <this repo> /root/ketsync</summary><div class="code"><pre><span class="c"># on the storage node</span>
+  <details class="cmd"><summary>git clone &lt;this repo&gt; /root/ketsync</summary><div class="code"><pre><span class="c"># on the storage node</span>
 git clone &lt;this repo&gt; /root/ketsync
 cd /root/ketsync
 
@@ -490,10 +490,26 @@ echo 'xsmtpsib-your-key' > /root/.brevo.key && chmod 600 /root/.brevo.key
     <li>ใส่ cron — watch อ่านอย่างเดียว ไม่ต้องมี -y
       <details class="cmd"><summary>*/10 * * * * /root/ketsync/ketsync watch</summary><div class="code"><pre>*/10 * * * * /root/ketsync/ketsync watch
 30 7 * * * /root/ketsync/ketsync watch --digest</pre></div></details></li>
+    <li><b>ตั้ง watch บนเครื่อง backup ด้วย</b> — เครื่องที่รายงานฟลีตรายงานความตายของตัวเองไม่ได้
+      <details class="cmd"><summary>บน backup: mail-setup + KS_MAIL_FROM/INFRA + cron</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
+apt-get install -y libsasl2-modules
+echo 'xsmtpsib-your-key' > /root/.brevo.key &amp;&amp; chmod 600 /root/.brevo.key
+<span class="c"># conf/ketsync.conf on the backup: KS_ROLE=slave, KS_MASTER_IP=&lt;storage ip&gt;,</span>
+<span class="c"># plus KS_MAIL_FROM / KS_MAIL_INFRA / KS_MAIL_RELAY / KS_MAIL_USER / KS_MAIL_KEYFILE</span>
+./ketsync mail-setup --test
+./ketsync watch --dry-run
+*/10 * * * * /root/ketsync/ketsync watch</pre></div></details>
+      <p>เครื่อง master เฝ้าทั้งฟลีต ส่วน slave เฝ้า<b>คำถามเดียว</b>: master ตอบมั้ย
+         ถ้าเครื่อง storage ตาย watch บนนั้นตายไปด้วยและทุกอย่างเงียบ — เมลใบแรกที่คุณจะได้
+         จึงมาจากเครื่อง backup ขอบเขตไม่ทับกัน master ไม่เคยพูดถึงตัวเอง และ slave ไม่พูดเรื่องอื่นเลย
+         (ถาม ssh 3 ครั้งห่างกัน 5 วิ ก่อนเชื่อ เน็ตกระตุกจึงไม่กลายเป็นเมล)
+         ต้องมี KS_MAIL_NODE มั้ย — ไม่ต้อง slave ส่ง INFRA อย่างเดียว</p></li>
   </ol>
   <div class="tip"><p><b>ความเงียบก็ถูกเฝ้า</b> ถ้าตั้ง KS_WATCH_HEALTHCHECK ไว้
      เฉพาะรอบที่ส่งเมลสำเร็จเท่านั้นที่ ping — watch ตายหรือเมลพัง = ping หาย =
-     healthchecks.io ร้องแทน วิธีอ่านเมลอยู่ใน <a href="03-daily.html">03-daily</a></p></div>
+     healthchecks.io ร้องแทน สองชั้นนี้เสริมกัน: slave บอกว่า
+     <b>อะไร</b>ตายทันที ส่วน dead-man จับกรณีที่ทั้งสองเครื่องเงียบพร้อมกัน (ไฟดับทั้งแร็ค)
+     วิธีอ่านเมลอยู่ใน <a href="03-daily.html">03-daily</a></p></div>
 </section>
 
 <section id="s11">

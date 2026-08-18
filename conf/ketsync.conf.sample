@@ -19,9 +19,17 @@ KS_MASTER_IP=10.100.1.17
 # All four addresses are per-site and REQUIRED before watch runs; it refuses
 # without them rather than guessing.
 #
-# Suggested cron, on the master only:
-#   */10 * * * * /root/ketsync/ketsync watch
-#   30 7 * * *   /root/ketsync/ketsync watch --digest
+# A SLAVE runs watch too, with one question in it: does the master answer.
+# The machine that reports the fleet cannot report its own death, so the
+# backup node asks that and mails it to KS_MAIL_INFRA - it needs KS_MAIL_FROM
+# and KS_MAIL_INFRA (not _NODE, it never sends one) and its own mail-setup.
+# KS_MASTER_TRIES / KS_MASTER_GAP (3 tries, 5s apart) are how hard it asks
+# before it believes the answer; a blip must not become a page.
+#
+# Suggested cron:
+#   master:  */10 * * * * /root/ketsync/ketsync watch
+#            30 7 * * *   /root/ketsync/ketsync watch --digest
+#   slave:   */10 * * * * /root/ketsync/ketsync watch
 # -----------------------------------------------------------------------------
 #KS_MAIL_FROM="ketsync@example.co.th"    # must be a sender the provider VERIFIED
 #KS_MAIL_INFRA="infra@example.co.th"     # immediate: backup node, PAUSE, stand-ins live

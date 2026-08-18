@@ -22,6 +22,17 @@ c="${cmd[*]:-}"
 # A down machine is down for every question, not just "true".
 [[ -f "$SIMROOT/down.$host" ]] && exit 255
 
+# A machine that answers only after N failed attempts - the blip a slave watch
+# must not mail about. The counter lives in a file because each ssh is its own
+# process, which is also true of the real thing.
+if [[ -f "$SIMROOT/flap.$host" ]]; then
+  left="$(cat "$SIMROOT/flap.$host")"
+  if [[ "$left" -gt 0 ]]; then
+    printf '%s\n' "$(( left - 1 ))" > "$SIMROOT/flap.$host"
+    exit 255
+  fi
+fi
+
 case "$c" in
   true) exit 0;;
 

@@ -80,9 +80,29 @@ self_check
 echo "=== ketsync watch mutation suite ==="
 
 # ---------- what must refuse before anything runs ----------------------------
-mutant "the role guard is gone, so two machines watch one fleet" \
-  's{\Q  if [[ "\E\$\Q{KS_ROLE:-}" != master ]]; then\E}{  if false; then}' \
+# ---------- the split scope: fleet here, master-only there --------------------
+# A slave that runs the master's checks is the objection this design used to
+# carry - two half-tuned alert streams, every node event mailed twice. The
+# scope is the whole reason a second watcher is allowed at all.
+mutant "a slave watches the whole fleet, so every alert arrives twice" \
+  's{\Q  if (( slave )); then\E\n\Q    # The one question, asked properly.\E}{  if false; then\n    # The one question, asked properly.}' \
   16
+
+mutant "the master's death stops being noticed at all" \
+  's{\Q    (( up )) || add_event master-unreachable INFRA \E\\}{    (( up )) || true \\}' \
+  16
+
+mutant "one failed ssh is enough, so every blip mails a dead master" \
+  's{\Q    local tries="\E\$\Q{KS_MASTER_TRIES:-3}"\E}{    local tries="1"}' \
+  19
+
+mutant "a slave mails doctor's report as though it were the fleet's" \
+  's{\Q  if (( slave && digest )); then\E}{  if false; then}' \
+  20
+
+mutant "a role nobody recognises is treated as a master" \
+  's{\Q    slave)  slave=1;;\E}{    slave)  slave=1;;\n    maser) ;;}' \
+  21
 
 mutant "no addresses configured is carried on past" \
   's{\Q    if [[ -z "\E\$\Q{KS_MAIL_FROM:-}" || -z "\E\$\Q{KS_MAIL_INFRA:-}" || -z "\E\$\Q{KS_MAIL_NODE:-}" ]]; then\E}{    if false; then}' \
@@ -115,7 +135,7 @@ mutant "stand-ins placed stops being an infra fact" \
   8
 
 mutant "the records under a placed stand-in are raised anyway" \
-  's{\Q    else\E\n\Q      local n\E}{    fi\n    if true; then\n      local n}' \
+  's{\Q      else\E\n\Q        local n\E}{      fi\n      if true; then\n        local n}' \
   8
 
 mutant "an unreadable cluster clears what it can no longer see" \

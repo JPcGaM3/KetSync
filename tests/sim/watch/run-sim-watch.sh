@@ -85,10 +85,20 @@ sendmail_works(){ rm -f "$SIMROOT/rc.sendmail"; }
 no_healthcheck(){ sed -i '/KS_WATCH_HEALTHCHECK/d' "$MASTER/conf/ketsync.conf"; }
 no_mailconf(){   sed -i '/KS_MAIL/d' "$MASTER/conf/ketsync.conf"; }
 slave_role(){    sed -i 's/^KS_ROLE=master/KS_ROLE=slave/' "$MASTER/conf/ketsync.conf"; }
+# A role nobody recognises - a typo in the one line an operator edits by hand.
+# Deleting the line instead would prove nothing: common.sh defaults it to slave.
+bogus_role(){    sed -i 's/^KS_ROLE=.*/KS_ROLE=maser/' "$MASTER/conf/ketsync.conf"; }
+no_master_ip(){  sed -i '/^KS_MASTER_IP=/d' "$MASTER/conf/ketsync.conf"; }
+no_node_addr(){  sed -i '/^KS_MAIL_NODE=/d' "$MASTER/conf/ketsync.conf"; }
+# answers on attempt N+1: the blip, not a dead machine
+host_flaps(){    printf '%s\n' "$2" > "$SIMROOT/flap.$1"; }
 clear_mail(){    rm -f "$SIMROOT"/mail.*; : > "$SIMROOT/pings"; }
 
 run_ks(){
   ( export SIMROOT SIMBIN="$HERE/bin"
+    # the master-probe knobs exist exactly for this: the simulator must not
+    # sit through real waits. The fleet runs the defaults (3 tries x 5s).
+    export KS_MASTER_TRIES=3 KS_MASTER_GAP=0
     ssh(){ "$SIMBIN/ssh" "$@"; }
     # sendmail swallows stdin into a numbered file - the mails ARE the output
     # under test. curl records the dead-man ping the same way.
@@ -328,12 +338,105 @@ if scenario "15: --list shows what is standing, and changes nothing"; then
   done_scenario
 fi
 
-if scenario "16: on a slave this refuses - one watcher, one state, one ping"; then
+if scenario "16: a slave watches the MASTER, and says nothing about anything else"; then
+  # The machine that reports the fleet cannot report its own death, so the
+  # backup node asks one question. Everything else is deliberately NOT its
+  # business - the assertions below are mostly about what does not arrive,
+  # because a second full watcher is two half-tuned alert streams.
+  slave_role
+  host_down "$ME"
+  host_down "$N1"          # a node is down too, and that is the master's story
+  pause_on                 # so is PAUSE
+  run_ks watch
+  rc_is 0
+  mail_count 1
+  mail_has "master-unreachable"
+  mail_has "$ME"
+  mail_has "the DR is driven from here"
+  mail_has "To: infra@sim"
+  mail_hasnt "node-unreachable"
+  mail_hasnt "pause"
+  state_there
+  pinged
+  done_scenario
+fi
+
+if scenario "18: a slave with a master that answers mails nothing at all"; then
   slave_role
   run_ks watch
-  rc_is 2
-  has "watch runs on the MASTER"
+  rc_is 0
   mail_count 0
+  has "no change - the fleet looks the way it looked last run"
+  has "scope=master-only"
+  state_there
+  pinged
+  done_scenario
+fi
+
+if scenario "19: a blip is not a dead master - it is asked again before it is believed"; then
+  # Two failed attempts, then an answer. One try would have mailed, and a
+  # RAISED/CLEARED pair per flap is how an inbox learns to ignore this key.
+  slave_role
+  host_flaps "$ME" 2
+  run_ks watch
+  rc_is 0
+  mail_count 0
+  done_scenario
+fi
+
+if scenario "20: a slave refuses --digest - doctor's answers are the master's"; then
+  slave_role
+  run_ks watch --digest
+  rc_is 2
+  has "A slave watch has one question in it"
+  mail_count 0
+  done_scenario
+fi
+
+if scenario "21: a role nobody recognises is a refusal, not a guessed one"; then
+  bogus_role
+  run_ks watch
+  rc_is 2
+  has "watch runs on a master"
+  mail_count 0
+  done_scenario
+fi
+
+if scenario "22: a slave needs its own FROM and INFRA, and does not need NODE"; then
+  slave_role
+  no_node_addr
+  host_down "$ME"
+  run_ks watch
+  rc_is 0
+  mail_count 1
+  mail_has "master-unreachable"
+  clear_mail
+  no_mailconf
+  run_ks watch
+  rc_is 2
+  has "a slave watch mails one thing"
+  mail_count 0
+  done_scenario
+fi
+
+if scenario "23: a slave with no master address has nothing to watch"; then
+  slave_role
+  no_master_ip
+  run_ks watch
+  rc_is 2
+  has "KS_MASTER_IP is unset"
+  mail_count 0
+  done_scenario
+fi
+
+if scenario "24: the master's own watch never claims the master is unreachable"; then
+  # The other half of the split scope: whatever the master sees, this key is
+  # not its to raise - it is the one fact it cannot observe.
+  host_down "$N1"
+  run_ks watch
+  rc_is 0
+  mail_has "node-unreachable"
+  mail_hasnt "master-unreachable"
   done_scenario
 fi
 

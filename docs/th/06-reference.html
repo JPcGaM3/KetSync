@@ -154,7 +154,7 @@
   <table>
     <tr><th>flag</th><th>แปลว่า</th><th>ใช้กับ</th></tr>
     <tr><td class="m">--all</td><td>ทุกแถวใน inventory / ทุกอย่างที่บันทึกของภัยพิบัติบอก</td><td>เกือบทุกตัว</td></tr>
-    <tr><td class="m">--ctid &lt;id&gt;</td><td>เฉพาะตัวเดียว — เลขตัวจริงเสมอ ไม่ใช่ 8xxx/9xxx</td><td>เกือบทุกตัว</td></tr>
+    <tr><td class="m">--ctid &lt;id&gt;</td><td>เฉพาะตัวเดียว — เลขตัวจริงเสมอ ไม่ใช่ 8xxx/9xxx</td><td>เกือบทุกตัว รวม recover</td></tr>
     <tr><td class="m">--dry-run</td><td>เดินผ่าน guard ครบ ไม่เขียนอะไร แล้วพิมพ์แผน</td><td>ทุกตัวที่เขียน</td></tr>
     <tr><td class="m">--list</td><td>อ่านอย่างเดียว ใครอยู่ไหน เหลืออะไร</td><td>failback, distribute, recall, recover, prepare, watch</td></tr>
     <tr><td class="m">-h / --help</td><td>วิธีใช้ ไม่ถามยืนยัน ไม่รันอะไรทั้งนั้น</td><td>ทุกตัว</td></tr>
@@ -164,7 +164,7 @@
     <tr><td class="m">--to / --dst</td><td>override ปลายทางจาก fleet.tsv</td><td>dist
 ribute</td></tr>
     <tr><td class="m">--node &lt;ip&gt;</td><td>ทำทั้งเครื่อง ไม่ใช่ราย CT</td><td>evacuate, restore</td></tr>
-    <tr><td class="m">--digest</td><td>ส่งรายงาน doctor ทั้งฉบับเข้าเมล</td><td>watch</td></tr>
+    <tr><td class="m">--digest</td><td>ส่งรายงาน doctor ทั้งฉบับเข้าเมล (master เท่านั้น)</td><td>watch</td></tr>
     <tr><td class="m">--test</td><td>ส่งเมลทดสอบไป KS_MAIL_INFRA หลังตั้ง postfix เสร็จ</td><td>mail-setup</td></tr>
     <tr><td class="m">-y</td><td>ตัดสินใจไปแล้ว — ข้ามแค่คำถาม ไม่ข้ามด่านสักด่าน ไม่มี --force</td><td>ทุกตัวที่เขียน</td></tr>
   </table>
@@ -248,6 +248,7 @@ ribute</td></tr>
     <tr><td class="m">KS_ROLE</td><td>master / slave — คนเปลี่ยนเองเท่านั้น master คือเจ้าของตาราง</td></tr>
     <tr><td class="m">KS_MASTER_IP</td><td>IP ของเครื่องที่เป็น master ตอนนี้</td></tr>
     <tr><td class="m">KS_MAIL_FROM / _INFRA / _NODE / _DIGEST</td><td>ที่อยู่เมลของ watch — ไม่ครบ watch ปฏิเสธ</td></tr>
+    <tr><td class="m">KS_MASTER_TRIES / _GAP</td><td>slave ถาม master กี่ครั้ง ห่างกันกี่วิ ก่อนจะเชื่อว่าตาย (3 / 5)</td></tr>
     <tr><td class="m">KS_MAIL_RELAY / _USER / _KEYFILE</td><td>relay ของ provider + login + path ของ key — <span class="m">ketsync mail-setup</span> อ่านสามค่านี้ไปตั้ง postfix เปลี่ยน provider = แก้แล้วรันซ้ำ</td></tr>
     <tr><td class="m">KS_WATCH_HEALTHCHECK</td><td>URL dead-man (healthchecks.io) — รอบเขียวเท่านั้นที่ ping</td></tr>
   </table>

@@ -63,6 +63,13 @@ what lets this run from outside the cluster. Do not add a name column back: a
 name that is typed is a name that can be stale, and a stale one writes a guest
 config into another member's directory.
 
+**5a. A test that only passes under one awk is not a test.** `awk -v s=...`
+parses its value as a STRING before it is ever a regex, so a lone `\$` is an
+unknown escape: mawk demotes it to a literal `$`, gawk demotes it to an
+end-of-line anchor. The c2v anchors were green here and red in CI on the same
+commit for exactly that. Anchors carry doubled backslashes now; if you add
+one, run the suite under both awks before you believe it.
+
 **6. Every engine and command sets its own PATH.** cron gives you
 `/usr/bin:/bin` and `pvesm`, `zfs` and `losetup` live in sbin. Check required
 commands **before** taking any lock: `flock` missing reads as "the lock is
@@ -97,12 +104,16 @@ failed step may touch, and what may happen only when everything went green.
 The confirmation has 19 and 18, and it needs its own because its whole
 behaviour turns on whether there is a person on the other end - the
 prompting half runs under a pty, and a pipe tests the refusal by being one.
-`watch` has 17 and 16, and it is the suite where the assertions are MAILS:
+`watch` has 24 and 20, and it is the suite where the assertions are MAILS:
 watch's output arrives while nobody is at a terminal, so what its simulator
 pins down is edge-triggering (a standing problem mails once), tiering (the
 right address), suppression (one story told once), and
 delivered-and-remembered-or-neither (a failed send keeps the state file
 untouched, exits red, and skips the dead-man ping so the silence is heard).
+Half of its scenarios are about the SPLIT SCOPE - a master watches the fleet,
+a slave watches only whether the master answers - and most of those assert
+what does NOT arrive, because a second full watcher would mail everything
+twice.
 `mail-setup` has 9 and 5: the verb is one boundary - conf keys in, satellite
 argv out, exit code back - and its fake satellite records the argv, which is
 the entire output under test.
@@ -125,8 +136,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 419 tp simulator + 16 dispatcher + 125 c2v, 124 ketsync
-    make mutation # 489 known bugs put back. None may survive
+    make test     # both layers: 419 tp simulator + 16 dispatcher + 125 c2v, 131 ketsync
+    make mutation # 493 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
