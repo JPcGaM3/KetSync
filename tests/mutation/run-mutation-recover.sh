@@ -174,6 +174,12 @@ mutant "the exit code forgets what failed" \
   's{\Q  return \E\$failed\E}{  return 0}' \
   6
 
+
+# ---------- --ctid is a scope, not a suggestion -------------------------------
+mutant "the --ctid scope leaks: recovering one container recovers everything" \
+  's{\Q    CTS=("\E\$only\Q")\E}{    :}' \
+  21
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

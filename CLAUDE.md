@@ -27,8 +27,8 @@ exception is Thai prose in operator guides, and never inside `<pre>` or
 invented under pressure is a flag that gets used under pressure. No terminal
 and no `-y` is a REFUSAL, not a quiet no: `read` on an empty stdin returns
 immediately, and treating that as "no" would be a nightly cron reporting
-success having done nothing. `--dry-run` and `--list` are never asked about,
-or the answer gets trained. The question lives in the dispatcher because that
+success having done nothing. `--dry-run`, `--list` and `-h`/`--help` are never
+asked about, or the answer gets trained. The question lives in the dispatcher because that
 is where a person stands; cron calls the engines directly and is not prompted.
 
 **2. Nothing decides who is master.** `KS_ROLE` is a line in a config file that
@@ -91,10 +91,10 @@ one command that writes nothing needed one anyway.** Read `tests/README.md`.
 bugs that had been live on the fleet, none of which review had caught.
 `distribute` has one too, 15 and 14, because it composes two engines and
 every joint between them is invisible from inside either one; `recover`, the
-other composed verb, has 20 and 21 for the same reason - it is the seven-step
+other composed verb, has 21 and 22 for the same reason - it is the seven-step
 return checklist executed, and what it can get wrong is the order, what a
 failed step may touch, and what may happen only when everything went green.
-The confirmation has 17 and 16, and it needs its own because its whole
+The confirmation has 19 and 18, and it needs its own because its whole
 behaviour turns on whether there is a person on the other end - the
 prompting half runs under a pty, and a pipe tests the refusal by being one.
 `watch` has 17 and 16, and it is the suite where the assertions are MAILS:
@@ -125,8 +125,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 419 tp simulator + 16 dispatcher + 125 c2v, 121 ketsync
-    make mutation # 486 known bugs put back. None may survive
+    make test     # both layers: 419 tp simulator + 16 dispatcher + 125 c2v, 124 ketsync
+    make mutation # 489 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

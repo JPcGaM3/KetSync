@@ -175,7 +175,7 @@ mutant "sync stops counting as something that writes to other machines" \
   12
 
 mutant "--dry-run is asked about, which is how a prompt stops being read" \
-  's{\Q    [[ "\E\$a\Q" == --dry-run || "\E\$a\Q" == --list ]] && return 1\E}{    [[ "\$a" == --nothing ]] \&\& return 1}' \
+  's{\Q    [[ "\E\$a\Q" == --dry-run || "\E\$a\Q" == --list || "\E\$a\Q" == -h || "\E\$a\Q" == --help ]] && return 1\E}{    [[ "\$a" == --nothing ]] \&\& return 1}' \
   4 5
 
 # ---------- -y ---------------------------------------------------------------
@@ -219,6 +219,16 @@ mutant "cleanup is not counted as a verb that writes" \
 mutant "a bare cleanup has no menu, so it falls through to the question" \
   's{\Q    cleanup) cat <<\E\x27\QMENU\E\x27}{    __nocleanup) cat <<\x27MENU\x27}' \
   17
+
+
+# ---------- a question is never asked about ----------------------------------
+mutant "a help request is asked about like a write" \
+  's{\Q    [[ "\E\$a\Q" == --dry-run || "\E\$a\Q" == --list || "\E\$a\Q" == -h || "\E\$a\Q" == --help ]] && return 1\E}{    [[ "\$a" == --dry-run || "\$a" == --list ]] \&\& return 1}' \
+  18
+
+mutant "the help interception is gone, and composed verbs refuse the question" \
+  's{\Q  [[ "\E\$_a\Q" == -h || "\E\$_a\Q" == --help ]] || continue\E}{  continue}' \
+  19
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

@@ -244,6 +244,35 @@ if scenario "17: a bare cleanup prints its own menu and refuses"; then
   done_scenario
 fi
 
+
+if scenario "18: --help is a question, and questions are never asked about"; then
+  # The 2026-08-18 drill: `recover --help` was asked "proceed?" and then
+  # refused '--help' as unknown. A help request must reach its answer with
+  # nothing run and nothing asked - headless, because that is also how a
+  # person pipes it into less.
+  run_headless replica --help
+  rc_is 0
+  hasnt "REFUSED"
+  hasnt "proceed?"
+  ran "tp replica --help"
+  done_scenario
+fi
+
+if scenario "19: the layer's own verbs answer --help themselves, without running"; then
+  run_headless recover --help
+  rc_is 0
+  hasnt "REFUSED"
+  hasnt "unknown argument"
+  has "recover: the whole way back"
+  has "--ctid <id>"
+  never_ran
+  run_headless sync --help
+  rc_is 0
+  has "push the fleet-wide tables"
+  never_ran
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

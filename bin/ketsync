@@ -173,6 +173,7 @@ recover: the whole way back - what the failback log's checklist says, executed
 
   --list                 the checklist, with what is already done. writes nothing
   --all                  everything the disaster's own records name
+  --ctid <id>            one container the records name, by its PRODUCTION id
   --destroy              also destroy each 9<id>, then rm PAUSE and run the
                          first replica round - the complete return
   --dry-run              every guard runs, nothing is written
@@ -199,6 +200,58 @@ MENU
   return 0
 }
 
+# ks_menu is what a bare WRITING verb prints while refusing; ks_help is the
+# answer to an explicit -h/--help, so it also covers the verbs ks_menu
+# deliberately leaves out - being absent from the refusal path is a design
+# decision, having no help at all was just a hole.
+ks_help(){   # $1 = verb -> 0 printed, 1 = not this layer's to answer
+  case "$1" in
+    sync) cat <<'MENU'
+sync: push the fleet-wide tables to every node that has a ketsync
+
+  (bare)                 push. Asks first; -y means already decided
+  --dry-run              say what would go, send nothing
+  --diff                 show what differs, send nothing
+  --bump [<file>]        settle a FORK: this machine's copy is the right one
+  --to <ip>              one machine only
+MENU
+;;
+    watch) cat <<'MENU'
+watch: mail when the fleet's shape changes - master-only, made for cron
+
+  (bare)                 one pass: mail what RAISED or CLEARED, then exit
+  --digest               mail doctor's whole report to KS_MAIL_DIGEST
+  --list                 what is currently held raised. writes nothing
+  --dry-run              say what would be mailed, mail nothing
+MENU
+;;
+    mail-setup) cat <<'MENU'
+mail-setup: point this machine's postfix at the relay the conf names
+            reads KS_MAIL_RELAY / KS_MAIL_USER / KS_MAIL_KEYFILE
+
+  (bare)                 rewrite postfix on THIS machine. Asks first
+  --test                 also send a proof mail to KS_MAIL_INFRA, from KS_MAIL_FROM
+MENU
+;;
+    doctor) cat <<'MENU'
+doctor: is this wired up - read-only checks across the whole fleet
+
+  (bare)                 the full report. exit 1 = something needs attention
+MENU
+;;
+    role) cat <<'MENU'
+role: who is in charge
+
+  (bare)                 report this machine's role and the master ip
+  master | slave         change THIS machine's role - the human promotion
+                         step. Read docs/decisions.md section 2 first
+MENU
+;;
+    *) ks_menu "$1"; return $?;;
+  esac
+  return 0
+}
+
 KS_ASSUME_YES=0
 declare -a KS_ARGV=()
 for _a in "$@"; do
@@ -211,11 +264,14 @@ export KS_ASSUME_YES
 set -- ${KS_ARGV[@]+"${KS_ARGV[@]}"}
 
 # --dry-run and --list write nothing, so they are never worth asking about.
-# Asking anyway would train the answer.
+# Asking anyway would train the answer. -h/--help is a QUESTION, and asking
+# for confirmation before answering a question taught people to stop asking -
+# the 2026-08-18 drill hit exactly that: `recover --help` was asked "proceed?"
+# and then refused.
 ks_writes(){   # $1 = verb, rest = its arguments
   local a
   for a in "${@:2}"; do
-    [[ "$a" == --dry-run || "$a" == --list ]] && return 1
+    [[ "$a" == --dry-run || "$a" == --list || "$a" == -h || "$a" == --help ]] && return 1
   done
   case "$1" in
     migrate|replica|failback|distribute|recall|prepare|isolate|restore|evacuate|cleanup|recover|sync|mail-setup) return 0;;
@@ -252,6 +308,20 @@ run_tp(){
   fi
   exec "$TP" "$@"
 }
+
+# ---- -h/--help, answered before anything is decided -------------------------
+# The engines answer their own (their file header, richer than any menu), so
+# tp's verbs pass straight through. The layer's own verbs answer here: the
+# composed ones used to refuse '--help' as an unknown argument, one question
+# past the confirmation that had just been asked about it.
+for _a in "${@:2}"; do
+  [[ "$_a" == -h || "$_a" == --help ]] || continue
+  case "${1:-}" in
+    migrate|replica|failback|status|recall|prepare|isolate|restore|evacuate|cleanup|tp) ;;
+    *) if ks_help "${1:-}"; then exit 0; fi;;
+  esac
+  break
+done
 
 # A writing verb with nothing after it at all. Not "no recognised scope" - an
 # argument this dispatcher does not know is the engine's business, and guessing

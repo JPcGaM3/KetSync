@@ -53,19 +53,31 @@
 #  writes. Answering y to that question is the acknowledgment.
 # =============================================================================
 cmd_recover(){
-  local all=0 destroy=0 dry=0 list=0 a rc=0
-  for a in "$@"; do
-    case "$a" in
-      --all)     all=1;;
-      --destroy) destroy=1;;
-      --dry-run) dry=1;;
-      --list)    list=1;;
-      *) say "recover: unknown argument '$a'"; return 2;;
+  local all=0 destroy=0 dry=0 list=0 rc=0 only=""
+  while (( $# )); do
+    case "$1" in
+      --all)     all=1; shift;;
+      --destroy) destroy=1; shift;;
+      --dry-run) dry=1; shift;;
+      --list)    list=1; shift;;
+      # One container out of what the records name. The scope is still the
+      # DISASTER's: a --ctid the records do not know is refused below, because
+      # recovering a container the disaster never touched would run a failback
+      # into an image that was never behind.
+      --ctid)    [[ $# -ge 2 ]] || { say "recover: --ctid needs a value"; return 2; }
+                 only="$2"; shift 2;;
+      *) say "recover: unknown argument '$1'"; return 2;;
     esac
   done
-  if (( ! all && ! list )); then
-    say "refused: recover takes --all (it recovers what the DISASTER touched,"
-    say "  which it reads from the cluster - not from a list you type)."
+  if (( all )) && [[ -n "$only" ]]; then
+    say "refused: --all recovers everything the records name and --ctid recovers one."
+    say "  they contradict - pick one."
+    return 2
+  fi
+  if (( ! all && ! list )) && [[ -z "$only" ]]; then
+    say "refused: recover takes --all, or one container with --ctid <id>. Either"
+    say "  way it recovers what the DISASTER touched, which it reads from the"
+    say "  cluster - not from a list you type."
     say "  see where it stands first:  ./ketsync recover --list"
     return 2
   fi
@@ -151,6 +163,25 @@ cmd_recover(){
   img_unseen(){ [[ -z "$IMG_STATE" || "$IMG_STATE" == NOIMAGE || "$IMG_STATE" == NOCONFIG ]]; }
   home_of(){ awk -v c="$1" '$1!~/^#/ && $1==c{print $2; exit}' "$KS_INV" 2>/dev/null; }
   map_ip(){  awk -v n="$1" '$1!~/^#/ && $2==n{print $1; exit}' "$KS_NODEMAP" 2>/dev/null; }
+
+  # ---- --ctid: one container, out of what the records name ------------------
+  if [[ -n "$only" ]]; then
+    if [[ -z "${INCT[$only]:-}" ]]; then
+      say "refused: the disaster's records do not name CT $only - no isolate record,"
+      say "  no 9<id> placed. There is nothing to recover for it."
+      say "  see what they do name:  ./ketsync recover --list"
+      return 2
+    fi
+    CTS=("$only")
+    # Step 1 below restores storages per evacuate record. With one container
+    # named, only ITS node is restored - the other evacuated nodes were not
+    # asked about, and switching a storage back on is a per-node decision.
+    local _oh _on
+    _oh="$(home_of "$only")"
+    _on="$(awk -v i="$_oh" '$1!~/^#/ && $1==i{print $2; exit}' "$KS_NODEMAP" 2>/dev/null)"
+    EVACN="$(grep -x "${_on:-__none__}" <<<"$EVACN" || true)"
+  fi
+
 
   # ---- --list: the checklist, read-only -------------------------------------
   if (( list )); then

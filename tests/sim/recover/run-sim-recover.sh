@@ -461,6 +461,32 @@ if scenario "19: a dry run says WHY it cannot see the image instead of calling i
   done_scenario
 fi
 
+
+if scenario "21: --ctid recovers ONE container the records name, and only that one"; then
+  # The 2026-08-18 return: one container's fleet row was missing, its fsck
+  # errored, and the other two finished - leaving exactly one container to
+  # recover. --all would walk the finished ones again; --ctid walks one.
+  run_ks recover --ctid 110
+  rc_is 0
+  ran "ct-failback.sh --ctid 110 --final"
+  never_ran "ct-failback.sh --ctid 120 --final"
+  never_ran "ct-prepare.sh --restore --ctid 120"
+  ran "ct-prepare.sh --restore --node $N1"
+  never_ran "ct-prepare.sh --restore --node $N2"
+  clean_trace
+  # a container the records do not name is a refusal, not an empty run
+  run_ks recover --ctid 999
+  rc_is 2
+  has "the disaster's records do not name CT 999"
+  never_ran "ct-failback.sh"
+  clean_trace
+  # and the two scopes contradict
+  run_ks recover --all --ctid 110
+  rc_is 2
+  has "pick one"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi
