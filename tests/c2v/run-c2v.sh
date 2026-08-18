@@ -89,12 +89,17 @@ sandboxed(){ # sandboxed <file>  - redirect writes into $T, leave content alone
   ' "$1"
 }
 
-# An empty extraction has two causes and they need different people. Usually an
-# anchor moved. But the anchors are ERE strings carrying \$ and \(, and BSD awk
-# demotes an unknown escape to the bare character - so \$ becomes an end-of-line
-# anchor and the pattern can never match. That makes every extraction here fail
-# on macOS while the anchors are untouched. Naming only the first cause sent
-# somebody hunting through c2v-inside.sh for a change nobody had made.
+# An empty extraction usually means an anchor moved. It used to mean something
+# else as well, and that one cost a green suite here and a red one in CI on the
+# same commit: awk parses -v values as STRING literals before they are ever a
+# regex, so a lone \$ is an unknown escape. mawk demoted it to a bare $ and then
+# treated that $ as a literal mid-pattern, so every anchor matched by accident;
+# gawk demoted it the same way and treated the $ as an end-of-line anchor, so
+# nothing could ever match. Same anchors, opposite verdicts, decided by which
+# awk the machine happens to ship. The anchors carry doubled backslashes now -
+# \\$ reaches the regex as \$, a literal dollar in every awk there is - and this
+# suite is green under mawk and gawk both. If it is ever empty again, the anchor
+# really did move.
 need(){ # need <what> <file> [script-the-anchor-lives-in]
   [ -s "$2" ] && return 0
   echo "EXTRACTION FAILED: $1 - nothing matched in ${3:-$SCRIPT}"
@@ -105,7 +110,7 @@ need(){ # need <what> <file> [script-the-anchor-lives-in]
 }
 
 REL_BLOCK="$T/rel.sh"
-extract '^REL=\$\(cat /etc/redhat-release\)$' '^log "guest: \$REL"$' > "$REL_BLOCK.raw"
+extract '^REL=\\$\\(cat /etc/redhat-release\\)$' '^log "guest: \\$REL"$' > "$REL_BLOCK.raw"
 need "release detection" "$REL_BLOCK.raw"
 sandboxed "$REL_BLOCK.raw" > "$REL_BLOCK"
 
@@ -115,12 +120,12 @@ need "bootloader section" "$BOOT_BLOCK.raw"
 sandboxed "$BOOT_BLOCK.raw" > "$BOOT_BLOCK"
 
 PKG_BLOCK="$T/pkg.sh"
-extract '^have_kernel\(\)\{' '^if have_kernel' > "$PKG_BLOCK.raw"
+extract '^have_kernel\\(\\)\\{' '^if have_kernel' > "$PKG_BLOCK.raw"
 need "package selection" "$PKG_BLOCK.raw"
 cp "$PKG_BLOCK.raw" "$PKG_BLOCK"
 
 NET_BLOCK="$T/net.sh"
-extract '^RULES=/etc/udev/rules\.d/70-persistent-net\.rules$' \
+extract '^RULES=/etc/udev/rules\\.d/70-persistent-net\\.rules$' \
         '^# An ifcfg file is read by exactly two things' > "$NET_BLOCK.raw"
 need "network cleanup" "$NET_BLOCK.raw"
 sandboxed "$NET_BLOCK.raw" > "$NET_BLOCK"
@@ -129,20 +134,20 @@ sandboxed "$NET_BLOCK.raw" > "$NET_BLOCK"
 # rewriting would either miss it or aim it at the machine running the tests.
 # Every call it makes to the outside is stubbed instead - see run_ids.
 IDS_BLOCK="$T/ids.sh"
-extract '^idoff=\$\(stat -c %u /etc' '^is_mounted\(\)\{' > "$IDS_BLOCK.raw"
+extract '^idoff=\\$\\(stat -c %u /etc' '^is_mounted\\(\\)\\{' > "$IDS_BLOCK.raw"
 need "id shift check" "$IDS_BLOCK.raw"
 cp "$IDS_BLOCK.raw" "$IDS_BLOCK"
 
 RESCUE_BLOCK="$T/rescue.sh"
-extract '^if \[ -d "\$SYSROOT" \] && \[ -z "\$\{C2V_INNER:-\}" \]; then' \
-        '^\[ -f /etc/redhat-release \]' > "$RESCUE_BLOCK"
+extract '^if \\[ -d "\\$SYSROOT" \\] && \\[ -z "\\$\\{C2V_INNER:-\\}" \\]; then' \
+        '^\\[ -f /etc/redhat-release \\]' > "$RESCUE_BLOCK"
 need "rescue shell stage" "$RESCUE_BLOCK"
 
 # Extracted separately from the stage above because it runs at a different time:
 # the binds are made before the chroot and taken back off after it, and the order
 # they come off in is the half that only the EXIT trap can get wrong.
 CLEAN_BLOCK="$T/clean.sh"
-extract '^cleanup\(\)\{' '^trap cleanup EXIT' > "$CLEAN_BLOCK"
+extract '^cleanup\\(\\)\\{' '^trap cleanup EXIT' > "$CLEAN_BLOCK"
 need "cleanup trap" "$CLEAN_BLOCK"
 
 # Three blocks out of phase 1. They belong in this file rather than in a new one
@@ -152,39 +157,39 @@ need "cleanup trap" "$CLEAN_BLOCK"
 PREP="$ROOT/contrib/c2v-prepare.sh"
 
 RSOPT_BLOCK="$T/rsopt.sh"
-extract_from "$PREP" '^RSOPT=\(-aHAX' '^log "rsync <= \$SRC"$' > "$RSOPT_BLOCK"
+extract_from "$PREP" '^RSOPT=\\(-aHAX' '^log "rsync <= \\$SRC"$' > "$RSOPT_BLOCK"
 need "rsync options" "$RSOPT_BLOCK" "$PREP"
 
 MAP_BLOCK="$T/map.sh"
-extract_from "$PREP" '^map_bridge\(\)\{' '^NETHINT=""; UNMAPPED=""; CATCHALL=""$' > "$MAP_BLOCK"
+extract_from "$PREP" '^map_bridge\\(\\)\\{' '^NETHINT=""; UNMAPPED=""; CATCHALL=""$' > "$MAP_BLOCK"
 need "bridge map lookup" "$MAP_BLOCK" "$PREP"
 
 CFG_BLOCK="$T/cfg.sh"
-extract_from "$PREP" '^cfgval\(\)\{' '^mplist=' > "$CFG_BLOCK"
+extract_from "$PREP" '^cfgval\\(\\)\\{' '^mplist=' > "$CFG_BLOCK"
 need "cpu and memory inheritance" "$CFG_BLOCK" "$PREP"
 
 GUARD_BLOCK="$T/mapguard.sh"
-extract_from "$PREP" '^HAVE_MAP=0$' '^map_bridge\(\)\{' > "$GUARD_BLOCK"
+extract_from "$PREP" '^HAVE_MAP=0$' '^map_bridge\\(\\)\\{' > "$GUARD_BLOCK"
 need "bridge map guard" "$GUARD_BLOCK" "$PREP"
 
 # Read, not sourced: section 6c is a list of paths, and the only question asked
 # of it is whether the exclude list covers every one.
 CHECK_BLOCK="$T/check6c.txt"
-extract_from "$PREP" '^if ls "\$MNT"/boot/vmlinuz-\*' '^  if \[\[ -n "\$PKGS_GONE" \]\]' > "$CHECK_BLOCK"
+extract_from "$PREP" '^if ls "\\$MNT"/boot/vmlinuz-\*' '^  if \\[\\[ -n "\\$PKGS_GONE" \\]\\]' > "$CHECK_BLOCK"
 need "post-sync package check" "$CHECK_BLOCK" "$PREP"
 
 # Section 0a, which is the first thing phase 1 decides and the one every other
 # block above depends on. Extracted from family_of() so both helpers come with
 # it; iso_release_check lands in the middle and is only defined, never called.
 FAM_BLOCK="$T/family.sh"
-extract_from "$PREP" '^family_of\(\)\{' '^# The label default follows the family' > "$FAM_BLOCK"
+extract_from "$PREP" '^family_of\\(\\)\\{' '^# The label default follows the family' > "$FAM_BLOCK"
 need "guest family probe" "$FAM_BLOCK" "$PREP"
 
 # What 0a decides once the family is known. Not merged with the block above
 # because this one reaches the filesystem - it looks for phase 2 next to the real
 # script - and that is the half worth running against the real directory.
 FAMUSE_BLOCK="$T/famuse.sh"
-extract_from "$PREP" '^if \[\[ -n "\$LABEL" \]\]; then' \
+extract_from "$PREP" '^if \\[\\[ -n "\\$LABEL" \\]\\]; then' \
                      '^# Size the VM like the container' > "$FAMUSE_BLOCK"
 need "label and phase 2 selection" "$FAMUSE_BLOCK" "$PREP"
 
@@ -192,7 +197,7 @@ need "label and phase 2 selection" "$FAMUSE_BLOCK" "$PREP"
 # because what is being asked is whether a file on disk is a symlink or not, and a
 # stub that answers that question is a stub that can answer it wrongly.
 S7_BLOCK="$T/sect7.sh"
-extract_from "$PREP" '^if \(\( BOOTABLE \)\) && grep -Eq' \
+extract_from "$PREP" '^if \\(\\( BOOTABLE \\)\\) && grep -Eq' \
                      '^# Phase 2 has to reach the guest somehow' > "$S7_BLOCK"
 need "fstab and mtab decisions" "$S7_BLOCK" "$PREP"
 
@@ -1939,7 +1944,7 @@ fi
 {
   printf 'MNT=%s\n' "$DN"
   printf 'die(){ printf "DIE: %%s\\n" "$*"; exit 1; }\n'
-  extract_from "$DEB" '^\[\[ -c ' '^# ---'
+  extract_from "$DEB" '^\\[\\[ -c ' '^# ---'
 } > "$DN/readback.sh"
 out="$(bash "$DN/readback.sh" 2>&1)"; rc=$?
 if [ "$rc" != 0 ] && printf '%s' "$out" | grep -q console; then
