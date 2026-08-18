@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>00 — one page — ketsync</title>
+<style>
+  :root{
+    --ink:#1a1d21; --muted:#5f6672; --faint:#8d939d;
+    --bg:#fbfaf8; --surface:#ffffff; --line:#e8e5de; --line2:#d9d5cc;
+    --accent:#0f766e; --accent-soft:#e6f1ef;
+    --warn:#a45309; --warn-soft:#fdf3e3;
+    --crit:#b02020; --crit-soft:#fceded;
+    --code-bg:#f5f4f0;
+    --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Thai","Sarabun",sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.75;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto;padding:40px 24px 90px}
+  header.doc{padding-bottom:24px;border-bottom:2px solid var(--ink);margin-bottom:10px}
+  h1{font-size:30px;line-height:1.35;margin:0 0 8px;font-weight:700}
+  header.doc p{color:var(--muted);margin:0;font-size:16.5px}
+  section{margin-top:44px}
+  .eyebrow{display:flex;align-items:center;gap:11px;margin-bottom:8px}
+  .num{font-family:var(--mono);font-size:13px;font-weight:600;color:#fff;background:var(--accent);
+       border-radius:6px;width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+  .num.crit{background:var(--crit)}
+  h2{font-size:21px;margin:0;font-weight:700}
+  h3{font-size:16.5px;margin:28px 0 6px;font-weight:700}
+  p{margin:0 0 13px}
+  .lead{color:var(--muted);margin-bottom:18px}
+  .part{margin-top:60px;padding:16px 0 0;border-top:3px solid var(--ink)}
+  .part .label{font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase;
+               color:var(--accent);margin-bottom:2px}
+  .part.red .label{color:var(--crit)}
+  .part h2{font-size:25px}
+  pre{background:var(--code-bg);border:1px solid var(--line2);border-radius:10px;
+      padding:14px 16px;margin:12px 0 16px;white-space:pre-wrap;overflow-wrap:anywhere;
+      font-family:var(--mono);font-size:13.5px;line-height:1.7;color:#22262c}
+  .m,code{font-family:var(--mono);font-size:13.5px;background:var(--code-bg);
+          border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+  table{width:100%;border-collapse:collapse;margin:14px 0 18px;font-size:14.5px}
+  th,td{text-align:left;vertical-align:top;padding:9px 11px;border-bottom:1px solid var(--line)}
+  th{background:var(--accent-soft);color:var(--accent);font-size:13px;
+     text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid #c6ddd9}
+  td.m{background:none;border:none;font-family:var(--mono);font-size:13px;white-space:nowrap}
+  .note,.warn,.stop{border-radius:10px;padding:13px 16px;margin:16px 0;font-size:15px}
+  .note{background:var(--accent-soft);border:1px solid #c6ddd9}
+  .warn{background:var(--warn-soft);border:1px solid #f0dcb4}
+  .stop{background:var(--crit-soft);border:1px solid #f2c9c9}
+  .note p,.warn p,.stop p{margin:0}
+
+  /* the three machines, and which way the bytes go */
+  .flow{background:var(--surface);border:1px solid var(--line2);border-radius:12px;
+        padding:18px 16px 14px;margin:16px 0 20px}
+  .flow .cap{font-family:var(--mono);font-size:12px;letter-spacing:1px;text-transform:uppercase;
+             color:var(--faint);margin-bottom:12px}
+  .rail{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+  .box{flex:1 1 0;min-width:150px;border:1.5px solid var(--line2);border-radius:10px;
+       padding:10px 12px;background:var(--bg)}
+  .box.live{border-color:var(--accent);background:var(--accent-soft)}
+  .box.dead{border-color:var(--crit);background:var(--crit-soft);opacity:.85}
+  .box.hold{border-color:var(--warn);background:var(--warn-soft)}
+  .box .who{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:3px}
+  .box .id{font-family:var(--mono);font-size:17px;font-weight:700}
+  .box .what{font-size:13px;color:var(--muted);line-height:1.5;margin-top:3px}
+  .arr{flex:0 0 74px;display:flex;flex-direction:column;align-items:center;
+       justify-content:center;color:var(--accent);padding:0 4px}
+  .arr .sym{font-family:var(--mono);font-size:19px;line-height:1}
+  .arr .lbl{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;
+            margin-top:3px;line-height:1.3}
+  .arr.none{color:var(--faint)}
+  .hand{display:inline-block;font-family:var(--mono);font-size:12px;background:#fff;
+        border:1.5px solid var(--crit);color:var(--crit);border-radius:999px;
+        padding:1px 10px;margin-right:6px}
+  .auto{display:inline-block;font-family:var(--mono);font-size:12px;background:#fff;
+        border:1.5px solid var(--accent);color:var(--accent);border-radius:999px;
+        padding:1px 10px;margin-right:6px}
+  ol.steps{counter-reset:s;margin:12px 0 16px;padding:0;list-style:none}
+  ol.steps li{position:relative;padding-left:40px;margin:15px 0}
+  ol.steps li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:2px;
+    width:26px;height:26px;background:var(--accent);color:#fff;border-radius:50%;
+    font-family:var(--mono);font-size:13px;font-weight:600;
+    display:flex;align-items:center;justify-content:center}
+  ul.clean{margin:8px 0 16px;padding:0;list-style:none}
+  ul.clean li{position:relative;padding-left:20px;margin:8px 0}
+  ul.clean li::before{content:"";position:absolute;left:2px;top:11px;width:6px;height:6px;
+                      background:var(--accent);border-radius:50%}
+  footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);
+         color:var(--faint);font-size:14px}
+  .code .cp{position:absolute;top:8px;right:8px;font-family:var(--sans);font-size:12px;
+    color:var(--muted);background:var(--surface);border:1px solid var(--line2);
+    border-radius:7px;padding:3px 11px;cursor:pointer;line-height:1.5}
+  .code .cp:hover{color:var(--accent);border-color:var(--accent)}
+  details.cmd{margin:14px 0 18px;border:1px solid var(--line2);border-radius:10px;
+              background:var(--surface);overflow:hidden}
+  details.cmd>summary{cursor:pointer;padding:10px 15px;font-family:var(--mono);
+    font-size:13px;color:var(--accent);list-style:none;user-select:none}
+  details.cmd>summary::-webkit-details-marker{display:none}
+  details.cmd>summary::before{content:"\25B8  ";color:var(--faint)}
+  details.cmd[open]>summary::before{content:"\25BE  "}
+  details.cmd>summary:hover{background:var(--accent-soft)}
+  details.cmd .code{margin:0 12px 12px}
+  .allcmds{font-family:var(--sans);font-size:13px;color:var(--muted);
+           background:var(--surface);border:1px solid var(--line2);border-radius:8px;
+           padding:4px 12px;cursor:pointer;margin:0 0 14px}
+  .allcmds:hover{color:var(--accent);border-color:var(--accent)}
+</style>
+
+</head>
+<body>
+
+<div class="topbar">
+  <div class="in">
+    <span class="name">one page</span>
+    <a href="#what">what it is</a>
+    <a href="#cmds">commands</a>
+    <a href="#r1">nightly copy</a>
+    <a href="#r2">storage died</a>
+    <a href="#r3">storage back</a>
+    <a href="#r4">new CT</a>
+    <a href="#files">which file</a>
+    <a href="#mail">mail</a>
+    <a href="#oops">common trips</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+<header class="doc">
+  <h1>ketsync — the whole thing on one page</h1>
+  <p>What it does, every command, and what to type in each situation. Five minutes.</p>
+  <div class="where">The shortcut. Full detail lives in the <a href="index.html">contents</a>.</div>
+</header>
+
+<section id="what">
+  <div class="eyebrow"><span class="num">1</span><h2>What it does</h2></div>
+  <p>Copies every container's disk to a second machine every 15 minutes, and when the machine
+     holding those disks dies, runs the copies on a compute node so customers stay up.</p>
+  <table>
+    <tr><th>machine</th><th>example</th><th>job</th></tr>
+    <tr><td class="m">storage</td><td class="m">10.100.1.17</td><td>holds the real disks; the machine you drive from (master)</td></tr>
+    <tr><td class="m">backup</td><td class="m">10.100.1.9</td><td>holds the copies; the machine you drive from when storage is gone</td></tr>
+    <tr><td class="m">compute</td><td class="m">10.100.1.32/.33</td><td>actually runs the containers</td></tr>
+  </table>
+  <table>
+    <tr><th>number</th><th>what it is</th></tr>
+    <tr><td class="m">300</td><td>the real container. The only id anyone types</td></tr>
+    <tr><td class="m">8300</td><td>its copy on the backup node, always stopped = 300 + 8000</td></tr>
+    <tr><td class="m">9300</td><td>the temporary stand-in on a compute node = 300 + 9000</td></tr>
+    <tr><td class="m">vmbr99</td><td>a bridge with no uplink - where copies and cut-off containers sit</td></tr>
+  </table>
+  <div class="note"><p><b>Two hard rules.</b> Nothing here ever starts a container - you type that
+     yourself - and nothing ever guesses a value you did not write down.</p></div>
+</section>
+
+<section id="cmds">
+  <div class="eyebrow"><span class="num">2</span><h2>Every command</h2></div>
+  <p>All of them run as <code>./ketsync &lt;verb&gt;</code> from <code>/root/ketsync</code>. Anything that
+     writes asks first; add <code>--dry-run</code> to see the plan without doing it, or
+     <code>--help</code> for the flags.</p>
+  <table>
+    <tr><th>command</th><th>what it does</th><th>run on</th></tr>
+    <tr><td class="m">replica</td><td>real CT &rarr; copy 8xxx (cron does this every 15 min)</td><td>storage</td></tr>
+    <tr><td class="m">distribute</td><td>copies &rarr; running 9xxx on compute. The disaster verb</td><td>backup</td></tr>
+    <tr><td class="m">recall</td><td>what a 9xxx served &rarr; back into the copy</td><td>backup</td></tr>
+    <tr><td class="m">recover</td><td>the whole way back, one command, re-runnable</td><td>storage</td></tr>
+    <tr><td class="m">failback</td><td>copy &rarr; back into the production disk (recover calls it)</td><td>storage</td></tr>
+    <tr><td class="m">migrate</td><td>bring a container in from an old node outside the fleet</td><td>storage</td></tr>
+    <tr><td class="m">isolate / restore</td><td>take a CT off the wire / put it back</td><td>either</td></tr>
+    <tr><td class="m">evacuate</td><td>switch off a dead storage on a whole node, stop what was on it</td><td>backup</td></tr>
+    <tr><td class="m">cleanup</td><td>put a 9xxx away (<span class="m">--destroy</span> removes it)</td><td>storage</td></tr>
+    <tr><td class="m">doctor</td><td>check everything, read-only, safe any time</td><td>any</td></tr>
+    <tr><td class="m">status</td><td>each container's last round</td><td>any</td></tr>
+    <tr><td class="m">watch</td><td>mail when something changes (cron)</td><td>any</td></tr>
+    <tr><td class="m">sync</td><td>push the tables to the other machines</td><td>storage</td></tr>
+    <tr><td class="m">mail-setup</td><td>point postfix at the relay in the conf</td><td>storage + backup</td></tr>
+    <tr><td class="m">role</td><td>show or change master/slave for this machine</td><td>any</td></tr>
+  </table>
+</section>
+
+<section id="r1">
+  <div class="eyebrow"><span class="num">3</span><h2>Situation 1 — the nightly copy (replica)</h2></div>
+  <p>cron already does this. You only touch it when a container is <b>added</b>.</p>
+  <div class="warn"><p><b>File to edit:</b> <code>inventory/inventory-replica.tsv</code>. A container with no
+     row here is never copied, and nothing complains.</p></div>
+  <ol class="steps">
+    <li>Add the row: id + destination pool (<span class="m">replica-hdd</span> or <span class="m">replica-ssd</span>)
+      <details class="cmd"><summary>inventory/inventory-replica.tsv</summary><div class="code"><pre>130	replica-hdd</pre></div></details></li>
+    <li>Push the tables
+      <details class="cmd"><summary>./ketsync sync</summary><div class="code"><pre>./ketsync sync</pre></div></details></li>
+    <li>Run the first round by hand and check it
+      <details class="cmd"><summary>./ketsync replica --ctid 130</summary><div class="code"><pre>./ketsync replica --ctid 130
+./ketsync status</pre></div></details>
+      <p>It must end <span class="m">failed=0</span>; cron takes it from there.</p></li>
+  </ol>
+</section>
+
+<section id="r2">
+  <div class="eyebrow"><span class="num">4</span><h2>Situation 2 — the storage node died (distribute)</h2></div>
+  <p>Every container is frozen. Goal: get the copies running on compute, fast.
+     <b>Type this on the backup node</b> - the storage node is gone.</p>
+  <div class="warn"><p><b>File that must be right:</b> <code>conf/fleet.tsv</code>, every container, four
+     columns <span class="m">ct / home / dr / dst</span>. A row missing anything is refused rather than
+     guessed. The usual mistake is <span class="m">dst</span>: it must match <span class="m">pvesm status</span>
+     on the target machine exactly.</p></div>
+  <ol class="steps">
+    <li>See the plan first - writes nothing
+      <details class="cmd"><summary>./ketsync distribute --all --dry-run</summary><div class="code"><pre>./ketsync distribute --all --dry-run</pre></div></details></li>
+    <li>For real: it disables the dead storage, takes the old containers off the wire, then places the copies
+      <details class="cmd"><summary>./ketsync distribute --all</summary><div class="code"><pre>./ketsync distribute --all</pre></div></details></li>
+    <li>Start them yourself, one at a time - that decision has a customer on it
+      <details class="cmd"><summary>ssh root@compute pct start 9xxx</summary><div class="code"><pre>ssh root@10.100.1.32 pct config 9110
+ssh root@10.100.1.32 pct start 9110</pre></div></details></li>
+  </ol>
+  <div class="note"><p>Re-running after a partial round? <code>--no-prepare</code> skips the first half,
+     which is already done.</p></div>
+</section>
+
+<section id="r3">
+  <div class="eyebrow"><span class="num">5</span><h2>Situation 3 — the storage node is back (recover)</h2></div>
+  <p>The way back is a seven-step checklist; <code>recover</code> is that checklist executed, and it is
+     re-runnable - a step already done is skipped. <b>Type this on the storage node.</b></p>
+  <div class="warn"><p><b>File that must be right:</b> <code>conf/fleet.tsv</code> again - this time the
+     <span class="m">home</span> column, so it knows which machine to fsck each disk on. A container with
+     no row prints <span class="m">no row in fleet.tsv</span> and is skipped.</p></div>
+  <ol class="steps">
+    <li><b>First</b>, on the backup node: pull what the stand-ins served back into the copies
+      <details class="cmd"><summary>./ketsync recall --all --final</summary><div class="code"><pre>ssh root@10.100.1.32 pct shutdown 9110
+./ketsync recall --all --final</pre></div></details></li>
+    <li>See what is left - read-only
+      <details class="cmd"><summary>./ketsync recover --list</summary><div class="code"><pre>./ketsync recover --list</pre></div></details></li>
+    <li>For real: storages back on, fsck the damaged disks, copies written back, network restored, stand-ins put away
+      <details class="cmd"><summary>./ketsync recover --all</summary><div class="code"><pre>./ketsync recover --all
+./ketsync recover --ctid 137</pre></div></details></li>
+    <li>Start the real containers yourself and check them
+      <details class="cmd"><summary>ssh root@compute pct start 110</summary><div class="code"><pre>ssh root@10.100.1.32 pct start 110</pre></div></details></li>
+    <li>Happy? Then the last sweep - remove the stand-ins and let replication resume
+      <details class="cmd"><summary>./ketsync recover --all --destroy</summary><div class="code"><pre>./ketsync recover --all --destroy</pre></div></details>
+      <p>Until <span class="m">--destroy</span>, the nightly copy stays PAUSED on purpose, so nothing
+         overwrites a copy that may still be the good one.</p></li>
+  </ol>
+</section>
+
+<section id="r4">
+  <div class="eyebrow"><span class="num">6</span><h2>Situation 4 — a new container</h2></div>
+  <p>Two files, then sync. Forget one and it stays quiet until the day it matters.</p>
+  <table>
+    <tr><th>file</th><th>row</th><th>if you forget</th></tr>
+    <tr><td class="m">inventory/inventory-replica.tsv</td><td><span class="m">130 replica-hdd</span></td><td>never copied</td></tr>
+    <tr><td class="m">conf/fleet.tsv</td><td><span class="m">130 home dr dst</span></td><td>cannot be recovered on the day</td></tr>
+  </table>
+  <details class="cmd"><summary>./ketsync sync &amp;&amp; ./ketsync doctor</summary><div class="code"><pre>./ketsync sync
+./ketsync doctor</pre></div></details>
+</section>
+
+<section id="files">
+  <div class="eyebrow"><span class="num">7</span><h2>Which file, when</h2></div>
+  <p>Always edit on the storage node (master), then <code>./ketsync sync</code>. Never edit them elsewhere.</p>
+  <table>
+    <tr><th>file</th><th>used by</th><th>columns</th></tr>
+    <tr><td class="m">inventory/inventory-replica.tsv</td><td>replica + failback</td><td>ct, destination pool</td></tr>
+    <tr><td class="m">conf/fleet.tsv</td><td>distribute + recover</td><td>ct, home, dr, dst</td></tr>
+    <tr><td class="m">conf/nodes.tsv</td><td>a new machine joins</td><td>ip, role</td></tr>
+    <tr><td class="m">inventory/inventory-migrate.tsv</td><td>only while migrating in</td><td>old_node, old_ctid, new_ctid, new_node, storage</td></tr>
+    <tr><td class="m">conf/ketsync.conf</td><td>this machine's identity + mail</td><td>per machine, never synced</td></tr>
+  </table>
+</section>
+
+<section id="mail">
+  <div class="eyebrow"><span class="num">8</span><h2>The mail you get</h2></div>
+  <p>Only on <b>change</b>: once when a problem appears, once when it clears, silence in between.</p>
+  <table>
+    <tr><th>subject</th><th>means</th></tr>
+    <tr><td class="m">INFRA</td><td>the floor: backup silent, replication paused, or stand-ins live</td></tr>
+    <tr><td class="m">INFRA: master-unreachable</td><td>sent by the backup node - the storage node stopped answering</td></tr>
+    <tr><td class="m">NODE</td><td>one machine: no ssh, or a storage left switched off</td></tr>
+    <tr><td class="m">daily digest</td><td>doctor's morning report; skim the non-ok sections</td></tr>
+  </table>
+</section>
+
+<section id="oops">
+  <div class="eyebrow"><span class="num">9</span><h2>Common trips</h2></div>
+  <table>
+    <tr><th>symptom</th><th>fix</th></tr>
+    <tr><td>cron never runs, total silence</td><td>a file in <span class="m">/etc/cron.d/</span> needs <span class="m">root</span> as the sixth field - doctor catches it</td></tr>
+    <tr><td>replica never ran since you set up cron</td><td>drop <span class="m">-y</span> from lines calling an engine directly; engines have never heard of it</td></tr>
+    <tr><td><span class="m">no row in fleet.tsv</span></td><td>add the row, then <span class="m">./ketsync sync</span></td></tr>
+    <tr><td>everything says <span class="m">refused</span></td><td>read the next line - it always names what is missing and what to type</td></tr>
+    <tr><td>replication does not resume after a disaster</td><td><span class="m">engines/PAUSE</span> still exists; finish with <span class="m">recover --all --destroy</span></td></tr>
+    <tr><td>not sure what state the fleet is in</td><td><span class="m">./ketsync doctor</span>, read top to bottom</td></tr>
+  </table>
+</section>
+
+<footer>
+  <a href="index.html">contents</a> ·
+  <a href="01-what-is-this.html">01 what is this</a> ·
+  <a href="02-install.html">02 install</a> ·
+  <a href="03-daily.html">03 daily</a> ·
+  <a href="04-drill.html">04 drill</a> ·
+  <a href="05-disaster-day.html">05 disaster day</a> ·
+  <a href="06-reference.html">06 reference</a>
+</footer>
+
+</div>
+
+
+<script>
+(function(){
+  document.querySelectorAll('.code').forEach(function(box){
+    var pre = box.querySelector('pre');
+    if(!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'cp'; btn.type = 'button'; btn.textContent = 'copy';
+    btn.addEventListener('click', function(){
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.c').forEach(function(el){ el.remove(); });
+      var text = clone.textContent.split('\n').filter(function(l){ return l.trim() !== ''; }).join('\n');
+      var done = function(){ btn.textContent='copied'; setTimeout(function(){ btn.textContent='copy'; },1200); };
+      function fallback(){
+        var ta=document.createElement('textarea'); ta.value=text;
+        ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){ btn.textContent='select manually'; }
+        document.body.removeChild(ta);
+      }
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,fallback);}else{fallback();}
+    });
+    box.appendChild(btn);
+  });
+  var all = document.querySelectorAll('details.cmd');
+  if(all.length){
+    var b=document.createElement('button');
+    b.className='allcmds'; b.type='button'; b.textContent='expand all commands';
+    var open=false;
+    b.addEventListener('click',function(){
+      open=!open;
+      all.forEach(function(d){ d.open=open; });
+      b.textContent = open ? 'collapse all commands' : 'expand all commands';
+    });
+    var first=document.querySelector('header.doc');
+    if(first) first.parentNode.insertBefore(b, first.nextSibling);
+  }
+})();
+</script>
+
+</body>
+</html>
