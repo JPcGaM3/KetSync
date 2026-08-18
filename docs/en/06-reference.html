@@ -157,6 +157,8 @@
     <tr><td class="m">--digest</td><td>mail doctor's report (watch)</td></tr>
     <tr><td class="m">--test</td><td>send a proof mail to KS_MAIL_INFRA after setup (mail-setup)</td></tr>
     <tr><td class="m">-h / --help</td><td>usage - never asked about, never runs anything (every verb)</td></tr>
+    <tr><td class="m">/etc/cron.d/*</td><td>sixth field is the USER; doctor's
+        <span class="m">cron.d lines cron itself will not run</span> catches the other shape</td></tr>
     <tr><td class="m">-y</td><td>skips the question and nothing else; there is no --force</td></tr>
   </table>
 </section>

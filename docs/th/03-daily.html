@@ -133,7 +133,12 @@
 
 <section id="cron">
   <div class="eyebrow"><span class="num">1</span><h2>จังหวะปกติ — ระบบทำอะไรเองบ้าง</h2></div>
-  <p>ทั้งหมดอยู่ใน crontab ของเครื่อง storage วันปกติไม่ต้องพิมพ์อะไรเลย</p>
+  <p>ทั้งหมดอยู่ใน crontab ของเครื่อง storage วันปกติไม่ต้องพิมพ์อะไรเลย
+     (เครื่อง backup มีบรรทัดเดียว: <code class="inl">ketsync watch</code> ที่เฝ้าว่า master ตอบมั้ย)</p>
+  <p>รูปแบบข้างล่างเป็นของ <code class="inl">crontab -e</code> ถ้าวางไฟล์ใน
+     <code class="inl">/etc/cron.d/</code> ต้องเติมช่อง <b>user</b> เป็นช่องที่ 6
+     (<span class="m">*/10 * * * * root /root/...</span>) ไม่งั้น cron ทิ้งทั้งไฟล์ —
+     <code class="inl">doctor</code> ตรวจข้อนี้ให้ทุกครั้ง</p>
   <details class="cmd"><summary>crontab -l   # what a healthy master runs</summary><div class="code"><pre><span class="c"># copy every lane, every 15 minutes</span>
 */15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-hdd-nas
 */15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-ssd-nas
@@ -143,6 +148,12 @@
 
 <span class="c"># doctor's whole report, once a morning</span>
 30 7 * * * /root/ketsync/ketsync watch --digest</pre></div></details>
+  <div class="warn"><p><b>อย่าใส่ <code class="inl">-y</code> ให้ engine</b> — engine ไม่เคยรู้จัก flag นี้
+     เจอแล้วตอบ <span class="m">unknown argument: -y</span> แล้ว exit 2 คือ<b>ไม่เคยรันเลย</b>
+     ยิ่งมี <code class="inl">&gt;/dev/null</code> ต่อท้ายยิ่งเงียบสนิท จำง่ายๆ:
+     เรียก engine ตรงๆ = ไม่มี -y / ผ่าน <code class="inl">ketsync</code> แล้วเป็นคำสั่งที่เขียน = ต้องมี -y /
+     ผ่าน ketsync แต่อ่านอย่างเดียว (watch, doctor, status) = ไม่ต้องมี
+     <code class="inl">doctor</code> จับให้ทั้งสองทิศทาง</p></div>
   <p>บรรทัด replica เรียก engine ตรงๆ (ไม่ต้องมี <code class="inl">-y</code> เพราะคำถามอยู่ชั้น ketsync)
      ส่วน watch เป็นคำสั่งอ่านอย่างเดียว พิมพ์เปล่าๆ ถูกต้องแล้ว</p>
 </section>

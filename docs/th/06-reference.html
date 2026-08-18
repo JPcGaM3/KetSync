@@ -158,6 +158,8 @@
     <tr><td class="m">--dry-run</td><td>เดินผ่าน guard ครบ ไม่เขียนอะไร แล้วพิมพ์แผน</td><td>ทุกตัวที่เขียน</td></tr>
     <tr><td class="m">--list</td><td>อ่านอย่างเดียว ใครอยู่ไหน เหลืออะไร</td><td>failback, distribute, recall, recover, prepare, watch</td></tr>
     <tr><td class="m">-h / --help</td><td>วิธีใช้ ไม่ถามยืนยัน ไม่รันอะไรทั้งนั้น</td><td>ทุกตัว</td></tr>
+    <tr><td class="m">/etc/cron.d/*</td><td>ต้องมีช่อง user เป็นช่องที่ 6 — doctor หัวข้อ
+        <span class="m">cron.d lines cron itself will not run</span> จับให้</td><td>ทุกเครื่อง</td></tr>
     <tr><td class="m">--storage &lt;id&gt;</td><td>ทำเฉพาะ lane นั้น (cron ใช้ตัวนี้)</td><td>migrate, replica</td></tr>
     <tr><td class="m">--final</td><td>รอบตัดจริง — recall ต้องปิด 9xxx ก่อน, failback ต้องมี PAUSE</td><td>recall, failback</td></tr>
     <tr><td class="m">--destroy</td><td>เก็บ 9xxx ทิ้งถาวร = ปลด R13 — ทำเมื่อเช็กตัวจริงแล้วเท่านั้น</td><td>cleanup, recover</td></tr>

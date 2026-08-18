@@ -305,13 +305,83 @@ cmd_doctor(){
   # refuses with exit 2. That is the correct behaviour and it is also silent
   # until somebody reads the mail nobody has set up yet. So it is checked here,
   # on a Tuesday, rather than found at 02:00 on the night it mattered.
+  # Where cron keeps its files. Overridable so the simulator can hand this a
+  # sandbox: reading the real /etc/cron.d made these checks depend on whatever
+  # the machine running the suite happens to schedule, which is a test that
+  # passes on one laptop and fails on another.
+  local CRON_D="${KS_CRON_D:-/etc/cron.d}" CRON_F="${KS_CRONTAB:-/etc/crontab}"
+
+  # ---- a file cron throws away entirely -------------------------------------
+  # A file in /etc/cron.d is a SYSTEM crontab and its sixth field is the USER.
+  # A line written like a user crontab - five time fields and then the command -
+  # makes cron reject THE WHOLE FILE at reload: nothing in it runs, nothing
+  # mails, and the only evidence is one line in the cron daemon's journal that
+  # nobody reads on a Tuesday. A watcher installed that way is a watcher that
+  # was never watching. Found on the backup node the day the slave watch went
+  # in, straight off this repo's own docs, which showed the five-field form.
+  say "== cron.d lines cron itself will not run"
+  local cd_bad=0 cf cl u f1 f2 f6
+  for cf in "$CRON_D"/* "$CRON_F"; do
+    [[ -f "$cf" ]] || continue
+    while IFS= read -r cl || [[ -n "$cl" ]]; do
+      case "$cl" in ''|'#'*) continue;; esac
+      # PATH=, MAILTO= and friends are settings, not schedules
+      [[ "$cl" =~ ^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*= ]] && continue
+      # the three middle time fields are read into one throwaway on purpose:
+      # naming them would be three variables nothing ever looks at
+      read -r f1 f2 _ _ _ f6 _ <<< "$cl"
+      # @daily and friends carry ONE time field, so the user moves up to second
+      if [[ "$f1" == @* ]]; then u="$f2"; else u="$f6"; fi
+      [[ -n "$u" && "$u" != /* ]] && continue
+      say "  $cf: $cl"
+      cd_bad=1
+    done < "$cf"
+  done
+  if (( cd_bad )); then
+    say "  the sixth field there is the USER, not the command. cron refuses the"
+    say "  whole file over one line like this, so every job in it - a ketsync"
+    say "  watch included - silently never runs:"
+    say "    */10 * * * * root /root/ketsync/ketsync watch"
+    say "  or put the five-field form in root's own crontab instead:  crontab -e"
+    rc=1
+  else
+    say "  none"
+  fi
+
+  # ---- the opposite mistake, and it is worse ---------------------------------
+  # -y belongs to the dispatcher, which is where the question lives. No engine
+  # has ever heard of it, and an engine that meets it says "unknown argument"
+  # and exits 2 - so a cron line written this way has never run once. With the
+  # usual >/dev/null on the end there is nothing at all to notice: the fleet
+  # simply stops replicating, quietly, from the minute the line was installed.
+  say "== cron lines that hand -y to an engine, which has never heard of it"
+  local enghits
+  enghits="$( { crontab -l 2>/dev/null; cat "$CRON_D"/* "$CRON_F" 2>/dev/null; } \
+              | grep -v '^[[:space:]]*#' | grep -E 'engines/(ct-[a-z]+\.sh|tp)' \
+              | grep -E '(^|[[:space:]])-y([[:space:]]|$)' || true )"
+  if [[ -n "$enghits" ]]; then
+    say "  these exit 2 every time cron runs them, and have never done any work:"
+    while IFS= read -r f; do [[ -n "$f" ]] && say "    $f"; done <<< "$enghits"
+    say "  drop the -y. cron calls the engines directly and is never asked"
+    say "  anything; -y is only for a verb that goes through ./ketsync."
+    rc=1
+  else
+    say "  none"
+  fi
+
   say "== cron lines that call ketsync without -y"
   local cronhits
   # Read-only verbs never ask, so cron lines for them need no -y: watch is
   # DESIGNED to run from cron bare, and nagging about it would train people
   # to sprinkle -y on verbs where it means nothing.
-  cronhits="$( { crontab -l 2>/dev/null; cat /etc/cron.d/* /etc/crontab 2>/dev/null; } \
-               | grep -v '^[[:space:]]*#' | grep 'ketsync' \
+  # The match is the DISPATCHER being invoked - `ketsync <verb>` - not the
+  # string "ketsync" anywhere in the line. Every engine on this fleet lives
+  # under /root/ketsync/engines/, so the loose version nagged about lines that
+  # are correct precisely BECAUSE they carry no -y, and the check above says
+  # so in the opposite direction. Two checks disagreeing about one line is how
+  # both stop being read.
+  cronhits="$( { crontab -l 2>/dev/null; cat "$CRON_D"/* "$CRON_F" 2>/dev/null; } \
+               | grep -v '^[[:space:]]*#' | grep -E '(^|[/[:space:]])ketsync[[:space:]]+[a-z]' \
                | grep -vE 'ketsync[[:space:]]+(watch|doctor|status|role)([[:space:]]|$)' \
                | grep -v -- '-y' || true )"
   if [[ -n "$cronhits" ]]; then

@@ -252,6 +252,17 @@ echo 'xsmtpsib-your-key' > /root/.brevo.key &amp;&amp; chmod 600 /root/.brevo.ke
 <span class="c"># crontab - watch is read-only, no -y needed</span>
 */10 * * * * /root/ketsync/ketsync watch
 30 7 * * * /root/ketsync/ketsync watch --digest</pre></div></details></li>
+  <div class="warn"><p><b>Two places, two formats.</b> The lines above are the
+     <code>crontab -e</code> form: five time fields, then the command. A file in
+     <code>/etc/cron.d/</code> is a SYSTEM crontab and needs a <b>user</b> as the
+     sixth field - without it cron throws away the WHOLE file (bad username) and
+     every job in it silently stops existing, visible only in
+     <code>systemctl status cron</code>.</p>
+    <details class="cmd"><summary>/etc/cron.d/ketsync-watch (with the user field)</summary><div class="code"><pre>PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/10 * * * * root /root/ketsync/ketsync watch
+30 7 * * * root /root/ketsync/ketsync watch --digest</pre></div></details>
+    <p><code>./ketsync doctor</code> checks this every run:
+       <span class="m">cron.d lines cron itself will not run</span>.</p></div>
     <li>Do the same on the BACKUP node — the machine that reports the fleet cannot report its own death
       <details class="cmd"><summary>backup node: mail-setup + KS_MAIL_FROM/INFRA + cron</summary><div class="code"><pre><span class="c"># on the backup node</span>
 apt-get install -y libsasl2-modules

@@ -133,6 +133,15 @@
 
 <section id="cron">
   <div class="eyebrow"><span class="num">1</span><h2>The rhythm — what runs by itself</h2></div>
+  <p>The <code>crontab -e</code> form. In <code>/etc/cron.d/</code> the sixth field must be
+     the USER (<span class="m">*/10 * * * * root /root/...</span>) or cron throws the whole
+     file away - <code>doctor</code> checks that every run. The backup node runs one line of
+     its own: <code>ketsync watch</code>, watching whether the master answers.</p>
+  <div class="warn"><p><b>Never hand an engine <code>-y</code>.</b> No engine has heard of it:
+     it answers <span class="m">unknown argument: -y</span> and exits 2, so the line has never
+     run once - and with <code>&gt;/dev/null</code> on the end, nothing says so. The rule:
+     engine called directly = no -y; a WRITING verb through <code>ketsync</code> = -y; a
+     read-only verb (watch, doctor, status) = none needed. doctor checks both directions.</p></div>
   <details class="cmd"><summary>crontab -l on a healthy master</summary><div class="code"><pre>*/15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-hdd-nas
 */15 * * * * /root/ketsync/engines/ct-replica.sh --storage tank-ssd-nas
 */10 * * * * /root/ketsync/ketsync watch

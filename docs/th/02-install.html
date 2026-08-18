@@ -490,6 +490,16 @@ echo 'xsmtpsib-your-key' > /root/.brevo.key && chmod 600 /root/.brevo.key
     <li>ใส่ cron — watch อ่านอย่างเดียว ไม่ต้องมี -y
       <details class="cmd"><summary>*/10 * * * * /root/ketsync/ketsync watch</summary><div class="code"><pre>*/10 * * * * /root/ketsync/ketsync watch
 30 7 * * * /root/ketsync/ketsync watch --digest</pre></div></details></li>
+  <div class="warn"><p><b>สองที่ ไม่เหมือนกัน</b> บรรทัดข้างบนเป็นแบบ <code class="inl">crontab -e</code>
+     (5 ช่องเวลา แล้วคำสั่ง) ถ้าจะวางไฟล์ไว้ใน <code class="inl">/etc/cron.d/</code> แทน
+     ต้องมีช่อง <b>user</b> เพิ่มเป็นช่องที่ 6 — ไม่ใส่ cron จะทิ้ง<b>ทั้งไฟล์</b>
+     (bad username) ทุกงานในไฟล์นั้นเงียบหายไปเลย เห็นแค่ใน
+     <code class="inl">systemctl status cron</code> เท่านั้น</p>
+    <details class="cmd"><summary>/etc/cron.d/ketsync-watch (มีช่อง user)</summary><div class="code"><pre>PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/10 * * * * root /root/ketsync/ketsync watch
+30 7 * * * root /root/ketsync/ketsync watch --digest</pre></div></details>
+    <p><code class="inl">./ketsync doctor</code> ตรวจให้ทุกครั้งอยู่แล้ว หัวข้อ
+       <span class="m">cron.d lines cron itself will not run</span></p></div>
     <li><b>ตั้ง watch บนเครื่อง backup ด้วย</b> — เครื่องที่รายงานฟลีตรายงานความตายของตัวเองไม่ได้
       <details class="cmd"><summary>บน backup: mail-setup + KS_MAIL_FROM/INFRA + cron</summary><div class="code"><pre><span class="c"># on the BACKUP node</span>
 apt-get install -y libsasl2-modules

@@ -97,6 +97,10 @@ CONF
 
   # No cron at all. A scenario that wants one says so.
   : > "$SIMROOT/crontab"
+  # cron.d and /etc/crontab as files in the sandbox: doctor reads them through
+  # KS_CRON_D / KS_CRONTAB so this suite never depends on what the machine
+  # running it happens to schedule.
+  mkdir -p "$SIMROOT/cron.d"; : > "$SIMROOT/etc-crontab"
 }
 
 # $1 = file, $2 = generation, rest = rows
@@ -144,6 +148,8 @@ replica_state(){  # ctid epoch
     > "$MASTER/engines/state/replica-$1.json"
 }
 cron_line(){ printf '%s\n' "$1" >> "$SIMROOT/crontab"; }
+# a file under /etc/cron.d - system crontab format, sixth field is the user
+crond_file(){ local f="$SIMROOT/cron.d/$1"; shift; printf '%s\n' "$@" > "$f"; }
 
 # No arguments: doctor takes none, and a scenario that wanted to pass one
 # would be testing a command this dispatcher does not have.
@@ -157,6 +163,7 @@ run_ks(){
     # not optional: without this the suite would read whatever the developer's
     # own crontab says, pass on one machine and fail on another.
     crontab(){ cat "$SIMROOT/crontab" 2>/dev/null; }
+    export KS_CRON_D="$SIMROOT/cron.d" KS_CRONTAB="$SIMROOT/etc-crontab"
     export -f ssh crontab
     "$MASTER/ketsync" doctor ) > "$SIMROOT/out" 2>&1
   RC=$?
@@ -434,6 +441,63 @@ if scenario "22: a dead mount is a BLOCKED probe and one timeout, not one per ro
   hasnt "CT 120: its storage did not answer"
   hasnt "CT 130: skipped"
   hasnt "CT 130: its storage did not answer"
+  done_scenario
+fi
+
+
+if scenario "23: a cron.d line with no user field is a file cron throws away"; then
+  # Written like a user crontab, dropped into /etc/cron.d: cron rejects the
+  # WHOLE file at reload and every job in it stops existing. The watcher
+  # installed this way was never watching, and nothing said so out loud - it
+  # happened on the real backup node, off this repo's own docs.
+  crond_file ketsync-watch \
+    "# crontab - watch is read-only, no -y needed" \
+    "*/10 * * * * /root/ketsync/ketsync watch"
+  run_ks
+  rc_is 1
+  has "== cron.d lines cron itself will not run"
+  has "*/10 * * * * /root/ketsync/ketsync watch"
+  has "the sixth field there is the USER"
+  done_scenario
+fi
+
+if scenario "24: correct cron.d lines - user field present, @daily shorthand - are left alone"; then
+  crond_file ketsync-watch \
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    "*/10 * * * * root /root/ketsync/ketsync watch" \
+    "30 7 * * * root /root/ketsync/ketsync watch --digest"
+  crond_file other "@daily root /usr/local/bin/something"
+  run_ks
+  has "== cron.d lines cron itself will not run"
+  hasnt "the sixth field there is the USER"
+  done_scenario
+fi
+
+
+if scenario "25: a cron line that hands -y to an engine has never run once"; then
+  # The mirror image of the -y check below it, and the more expensive one: the
+  # dispatcher asks, the engines do not, so an engine handed -y exits 2 before
+  # it does anything. With >/dev/null on the end - which is how every real
+  # crontab is written - the fleet stops replicating and says nothing. Found on
+  # the storage node with both replica lanes dead for exactly this reason.
+  crond_file ketsync-replica \
+    "*/15 * * * * root /root/ketsync/engines/ct-replica.sh --storage tank-hdd-nas -y >/dev/null 2>&1"
+  run_ks
+  rc_is 1
+  has "== cron lines that hand -y to an engine, which has never heard of it"
+  has "engines/ct-replica.sh --storage tank-hdd-nas -y"
+  has "drop the -y"
+  done_scenario
+fi
+
+if scenario "26: the same line without -y, and a dispatcher line WITH it, are both right"; then
+  crond_file ketsync-replica \
+    "*/15 * * * * root /root/ketsync/engines/ct-replica.sh --storage tank-hdd-nas >/dev/null 2>&1" \
+    "0 2 * * * root /root/ketsync/ketsync replica --all -y"
+  run_ks
+  has "== cron lines that hand -y to an engine, which has never heard of it"
+  hasnt "drop the -y"
+  hasnt "these would REFUSE"
   done_scenario
 fi
 

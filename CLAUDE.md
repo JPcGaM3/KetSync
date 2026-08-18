@@ -118,7 +118,7 @@ twice.
 argv out, exit code back - and its fake satellite records the argv, which is
 the entire output under test.
 
-`doctor` has 22 and 22, and it went last for the wrong reason: it writes
+`doctor` has 26 and 27, and it went last for the wrong reason: it writes
 nothing, so nothing it does can corrupt anything. What it can do is stop
 noticing, and a check that stops noticing prints exactly what a healthy fleet
 prints. Writing the simulator found one immediately - a compute node nobody
@@ -136,8 +136,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 419 tp simulator + 16 dispatcher + 125 c2v, 131 ketsync
-    make mutation # 493 known bugs put back. None may survive
+    make test     # both layers: 419 tp simulator + 16 dispatcher + 125 c2v, 135 ketsync
+    make mutation # 498 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

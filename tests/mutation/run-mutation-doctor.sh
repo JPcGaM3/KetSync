@@ -201,6 +201,32 @@ mutant "a node that blocked once is asked again, one timeout at a time" \
   's{\Q      if [[ -n "\E\$\Q{KS_IMG_BLOCKED[\E\$\Qhome]:-}" ]]; then\E}{      if false; then}' \
   22
 
+
+# ---------- the file cron throws away -----------------------------------------
+# One line in the user-crontab shape kills every job in that cron.d file, and
+# the only evidence is in the cron daemon's journal. A watcher that never ran
+# looks exactly like a fleet with nothing to report.
+mutant "a cron.d line missing its user field is not noticed" \
+  's{\Q      [[ -n "\E\$u\Q" && "\E\$u\Q" != /* ]] && continue\E}{      continue}' \
+  23
+
+mutant "the @daily shorthand is parsed like a five-field line, so a good file is condemned" \
+  's{\Q      if [[ "\E\$f1\Q" == @* ]]; then u="\E\$f2\Q"; else u="\E\$f6\Q"; fi\E}{      u="\$f6"}' \
+  24
+
+
+mutant "a cron line that hands -y to an engine is not noticed" \
+  's{\Q  if [[ -n "\E\$enghits\Q" ]]; then\E}{  if false; then}' \
+  25
+
+mutant "the engine check fires on the dispatcher's own lines too" \
+  "s!\\Qgrep -E 'engines/(ct-[a-z]+\\.sh|tp)'\\E!grep -E 'ketsync'!" \
+  26
+
+mutant "the -y check matches any line with ketsync in its PATH, engines included" \
+  "s!\\Qgrep -E '(^|[/[:space:]])ketsync[[:space:]]+[a-z]'\\E!grep ketsync!" \
+  26
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi
