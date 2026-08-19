@@ -55,12 +55,18 @@ case "$c" in
 
   "ls /etc/pve/nodes/"*)
     # A glob, expanded on the far side, which is the point: pmxcfs is shared,
-    # so one node can answer for every node's guest configs.
+    # so one node can answer for every node's guest configs. The pattern comes
+    # out of the command rather than being written here: doctor asks for every
+    # guest now, and a fake that always answered "9*" would have made a stale
+    # record for CT 110 look like a container that still exists.
+    pat="${c#ls }"; pat="${pat%% *}"
+    R="$(remote_path "$host" "")"
     shopt -s nullglob
-    hits=( "$(remote_path "$host" "")"/etc/pve/nodes/*/lxc/9*.conf )
+    # shellcheck disable=SC2206  # the glob is the point
+    hits=( $R$pat )
     shopt -u nullglob
     (( ${#hits[@]} )) || exit 2
-    for f in "${hits[@]}"; do printf '%s\n' "${f#"$(remote_path "$host" "")"}"; done
+    for f in "${hits[@]}"; do printf '%s\n' "${f#"$R"}"; done
     exit 0;;
 
   # ---- the image check ---------------------------------------------------

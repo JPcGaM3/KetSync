@@ -195,9 +195,28 @@ cmd_doctor(){
     say "  cannot reach the backup node ($bkp) - this is the one check that"
     say "  needs a cluster member, and unanswered is not the same as clean"; rc=1
   else
+    # Every guest the cluster holds, asked ONCE and used by both checks below.
+    # A record naming a container that no longer exists is not something to
+    # restore, and this section used to send somebody to a command that then
+    # refuses - which it would do again tomorrow, and the day after, until the
+    # one section worth reading after a disaster is the one nobody reads.
+    local guests
+    guests="$(ks_ssh "$bkp" "ls /etc/pve/nodes/*/lxc/*.conf 2>/dev/null" \
+              | sed 's|.*/||; s|\.conf$||')"
     for f in $(ks_ssh "$bkp" "ls /etc/pve/ketsync/isolate/ 2>/dev/null" | sed 's/\.tsv$//'); do
-      say "  CT $f is still ISOLATED - it is on the isolation bridge and cannot answer"
-      say "    put it back with:  ./ketsync restore --ctid $f"
+      if printf '%s\n' "$guests" | grep -qxF "$f"; then
+        say "  CT $f is still ISOLATED - it is on the isolation bridge and cannot answer"
+        say "    put it back with:  ./ketsync restore --ctid $f"
+      else
+        say "  CT $f has an ISOLATE record and no config anywhere in the cluster"
+        say "    the container that record describes is gone, so there is nothing to put"
+        say "    back and restore refuses it. The record is what is left."
+        say "    if CT $f really is gone, remove it - nothing here does that for you:"
+        say "      ssh root@$bkp 'rm /etc/pve/ketsync/isolate/$f.tsv'"
+        say "    if it is NOT gone, a node is out of the cluster and its guests cannot be"
+        say "    seen from here; that record is the only memory of which bridge CT $f"
+        say "    belonged on, so fix the cluster first and ask again."
+      fi
       left=1; rc=1
     done
     for f in $(ks_ssh "$bkp" "ls /etc/pve/ketsync/evacuate/ 2>/dev/null" | sed 's/\.tsv$//'); do
@@ -205,11 +224,12 @@ cmd_doctor(){
       say "    switch them back on with:  ./ketsync restore --node <that node's ip>"
       left=1; rc=1
     done
-    # A 9<id> that outlived its DR is the one that refuses the next one. It is
-    # asked of pmxcfs rather than of any state file, for the same reason R13
-    # does: it is a fact PVE is holding, not a note somebody left.
-    for f in $(ks_ssh "$bkp" "ls /etc/pve/nodes/*/lxc/9*.conf 2>/dev/null" \
-               | sed 's|.*/||; s|\.conf$||'); do
+    # A 9<id> that outlived its DR is the one that refuses the next one. It
+    # comes out of the same pmxcfs listing as the check above, and out of no
+    # state file, for the same reason R13 does: it is a fact PVE is holding,
+    # not a note somebody left. One listing also means the two checks cannot
+    # disagree about what the cluster contains.
+    for f in $(printf '%s\n' "$guests" | grep '^9' || true); do
       say "  CT $f is still placed - a DR container that outlived its disaster"
       say "    it also holds R13, so CT ${f#9} is not being replicated, and makes D3"
       say "    refuse the next placement of it."

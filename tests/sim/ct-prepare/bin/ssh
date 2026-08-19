@@ -76,6 +76,14 @@ if [[ "$host" == "${SIM_BKP_HOST:-}" ]]; then
       done
       (( found )) || { echo "ls: cannot access: No such file or directory" >&2; exit 2; }
       exit 0;;
+    # The isolate record lives in pmxcfs, which is shared, so the backup node
+    # can be asked for it - and it is the ONLY machine that can be, in the case
+    # this exists for: the container's own node is what could not be found.
+    "cat /etc/pve/ketsync/isolate/"*|"cat '/etc/pve/ketsync/isolate/"*)
+      f="${c#cat }"; f="${f%% *}"; f="${f//\'/}"
+      id="${f##*/}"; id="${id%.tsv}"
+      [[ -f "$(rec_file "$id")" ]] || exit 1
+      cat "$(rec_file "$id")"; exit 0;;
     true) exit 0;;
   esac
   violation "remote command the simulator does not model on the backup node: $c"

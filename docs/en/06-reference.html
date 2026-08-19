@@ -215,7 +215,10 @@
     <tr><td class="m">conf/ctrep-exclude.conf</td><td>what replication does NOT copy, one rsync
         pattern per line. Read by replica AND failback — both run <span class="m">--delete</span>
         between the same two rootfs, so a pattern that applied one way only would delete from
-        production what was never copied. Missing = the run is refused, never a built-in list</td></tr>
+        production what was never copied. Missing = the run is refused, never a built-in list.
+        Ships with the three boot-time paths plus <span class="m">/.zfs</span>, which is not a
+        container path at all: it is the destination dataset's snapshot control directory, and
+        an excluded entry is one <span class="m">--delete</span> leaves alone</td></tr>
     <tr><td class="m">conf/ctmig.conf</td><td>the migrate-side twin; its BW ceiling is separate
         (doctor nags until the conf merge lands)</td></tr>
   </table>

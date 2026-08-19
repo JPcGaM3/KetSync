@@ -224,7 +224,10 @@
      (แก้ที่ <code class="inl">SNAP_KEEP</code>) นี่คือเส้นแบ่งระหว่าง <b>สำเนา</b> กับ <b>backup</b>:
      replica ทำให้สำเนา <b>เหมือน</b> ตัวจริง ลบอะไรก็ลบตาม ไฟล์ที่ใครลบไปเมื่อเช้า
      รอบถัดไปก็หายจากสำเนาด้วย — แต่ยังอยู่ใน snapshot ของเมื่อวาน</p>
-  <p>เปิดดูได้ตรงๆ เป็นโฟลเดอร์ธรรมดา ไม่ต้อง <code class="inl">pct</code> ไม่ต้อง mount ไม่ต้องเปิดเครื่องอะไรทั้งนั้น</p>
+  <p>เปิดดูได้ตรงๆ เป็นโฟลเดอร์ธรรมดา ไม่ต้อง <code class="inl">pct</code> ไม่ต้อง mount ไม่ต้องเปิดเครื่องอะไรทั้งนั้น
+     สังเกตว่า <code class="inl">.zfs</code> จะไม่โผล่ตอน <code class="inl">ls</code> โฟลเดอร์แม่ — พิมพ์ path ตรงๆ ได้เลย
+     ที่ปล่อยให้ซ่อนไว้เป็นเรื่องตั้งใจ ถ้าทำให้มันโผล่ PBS จะเดินเข้าไปเจอ
+     <code class="inl">.zfs/shares</code> แล้ว backup ของสำเนาตัวนั้นพังทั้งงาน</p>
   <details class="cmd"><summary>บนเครื่อง backup: ดูว่ามีวันไหนบ้าง แล้วดึงไฟล์ออกมา</summary><div class="code"><pre><span class="c"># which days exist for CT 130's copy</span>
 ls /replica-hdd/ct/subvol-8130-disk-0/.zfs/snapshot/
 

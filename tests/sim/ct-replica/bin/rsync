@@ -7,13 +7,17 @@
 # shellcheck source=tests/sim/replica/lib.sh
 . "$SIMLIB"
 dst="${*: -1}"; src="${*: -2:1}"; src="${src%/}"
-logfile=""; wants_stats=0; deletes=0; dryrun=0; exclfile=""
+logfile=""; wants_stats=0; deletes=0; dryrun=0; exclfile=""; del_excluded=0
 for a in "$@"; do
   case "$a" in
     --log-file=*)    logfile="${a#--log-file=}";;
     --exclude-from=*) exclfile="${a#--exclude-from=}";;
     --stats)         wants_stats=1;;
     --delete)        deletes=1;;
+    # The flag that turns the protection off. Modelled because a mutation adds
+    # it: without it here, "the destination's own .zfs is deleted" would be a
+    # mutation nothing could notice.
+    --delete-excluded) deletes=1; del_excluded=1;;
     -n|--dry-run)    dryrun=1;;
   esac
 done
@@ -144,15 +148,40 @@ fi
 # which is exactly why rc 23 must never be treated as a success.
 d="$BKP/fs$rpath"
 if (( ! dryrun )) && [[ -d "$d" && ( "$rc" == 0 || "$rc" == 24 || "$rc" == 23 ) ]]; then
-  (( deletes )) && find "$d" -mindepth 1 -delete 2>/dev/null
+  # What rsync EXCLUDES it also does not delete - that is the default, and
+  # `--delete-excluded` is the flag you would have to add to change it. It is
+  # the half of the exclude list that matters at the destination: the copy's
+  # own `.zfs` control directory has no counterpart in the source, and a
+  # --delete that could see it would spend the night failing to remove a
+  # read-only snapshot tree.
+  PROTECTED=()
+  (( del_excluded )) || for _p in ${EXPATS+"${EXPATS[@]}"}; do
+    [[ "$_p" == /* ]] || continue
+    # shellcheck disable=SC2086,SC2115  # the glob IS the pattern
+    for _m in ${d}${_p}; do [[ -e "$_m" ]] && PROTECTED+=("$_m"); done
+  done
+  if (( deletes )); then
+    if (( ${#PROTECTED[@]} )); then
+      _pr=(); for _m in "${PROTECTED[@]}"; do _pr+=( -path "$_m" -o ); done
+      unset '_pr[${#_pr[@]}-1]'
+      find "$d" -mindepth 1 \( "${_pr[@]}" \) -prune -o -print0 2>/dev/null \
+        | xargs -0 rm -rf -- 2>/dev/null
+    else
+      find "$d" -mindepth 1 -delete 2>/dev/null
+    fi
+  fi
   [[ -d "$src" ]] && cp -a "$src/." "$d/" 2>/dev/null
-  # The excludes are APPLIED, not merely counted. A pattern that reached rsync
-  # and changed nothing is a pattern nobody would notice going missing, and the
-  # whole point of moving this list into a file is that a site edits it.
+  # The excludes are APPLIED to what arrives, not merely counted. A pattern
+  # that reached rsync and changed nothing is a pattern nobody would notice
+  # going missing, and the whole point of moving this list into a file is that
+  # a site edits it. Anything that was PROTECTED above is put back: it was
+  # never sent, and it was never deleted either.
   for _p in ${EXPATS+"${EXPATS[@]}"}; do
     [[ "$_p" == /* ]] || continue          # relative patterns match anywhere: not modelled
-    # shellcheck disable=SC2086,SC2115  # the glob IS the pattern; $d is never empty here
-    rm -rf ${d}${_p} 2>/dev/null
+    for _m in ${d}${_p}; do
+      case " ${PROTECTED[*]:-} " in *" $_m "*) continue;; esac
+      rm -rf "$_m" 2>/dev/null
+    done
   done
 fi
 exit "$rc"

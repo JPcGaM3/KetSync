@@ -225,7 +225,7 @@ GROW_PCT=5
 GROW_MAX_RETRY=3
 MNT_BASE=$SIMROOT/mnt
 EOF
-  exclude '/tmp/*' '/run/*' '/var/tmp/systemd-private-*'
+  exclude '/tmp/*' '/run/*' '/var/tmp/systemd-private-*' '/.zfs'
   SIM_BKP_HOST=100.100.100.35; }
 conf_set(){ # key value
   { grep -v "^$1=" "$WORK/ctrep.conf" || true; } > "$WORK/.conf"

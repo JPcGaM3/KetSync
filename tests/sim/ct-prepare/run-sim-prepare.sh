@@ -1335,6 +1335,33 @@ if scenario "62: --cleanup with no container named is refused"; then
   done_scenario
 fi
 
+if scenario "63: a record that outlived its container is named, not just refused"; then
+  # The state `ketsync doctor` finds and used to send somebody here for: the
+  # record is in pmxcfs, the container it describes is not in the cluster at
+  # all, and restore can only refuse. Refusing is right; refusing without
+  # saying what is actually left is how a doctor section becomes wallpaper.
+  rec_put 300 pve01 vmbr0
+  ct_gone 300 pve01
+  run_engine --restore --ctid 300
+  rc_is 1; clean
+  has "has no config anywhere in the cluster - nothing to restore"
+  has "it has outlived the"
+  has "rm /etc/pve/ketsync/isolate/300.tsv"
+  # and it is still there: a container that is merely invisible from here looks
+  # exactly like one that is gone, and the record is the only memory of it
+  rec_there 300
+  done_scenario
+fi
+
+if scenario "64: no container and no record is the plain refusal, with nothing added"; then
+  ct_gone 300 pve01
+  run_engine --restore --ctid 300
+  rc_is 1; clean
+  has "has no config anywhere in the cluster - nothing to restore"
+  hasnt "it has outlived the"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

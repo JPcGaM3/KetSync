@@ -204,7 +204,10 @@
      between a replica and a backup: replication makes the copy <b>match</b> production,
      deletions included, so a file somebody deleted this morning is gone from the copy by
      the next round — and still sitting in yesterday's snapshot.</p>
-  <p>They are ordinary directories. No <code class="inl">pct</code>, no mounting, nothing to start.</p>
+  <p>They are ordinary directories. No <code class="inl">pct</code>, no mounting, nothing to start.
+     <code class="inl">.zfs</code> does not show up in <code class="inl">ls</code> of the parent —
+     type the path and it is there. It is left hidden on purpose: listed, PBS walks into
+     <code class="inl">.zfs/shares</code> and fails the whole backup of that copy.</p>
   <details class="cmd"><summary>on the backup node: list the days, copy a file out</summary><div class="code"><pre><span class="c"># which days exist for CT 130's copy</span>
 ls /replica-hdd/ct/subvol-8130-disk-0/.zfs/snapshot/
 

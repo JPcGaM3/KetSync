@@ -282,6 +282,7 @@ if [[ ! -r "$EXCL" ]]; then
   echo "ERROR:     /tmp/*" >&2
   echo "ERROR:     /run/*" >&2
   echo "ERROR:     /var/tmp/systemd-private-*" >&2
+  echo "ERROR:     /.zfs" >&2
   exit 2
 fi
 

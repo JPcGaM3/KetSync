@@ -511,6 +511,19 @@ mutant "an interrupt stops the run without saying that is what happened" \
   's{\Q  log "INTERRUPTED by SIG\E\$1\Q - stopping here.\E.*?\n}{}' \
   49b
 
+# ---------- a record that outlived its container -----------------------------
+# `ketsync doctor` finds the record, sends somebody to restore, and restore can
+# only refuse. Refusing is right. Refusing without saying what is actually left
+# is how that section of doctor becomes wallpaper - and it is the section
+# somebody reads to decide a disaster is over.
+mutant "a record with no container left is refused with nothing said about it" \
+  's{\Q    if [[ -n "\E\$\Q(rec_field "\E\$\Q(rec_read "\E\$\Q{BKP_SSH#*@}" "\E\$ct\Q")" ctid)" ]]; then\E}{    if false; then}' \
+  63
+
+mutant "the record is read from the container's own node, which is what is missing" \
+  's{\Q(rec_read "\E\$\Q{BKP_SSH#*@}" "\E\$ct\Q")\E}{(rec_read "\$pip" "\$ct")}' \
+  63
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

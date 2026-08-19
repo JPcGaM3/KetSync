@@ -79,7 +79,7 @@ held", and the run exits 0 having done nothing.
 left: `distribute` stopped being one when `engines/ct-distribute.sh` was
 written, and `recall` when `engines/ct-recall.sh` was, with 67/69 and 53/47
 scenarios and mutations behind them - which is the bar for the next one.
-`isolate`/`restore`/`evacuate`/`cleanup` arrived at 81/78, deliberately smaller because
+`isolate`/`restore`/`evacuate`/`cleanup` arrived at 83/80, deliberately smaller because
 `ct-prepare.sh` moves no customer data: there is no transfer to tear, no
 mountpoint to fill and no direction to invert, so the surface really is
 smaller. Do not read it as the new bar. The helper that printed "designed but
@@ -118,7 +118,7 @@ twice.
 argv out, exit code back - and its fake satellite records the argv, which is
 the entire output under test.
 
-`doctor` has 26 and 27, and it went last for the wrong reason: it writes
+`doctor` has 28 and 31, and it went last for the wrong reason: it writes
 nothing, so nothing it does can corrupt anything. What it can do is stop
 noticing, and a check that stops noticing prints exactly what a healthy fleet
 prints. Writing the simulator found one immediately - a compute node nobody
@@ -136,8 +136,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 447 tp simulator + 16 dispatcher + 125 c2v, 135 ketsync
-    make mutation # 525 known bugs put back. None may survive
+    make test     # both layers: 450 tp simulator + 16 dispatcher + 125 c2v, 137 ketsync
+    make mutation # 532 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -506,8 +506,12 @@ Two things ct-replica does that are not guards, and belong here anyway:
          three things off one ssh: a rollback point (rsync --inplace leaves a
          half-written copy that is neither day), history (replication makes
          the copy MATCH production, deletions included - the line between a
-         replica and a backup), and browsable days at .zfs/snapshot/, which is
-         why snapdir=visible is set at the same time. A copy that could not be
+         replica and a backup), and readable days at .zfs/snapshot/ - a path
+         that works whether or not `.zfs` is listed, which is why snapdir is
+         left ALONE: visible walks PBS's pxar encoder into `.zfs/shares` and
+         fails the whole backup of that copy, and walks this engine's own
+         rsync --delete into an entry the source has no counterpart for. It
+         shipped visible for exactly one commit. A copy that could not be
          snapshotted is named at the end of the run and the run does not exit
          0 - the bytes arrived, so it is not a failure, and silence would mean
          a fleet that quietly stopped keeping history

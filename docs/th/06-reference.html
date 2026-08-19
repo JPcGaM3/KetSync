@@ -286,8 +286,11 @@ ribute</td></tr>
      คนละทิศ — pattern ที่มีผลข้างเดียวแปลว่าไฟล์นั้นไม่เคยถูกก๊อปไปที่สำเนา แล้ววันที่ failback กลับมา
      มันจะถูก <b>ลบออกจากตัวจริง</b> ไฟล์นี้หาย = ทั้งสองตัวปฏิเสธไม่ยอมรัน ไม่มีการเดารายการให้
      ที่ให้มาคือสามบรรทัดเดิม: <span class="m">/tmp/*</span>, <span class="m">/run/*</span>,
-     <span class="m">/var/tmp/systemd-private-*</span> — เพิ่มได้เฉพาะของที่รู้ว่าคืออะไร
-     ทุก pattern ที่เพิ่ม คือข้อมูลที่สำเนาจะไม่มี</p>
+     <span class="m">/var/tmp/systemd-private-*</span> บวก <span class="m">/.zfs</span>
+     ซึ่งไม่ใช่ path ของ container แต่เป็นโฟลเดอร์ควบคุม snapshot ของ dataset ปลายทาง —
+     rsync ไม่ลบสิ่งที่ถูก exclude ไว้ บรรทัดนี้จึงกัน <span class="m">--delete</span>
+     ไม่ให้ไปไล่ลบ snapshot ทั้งก้อนถ้าใครไปเปิด <span class="m">snapdir=visible</span>
+     เพิ่มได้เฉพาะของที่รู้ว่าคืออะไร ทุก pattern ที่เพิ่ม คือข้อมูลที่สำเนาจะไม่มี</p>
   <p><code class="inl">conf/ctmig.conf</code> คือชุดเดียวกันฝั่ง migrate ที่ต่างคือ
      BW ของมันแยกเพดานกับ ctrep (doctor เตือนเรื่องนี้อยู่จนกว่า conf จะรวมเป็นไฟล์เดียว)</p>
 </section>

@@ -909,6 +909,21 @@ do_restore(){   # $1 = ctid
   pn="$(prod_node "$ct")"
   if [[ -z "$pn" ]]; then
     log "[$ct] GUARD P1: CT $ct has no config anywhere in the cluster - nothing to restore"
+    # The record outliving its container is a real state, and it is the one
+    # `ketsync doctor` reports: it lists the record, sends somebody here, and
+    # this refuses - tomorrow as well, and the day after, until that section
+    # stops being read. So say what it actually is. Read from the backup node
+    # because the record lives in pmxcfs, which is shared, and the container's
+    # own node is exactly what cannot be found.
+    if [[ -n "$(rec_field "$(rec_read "${BKP_SSH#*@}" "$ct")" ctid)" ]]; then
+      log "[$ct] GUARD P1:   there IS a record at $(rec_path "$ct") - it has outlived the"
+      log "[$ct] GUARD P1:   container it describes."
+      log "[$ct] GUARD P1:   nothing here removes it. A container that is merely INVISIBLE -"
+      log "[$ct] GUARD P1:   a node out of the cluster - looks exactly like one that is gone"
+      log "[$ct] GUARD P1:   from here, and that record is the only memory of which bridge"
+      log "[$ct] GUARD P1:   CT $ct belonged on."
+      log "[$ct] GUARD P1:   if CT $ct really is gone:  ssh $BKP_SSH 'rm $(rec_path "$ct")'"
+    fi
     st_skip "$ct"; return 1
   fi
   pip="${pn#*	}"; pn="${pn%%	*}"

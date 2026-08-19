@@ -144,8 +144,29 @@ mutant "a storage still disabled by an evacuate is not mentioned" \
   10
 
 mutant "a 9<id> that outlived its disaster is not mentioned" \
-  's{\Q    for f in \E\$\Q(ks_ssh "\E\$bkp\Q" "ls /etc/pve/nodes/\E}{    for f in \$(true "ls /etc/pve/nodes/}' \
+  's{\Q    for f in \E\$\Q(printf \E\x27\Q%s\E\\\Qn\E\x27\Q "\E\$guests\Q" | grep \E\x27\Q^9\E\x27\Q || true); do\E}{    for f in \$(true); do}' \
   10
+
+# ---------- a record whose container is gone ---------------------------------
+# The state this section used to report as work: the record is there, the
+# container it names is not, and `restore` can only refuse. Telling somebody to
+# run a command that refuses is worse than saying nothing, because they run it
+# tomorrow as well - and then stop reading the section that matters most.
+mutant "a record whose container is gone is reported as a container to restore" \
+  's{\Q      if printf \E\x27\Q%s\E\\\Qn\E\x27\Q "\E\$guests\Q" | grep -qxF "\E\$f\Q"; then\E}{      if true; then}' \
+  27
+
+mutant "every isolate record is called stale, so a real one is never put back" \
+  's{\Q      if printf \E\x27\Q%s\E\\\Qn\E\x27\Q "\E\$guests\Q" | grep -qxF "\E\$f\Q"; then\E}{      if false; then}' \
+  10 28
+
+mutant "the cluster is never asked what it holds, so every record looks stale" \
+  's{\Q"ls /etc/pve/nodes/*/lxc/*.conf 2>/dev/null"\E}{"true"}' \
+  10
+
+mutant "the stale record is named and the way to be rid of it is not" \
+  's{\Q      say "      ssh root@\E\$bkp\Q \E\x27\Qrm /etc/pve/ketsync/isolate/\E\$f\Q.tsv\E\x27\Q"\E\n}{}' \
+  27
 
 mutant "a backup node that could not be asked reads as a fleet with nothing left" \
   's{\Q  elif ! ks_ssh "\E\$bkp\Q" true 2>/dev/null; then\E}{  elif false; then}' \

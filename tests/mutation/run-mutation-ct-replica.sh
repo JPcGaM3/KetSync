@@ -528,6 +528,10 @@ mutant "a missing exclude list is carried past, and every copy fills with /tmp" 
   's{\Q  echo "ERROR: the exclude list is missing: \E\$\QEXCL" >&2\E}{  : "\$EXCL"}' \
   82
 
+mutant "the destination's own .zfs is deleted, one failing unlink at a time" \
+  's{\Q      "--exclude-from=\E\$\QEXCL"\E}{      "--exclude-from=\$EXCL" --delete-excluded}' \
+  80b
+
 mutant "the list is read and then not handed to rsync" \
   's!\Q      "--exclude-from=\E\$\QEXCL"\E!      \x27--exclude=/tmp/*\x27!' \
   80 81
@@ -585,8 +589,12 @@ mutant "the run exits 0 while copies have no rollback point at all" \
   's{\Qif (( \E\$\Q{#SNAP_FAILED_IDS[\E\@\Q]} )); then\E\n\Q  [[ -n "\E\$HEALTH_URL}{if false; then\n  [[ -n "\$HEALTH_URL}' \
   93
 
-mutant "snapdir stays hidden, so nobody can reach the days without zfs" \
-  's!\Q    zfs set snapdir=visible \E\x27\Q\E\$\Qds\E\x27\Q >/dev/null 2>&1 || echo NOSNAPDIR\E!    true!' \
+# The regression this replaces, put back as a mutation: snapdir=visible was set
+# for one commit, and it broke every PBS backup of every copy - pxar walks into
+# `.zfs/shares`, gets EOPNOTSUPP, and fails the whole guest. Nothing about the
+# replication round looked wrong.
+mutant "snapdir is made visible, and PBS walks into .zfs/shares" \
+  's{\Q    elif zfs snapshot \E}{    elif zfs set snapdir=visible '\$ds' \&\& zfs snapshot }' \
   87
 
 # ---------- --move-dest: the order is the whole feature -----------------------

@@ -139,9 +139,13 @@ ct_no_image(){  rm -f "$(host_dir_local "$2")/ct/$1.path"; }
 # A DR that was never finished, in each of the three shapes doctor looks for.
 left_isolated(){ : > "$(host_dir_local "$BKP")/fs/etc/pve/ketsync/isolate/$1.tsv"; }
 left_evacuated(){ : > "$(host_dir_local "$BKP")/fs/etc/pve/ketsync/evacuate/$1.tsv"; }
-left_placed(){   # 9<id> on a node
+# A guest config in pmxcfs, which is shared, so the backup node answers for
+# every node's guests. This is what makes an isolate record mean something: a
+# record whose container is not here describes a container that is gone.
+cluster_guest(){ # vmid on a node
   mkdir -p "$(host_dir_local "$BKP")/fs/etc/pve/nodes/$2/lxc"
   : > "$(host_dir_local "$BKP")/fs/etc/pve/nodes/$2/lxc/$1.conf"; }
+left_placed(){ cluster_guest "$@"; }   # a 9<id> is one of those, still there
 
 replica_state(){  # ctid epoch
   printf '{\n  "ctid": %s,\n  "last": {"epoch":%s,"status":"ok"}\n}\n' "$1" "$2" \
@@ -288,6 +292,7 @@ fi
 
 if scenario "10: what a half-finished DR left behind, in all three shapes"; then
   left_isolated 110
+  cluster_guest 110 pve-r32        # the container the record is about is really there
   left_evacuated pve-r32
   left_placed 9120 pve-r33
   run_ks
@@ -498,6 +503,34 @@ if scenario "26: the same line without -y, and a dispatcher line WITH it, are bo
   has "== cron lines that hand -y to an engine, which has never heard of it"
   hasnt "drop the -y"
   hasnt "these would REFUSE"
+  done_scenario
+fi
+
+if scenario "27: a record that outlived its container is named as that, not as work"; then
+  # What this section used to do: list the record, send somebody to
+  # `restore --ctid 110`, and have that refuse - every day, until the one
+  # section worth reading after a disaster is the one nobody reads.
+  left_isolated 110
+  run_ks
+  rc_is 1
+  has "CT 110 has an ISOLATE record and no config anywhere in the cluster"
+  has "rm /etc/pve/ketsync/isolate/110.tsv"
+  has "fix the cluster first and ask again"
+  hasnt "./ketsync restore --ctid 110"
+  hasnt "nothing left over"
+  done_scenario
+fi
+
+if scenario "28: one record stale and one real, told apart in the same run"; then
+  left_isolated 110
+  left_isolated 120
+  cluster_guest 120 pve-r32
+  run_ks
+  rc_is 1
+  has "CT 110 has an ISOLATE record and no config anywhere in the cluster"
+  has "CT 120 is still ISOLATED"
+  has "./ketsync restore --ctid 120"
+  hasnt "./ketsync restore --ctid 110"
   done_scenario
 fi
 

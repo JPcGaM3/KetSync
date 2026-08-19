@@ -161,8 +161,11 @@
 #      is still in yesterday's snapshot - the live copy has already been made
 #      to match production, which is exactly what replication is for and
 #      exactly why replication alone is not a backup.
-#    - browsable files, at <mountpoint>/.zfs/snapshot/ketsync-<date>/ - which
-#      is why snapdir=visible is set on the dataset at the same time.
+#    - readable files, at <mountpoint>/.zfs/snapshot/ketsync-<date>/. That path
+#      works whether or not `.zfs` is listed, and nothing here makes it listed:
+#      snapdir=visible walks PBS's pxar encoder into `.zfs/shares`, which fails
+#      the whole backup of that copy, and walks this engine's own rsync into a
+#      destination entry the source has no counterpart for.
 #  ONLY after a green round, so every snapshot names a copy that was whole.
 #
 #   R15 a copy PVE itself has locked is left alone. vzdump writes `lock: backup`
@@ -381,6 +384,7 @@ if [[ ! -r "$EXCL" ]]; then
   echo "ERROR:     /tmp/*" >&2
   echo "ERROR:     /run/*" >&2
   echo "ERROR:     /var/tmp/systemd-private-*" >&2
+  echo "ERROR:     /.zfs" >&2
   exit 2
 fi
 
@@ -986,19 +990,28 @@ hsize(){
 # does not. The date is this machine's, and it is in the name, so a reader
 # never has to work out whose clock made it.
 #
-# One ssh does all three things - take it, make .zfs browsable, prune the
-# excess - because this runs once per container per round and a round is
-# already four round trips deep. The prune matches ONLY ketsync-<date>: a
-# snapshot somebody took by hand, or one PBS left behind, is not this tool's
-# to destroy. `sort` is chronological because the name is ISO; that is the
-# whole reason for the dashes.
+# One ssh takes it and prunes the excess, because this runs once per container
+# per round and a round is already four round trips deep. The prune matches
+# ONLY ketsync-<date>: a snapshot somebody took by hand, or one PBS left
+# behind, is not this tool's to destroy. `sort` is chronological because the
+# name is ISO; that is the whole reason for the dashes.
+#
+# It does NOT set snapdir=visible, and that is deliberate rather than an
+# omission. Visible puts `.zfs` into the directory listing, and two things then
+# walk into it: PBS, whose pxar encoder dies at `.zfs/shares` with EOPNOTSUPP
+# and fails the whole backup of that copy, and this engine's own rsync, which
+# sees a `.zfs` at the destination that the source does not have and tries to
+# --delete it. `.zfs/snapshot/` is reachable by typing the path whether it is
+# listed or not, so hidden costs discoverability and nothing else. That is why
+# hidden is ZFS's own default.
 #
 # Returns non-zero only when TODAY'S SNAPSHOT DOES NOT EXIST afterwards. A
 # prune that could not run is reported and forgiven - it costs space, not
 # history, and space is visible. A snapshot that was never taken is a day of
 # history that silently is not there, which is the thing worth failing over.
-# $CT is the log prefix: this is only ever called from inside the per-container
-# loop, where every other line is prefixed the same way.
+# $CT is the log prefix and $tmnt is where the copy is mounted on the backup
+# node: this is only ever called from inside the per-container loop, after the
+# transfer, where both are set and every other line is prefixed the same way.
 snap_after_green(){   # $1 = dataset on the backup node   $2 = snapshot name
   local ds="$1" sn="$2" out rc=0 l
   out=$(ssh $SSH_OPT "$BKP_SSH" "
@@ -1009,7 +1022,6 @@ snap_after_green(){   # $1 = dataset on the backup node   $2 = snapshot name
     else
       echo NOSNAP; exit 1
     fi
-    zfs set snapdir=visible '$ds' >/dev/null 2>&1 || echo NOSNAPDIR
     zfs list -H -o name -t snapshot -d 1 '$ds' 2>/dev/null \
       | grep -E '@ketsync-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\$' \
       | sort | head -n -$SNAP_KEEP \
@@ -1018,7 +1030,7 @@ snap_after_green(){   # $1 = dataset on the backup node   $2 = snapshot name
         done
   " </dev/null 2>&1) || rc=$?
   case "$out" in
-    *TOOK*) log "[$CT] snapshot: $ds@$sn (keeping $SNAP_KEEP; browse at $sn under .zfs/snapshot/)";;
+    *TOOK*) log "[$CT] snapshot: $ds@$sn (keeping $SNAP_KEEP; read it at $tmnt/.zfs/snapshot/$sn)";;
     *HAVE*) : ;;   # already taken today - said once, on the round that took it
     *)      log "[$CT] WARN: could not snapshot the copy: $ds@$sn (rc=$rc)"
             while IFS= read -r l; do [[ -n "$l" ]] && log "[$CT] WARN:   $l"; done <<< "$out"
@@ -1030,7 +1042,6 @@ snap_after_green(){   # $1 = dataset on the backup node   $2 = snapshot name
     case "$l" in
       PRUNED*)    log "[$CT] snapshot: pruned ${l#PRUNED }";;
       STUCK*)     log "[$CT] WARN: snapshot ${l#STUCK } would not go - it is holding space";;
-      NOSNAPDIR*) log "[$CT] WARN: snapdir=visible could not be set on $ds - .zfs stays hidden";;
     esac
   done <<< "$out"
   return 0

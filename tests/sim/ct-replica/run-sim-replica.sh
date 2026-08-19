@@ -210,7 +210,7 @@ RUNS_KEEP=200
 SNAP_KEEP=7
 MNT_BASE=$SIMROOT/mnt
 EOF
-  exclude '/tmp/*' '/run/*' '/var/tmp/systemd-private-*'
+  exclude '/tmp/*' '/run/*' '/var/tmp/systemd-private-*' '/.zfs'
   SIM_MOCK_BRIDGE=vmbr99; }
 conf_set(){ # key value
   { grep -v "^$1=" "$WORK/ctrep.conf" || true; } > "$WORK/.conf"
@@ -434,8 +434,14 @@ snaps_are(){   # dataset, then every snapshot short name that must be left
 snap_holds(){  # snapshot, file, text - history is only history if the bytes are in it
   grep -qF -- "$3" "$BKP/snapdata/$1/$2" 2>/dev/null \
     || _err "snapshot $1: $2 does not hold '$3' (got: $(cat "$BKP/snapdata/$1/$2" 2>/dev/null))"; }
-snapdir_visible(){ grep -qF "$1	snapdir=visible" "$BKP/props" 2>/dev/null \
-    || _err "snapdir=visible was never set on $1 - .zfs stays hidden"; }
+# Nothing may set snapdir on a copy. Visible puts `.zfs` in the directory
+# listing, and then PBS's pxar encoder walks into `.zfs/shares` and fails the
+# whole backup of that copy, while this engine's own rsync --delete sees a
+# destination entry the source has no counterpart for. The path works either
+# way, so there is nothing to buy and a backup to lose.
+no_snapdir_set(){ grep -qF "$1	snapdir" "$BKP/props" 2>/dev/null \
+    && _err "snapdir was set on $1 - that is what walks PBS into .zfs/shares"
+  return 0; }
 
 scenario(){
   N="${1%%:*}"
@@ -1580,6 +1586,25 @@ if scenario "80: the shipped excludes reach rsync, and that junk never lands on 
   done_scenario
 fi
 
+if scenario "80b: a copy whose .zfs is visible is not emptied by --delete"; then
+  # The night this cost. snapdir=visible puts the dataset's own snapshot
+  # control directory into the destination listing; the source is an ext4
+  # image and has no counterpart, so --delete spends the round failing to
+  # remove a read-only tree and the copy is reported as a failed transfer.
+  # The engine no longer sets that property - and the exclude list means it
+  # would not matter if somebody else did.
+  bkp_dataset replica-hdd/ct/subvol-8105-disk-0 yes /replica-hdd/ct/subvol-8105-disk-0
+  mkdir -p "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/.zfs/snapshot/ketsync-2026-01-01/etc"
+  echo yesterday > "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/.zfs/snapshot/ketsync-2026-01-01/etc/hosts"
+  run_engine --ctid 105
+  rc_is 0; clean
+  traced "rsyncexclude /.zfs"
+  # the day is still there, and the round still did its job
+  copy_file_has /replica-hdd/ct/subvol-8105-disk-0 .zfs/snapshot/ketsync-2026-01-01/etc/hosts yesterday
+  copy_has /replica-hdd/ct/subvol-8105-disk-0 rootfs.txt
+  done_scenario
+fi
+
 if scenario "81: a site that edits the list gets ITS patterns, and only those"; then
   exclude '/var/log/*'
   run_engine --ctid 105
@@ -1674,13 +1699,14 @@ fi
 # =============================================================================
 #  the daily snapshot of the copy
 # =============================================================================
-if scenario "87: a green round leaves a dated snapshot, and makes .zfs browsable"; then
+if scenario "87: a green round leaves a dated snapshot, and touches snapdir not at all"; then
   TODAY="$(date +%F)"
   run_engine --ctid 105
   rc_is 0; clean
   snap_exists "replica-hdd/ct/subvol-8105-disk-0@ketsync-$TODAY"
-  snapdir_visible replica-hdd/ct/subvol-8105-disk-0
+  no_snapdir_set replica-hdd/ct/subvol-8105-disk-0
   has "snapshot: replica-hdd/ct/subvol-8105-disk-0@ketsync-$TODAY"
+  has "read it at /replica-hdd/ct/subvol-8105-disk-0/.zfs/snapshot/ketsync-$TODAY"
   st_is 105 snapshot "ketsync-$TODAY"
   done_scenario
 fi
