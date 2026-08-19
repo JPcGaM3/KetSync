@@ -136,8 +136,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 452 tp simulator + 16 dispatcher + 125 c2v, 137 ketsync
-    make mutation # 535 known bugs put back. None may survive
+    make test     # both layers: 455 tp simulator + 16 dispatcher + 125 c2v, 137 ketsync
+    make mutation # 538 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -531,7 +531,13 @@ Two things ct-replica does that are not guards, and belong here anyway:
          dataset. Everything before the last step is free to fail - the old
          copy is still the one the config boots. One container by --ctid, and
          it takes no pool name: the pool is the one the row already says, so
-         the command cannot create a disagreement the next round would refuse
+         the command cannot create a disagreement the next round would refuse.
+         Before any of that: the row's pool must differ from the one the copy
+         sits on, the two ids must not resolve to ONE dataset, and the far pool
+         must have room - asked before the hours are spent, because that pool
+         is shared and filling it fails everybody else's next round in a way
+         that reads as a storage fault. A size that cannot be read is refused,
+         never assumed roomy
 
 `ct-failback.sh` — B1..B6:
 

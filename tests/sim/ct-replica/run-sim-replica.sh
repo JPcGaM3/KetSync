@@ -78,6 +78,7 @@ new_world(){
   : > "$SIMROOT/mount.fail";  : > "$SIMROOT/umount.fail"; : > "$SIMROOT/zfs.fail"
   : > "$SIMROOT/cfgwrite.trunc"; : > "$BKP/zfs.tsv";     : > "$SIMROOT/ctlpath"
   : > "$BKP/snaps";           : > "$BKP/props";          mkdir -p "$BKP/snapdata"
+  mkdir -p "$BKP/free"
   echo 0 > "$SIMROOT/rsync.n"; echo "0 0 0 0 0 0" > "$SIMROOT/rsync.rc"
   # files literal sent total - what the fake rsync reports in its --stats block
   echo "161 2469606195 2470127483 118111600640" > "$SIMROOT/rsync.stats"
@@ -420,6 +421,14 @@ print(d)' "$2" 2>/dev/null)"
 # both live in $BKP/snaps with their contents under $BKP/snapdata. A scenario
 # can plant one (a week of history that already exists, or one a human took by
 # hand and which nothing here may sweep up) and assert on what survived.
+# how much room a destination pool has left. Unset = effectively unlimited, so
+# only the scenarios that are ABOUT space have to think about it.
+bkp_free(){ printf '%s\n' "$2" > "$BKP/free/${1//\//_}"; }
+# the parent dataset gone from the backup node's view - a pool exported, a
+# typo in BKP_DESTS, a member that has not imported it yet. The storage id is
+# still active, so nothing earlier catches it.
+bkp_no_dataset(){ awk -F'\t' -v n="$1" '$1!=n' "$BKP/zfs.tsv" > "$BKP/.z" 2>/dev/null
+                  mv -f "$BKP/.z" "$BKP/zfs.tsv"; }
 bkp_snap(){ printf '%s\n' "$1" >> "$BKP/snaps"; mkdir -p "$BKP/snapdata/$1"
             printf '%s\n' "${2:-planted}" > "$BKP/snapdata/$1/rootfs.txt"; }
 # what a copy's dataset holds right now, so a move has something to carry
@@ -1932,6 +1941,48 @@ if scenario "103: --move-dest with no copy to move says so instead of making one
   has "MOVE: there is no copy 8105 on bkp02 yet - nothing to move"
   cfg_absent 8105
   untraced "rsync "
+  done_scenario
+fi
+
+if scenario "106: a destination with no room is refused before the hours are spent"; then
+  # The pool is shared with every other copy on that tier. A move that fills it
+  # does not only fail itself - it fails their next round too, and that reads
+  # as a storage fault rather than as this command.
+  move_world
+  bkp_free replica-ssd/ct 10
+  run_engine --ctid 105 --move-dest
+  rc_is 1; clean
+  has "MOVE: 'replica-ssd' does not have room for copy 8105 - NOTHING was touched"
+  has "holds other customers' copies too"
+  cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
+  untraced "bkp zfs send"
+  done_scenario
+fi
+
+if scenario "107: two dest ids that are one dataset are named as that"; then
+  move_world
+  conf_set BKP_DESTS '"replica-hdd:replica-hdd/ct replica-ssd:replica-hdd/ct"'
+  bkp_storage replica-ssd active replica-hdd/ct
+  run_engine --ctid 105 --move-dest
+  rc_is 1; clean
+  has "are two names for the same dataset"
+  has "one parent dataset per id"
+  cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
+  untraced "bkp zfs send"
+  done_scenario
+fi
+
+if scenario "108: a destination that cannot be measured is refused, not assumed roomy"; then
+  # No answer is not "there is room". This is the same rule R14 follows about
+  # an unanswered lock, applied to the one number that decides whether an hour
+  # of transfer is worth starting.
+  move_world
+  bkp_no_dataset replica-ssd/ct
+  run_engine --ctid 105 --move-dest
+  rc_is 1; clean
+  has "MOVE: could not read the sizes from bkp02 - refusing rather than guessing"
+  cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
+  untraced "bkp zfs send"
   done_scenario
 fi
 

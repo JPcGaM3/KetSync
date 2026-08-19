@@ -609,6 +609,21 @@ mutant "a send that failed reads as a move that finished" \
   's{\Q      set -o pipefail\E}{      set +o pipefail}' \
   97
 
+# The destination pool is shared. A move that fills it fails the next round of
+# every other copy on that tier, and that reads as a storage fault rather than
+# as the command that caused it.
+mutant "a move is started with no room for it at the far end" \
+  's{\Q  if (( _mvneed > _mvfree )); then\E}{  if false; then}' \
+  106
+
+mutant "sizes that could not be read are treated as room enough" \
+  's{\Q  if [[ ! "\E\$\Q{_mvneed:-}" =~ ^[0-9]+\E\$\Q || ! "\E\$\Q{_mvfree:-}" =~ ^[0-9]+\E\$\Q ]]; then\E}{  if false; then}' \
+  108
+
+mutant "two dest ids for one dataset are read as a real move" \
+  's{\Q  if [[ "\E\$ofrom\Q" == "\E\$onew\Q" ]]; then\E}{  if false; then}' \
+  107
+
 mutant "a dataset already sitting at the destination is written over" \
   's!\Q  if ssh \E\$SSH_OPT\Q "\E\$BKP_SSH\Q" "zfs list -H -o name \E\x27\Q\E\$\Qonew\E\x27\Q" </dev/null >/dev/null 2>&1; then\E!  if false; then!' \
   99

@@ -1072,7 +1072,7 @@ snap_after_green(){   # $1 = dataset on the backup node   $2 = snapshot name
 # dataset holding the same number of logical bytes as the snapshot it came from.
 # $CT, $TGT, $DEST and $tgtcfg come from the loop, like everywhere else here.
 move_copy_dest(){   # $1 = the dest the copy's config names TODAY
-  local from="$1" ofrom onew snap out nmounted nlogical ologic newcfg
+  local from="$1" ofrom onew snap out nmounted nlogical ologic newcfg _mvneed _mvfree
   if [[ -z "$from" ]]; then
     log "[$CT] MOVE: copy $TGT has no rootfs line to read a pool from - nothing to move"
     log "[$CT] MOVE:   that config is broken in a way this cannot guess at. Read it:"
@@ -1094,9 +1094,21 @@ move_copy_dest(){   # $1 = the dest the copy's config names TODAY
   onew="${DEST_DS[$DEST]}/subvol-$TGT-disk-0"
   snap="ketsync-move-$(date +%Y%m%d-%H%M%S)"
 
+  # Two storage ids, one dataset. BKP_DESTS maps ids to parent datasets and
+  # nothing stops two ids naming the same parent - and then this would send a
+  # dataset to itself. The "already exists" refusal below would catch it, but
+  # it would catch it by describing the wrong problem, and the operator would
+  # go looking for a leftover that was never there.
+  if [[ "$ofrom" == "$onew" ]]; then
+    log "[$CT] MOVE: '$from' and '$DEST' are two names for the same dataset"
+    log "[$CT] MOVE:   both resolve to $onew, so there is nowhere to move to."
+    log "[$CT] MOVE:   fix BKP_DESTS in $(basename "$CONF") - one parent dataset per id."
+    st_fail move_same_dataset; return 1
+  fi
+
   if (( DRY )); then
     log "[$CT] DRY: would move copy $TGT from '$from' to '$DEST', in this order:"
-    log "[$CT] DRY:   1. refuse if $onew already exists"
+    log "[$CT] DRY:   1. refuse if $onew already exists, or if '$DEST' has no room"
     log "[$CT] DRY:   2. zfs snapshot $ofrom@$snap"
     log "[$CT] DRY:   3. zfs send -R $ofrom@$snap | zfs recv $onew   (local to $BKP_NODE)"
     log "[$CT] DRY:   4. verify $onew is mounted and holds the same logical bytes"
@@ -1118,8 +1130,34 @@ move_copy_dest(){   # $1 = the dest the copy's config names TODAY
     st_fail move_dest_exists; return 1
   fi
 
+  # Room on the far pool, asked BEFORE a transfer that could take hours. The
+  # destination is shared with every other copy on that tier, so a move that
+  # runs the pool out does not only fail itself - it takes the next replication
+  # round of everything else with it, and that failure looks like a storage
+  # problem rather than like this command. `used` is the source's own size with
+  # its snapshots, which is what -R sends; compression can move the real figure
+  # either way, so this is a floor and not a promise, and zfs recv remains the
+  # actual test.
+  read -r _mvneed _mvfree < <(ssh $SSH_OPT "$BKP_SSH" "
+      zfs list -Hp -o used '$ofrom' 2>/dev/null
+      zfs list -Hp -o available '${DEST_DS[$DEST]}' 2>/dev/null" </dev/null 2>/dev/null | paste -sd' ')
+  if [[ ! "${_mvneed:-}" =~ ^[0-9]+$ || ! "${_mvfree:-}" =~ ^[0-9]+$ ]]; then
+    log "[$CT] MOVE: could not read the sizes from $BKP_NODE - refusing rather than guessing"
+    log "[$CT] MOVE:   need: zfs list -Hp -o used $ofrom"
+    log "[$CT] MOVE:   free: zfs list -Hp -o available ${DEST_DS[$DEST]}"
+    st_fail move_size_unknown; return 1
+  fi
+  if (( _mvneed > _mvfree )); then
+    log "[$CT] MOVE: '$DEST' does not have room for copy $TGT - NOTHING was touched"
+    log "[$CT] MOVE:   $ofrom uses $(hsize "$_mvneed") (its snapshots included, and -R sends them)"
+    log "[$CT] MOVE:   ${DEST_DS[$DEST]} has $(hsize "$_mvfree") free"
+    log "[$CT] MOVE:   that pool holds other customers' copies too, so filling it would"
+    log "[$CT] MOVE:   fail their next round as well, and look like a storage fault."
+    st_fail move_no_room; return 1
+  fi
+
   log "[$CT] MOVE: $TGT  '$from' -> '$DEST'"
-  log "[$CT] MOVE:   $ofrom  ->  $onew"
+  log "[$CT] MOVE:   $ofrom  ->  $onew   (needs $(hsize "$_mvneed"), $(hsize "$_mvfree") free)"
   log "[$CT] MOVE:   copying first. Until the config is repointed the OLD copy is still"
   log "[$CT] MOVE:   the one that boots, so this is safe to interrupt and run again."
   # -R, not a plain send: it carries the ketsync-<date> snapshots too. Those

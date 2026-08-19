@@ -43,6 +43,10 @@ ds_dir(){   local m; m="$(bkp_field "$1" 3)"; [[ -n "$m" && "$m" != none ]] && p
 # two identical trees in a way `du` is not, which matters because the move
 # compares the two and refuses when they differ.
 logbytes(){ find "$1" -type f -print0 2>/dev/null | xargs -0 cat 2>/dev/null | wc -c; }
+# every snapshot of a dataset, added up - what `used` includes and what -R sends
+snapbytes(){ local t=0 s
+  while IFS= read -r s; do [[ -n "$s" ]] && t=$(( t + $(logbytes "$SNAPDATA/$s") )); done < <(snaps_of "$1")
+  printf '%s\n' "$t"; }
 
 case "$sub" in
 
@@ -50,12 +54,13 @@ case "$sub" in
   # Two shapes are used: "does this exist" (exit code only) and "name every
   # snapshot of this dataset" (the prune's input).
   list)
-    want_snaps=0; depth=""; names=()
+    want_snaps=0; depth=""; names=(); props=""
     while (( $# )); do
       case "$1" in
         -t) [[ "${2:-}" == *snapshot* ]] && want_snaps=1; shift 2;;
         -d) depth="${2:-}"; shift 2;;
-        -o|-s|-S) shift 2;;
+        -o) case "$2" in name) ;; *) props="$2";; esac; shift 2;;
+        -s|-S) shift 2;;
         -H|-r|-p) shift;;
         -*) shift;;
         *)  names+=("$1"); shift;;
@@ -64,6 +69,21 @@ case "$sub" in
     n="${names[0]:-}"
     if (( want_snaps )) && [[ -n "$depth" ]]; then
       snaps_of "$n"; exit 0                 # empty output, exit 0: no snapshots yet
+    fi
+    # `zfs list -Hp -o used|available` - the numbers a move checks before it
+    # spends an hour. used is the dataset AND its snapshots, because -R sends
+    # both; available is read off the PARENT, which is the pool every other
+    # copy on that tier shares.
+    if [[ -n "$props" ]]; then
+      [[ -n "$(bkp_field "$n" 2)" ]] || { echo "cannot open '$n': dataset does not exist" >&2; exit 1; }
+      for p in ${props//,/ }; do
+        case "$p" in
+          used)      printf '%s\n' "$(( $(logbytes "$(ds_dir "$n")") + $(snapbytes "$n") ))";;
+          available) printf '%s\n' "$(cat "$BKP/free/${n//\//_}" 2>/dev/null || echo 1099511627776)";;
+          *)         echo "-";;
+        esac
+      done
+      exit 0
     fi
     if [[ "$n" == *@* ]]; then
       snap_has "$n" || { echo "cannot open '$n': dataset does not exist" >&2; exit 1; }
