@@ -501,6 +501,10 @@ run_rsync(){  # $1=src $2=mnt  -> returns rsync rc; progress bar on tty, quiet u
   local opts=(-aHAX --numeric-ids --sparse -x --delete "--bwlimit=$BWLIMIT"
     '--exclude=/proc/*' '--exclude=/sys/*' '--exclude=/dev/*'
     '--exclude=/run/*' '--exclude=/tmp/*' '--exclude=/lost+found'
+    # Not a container path: an intake source on ZFS with snapdir=visible
+    # exposes its own snapshot control directory, and without this the whole
+    # of that node's retained history would be copied into the new image.
+    '--exclude=/.zfs'
     -e "ssh $SSHOPT_DATA")
   [[ -n "$sf" ]] && opts+=(--stats "--log-file=$sf" '--log-file-format=')
   # -n on the shared option array, so both branches below get it. --delete is

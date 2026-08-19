@@ -266,10 +266,28 @@ case "$c" in
         violation "rsync into $dst on $host, which is NOT a mountpoint"; exit 1
       fi
     fi
+    # The exclude list, recorded and APPLIED. The source here is the copy's own
+    # ZFS dataset on the backup node, so a `.zfs` in it is that dataset's
+    # snapshot control directory - and this rsync has no -x, so without the
+    # exclude it would walk into every retained day and carry the lot onto a
+    # compute node. That does not fail; it succeeds slowly, on the morning the
+    # fleet has no time.
+    EXPATS=()
+    for _a in $c; do
+      case "$_a" in
+        --exclude=*) _p="${_a#--exclude=}"; _p="${_p%\'}"; _p="${_p#\'}"
+                     EXPATS+=("$_p"); trace "rsyncexclude $_p";;
+      esac
+    done
     rc="$(cat "$SIMROOT/rsync.rc" 2>/dev/null)"; rc="${rc:-0}"
     if [[ "$rc" == 0 || "$rc" == 24 ]]; then
       [[ -d "$SIMROOT/bkp/data/$(basename "$src")" ]] \
         && cp -a "$SIMROOT/bkp/data/$(basename "$src")/." "$back/" 2>/dev/null
+      for _p in ${EXPATS+"${EXPATS[@]}"}; do
+        [[ "$_p" == /* ]] || continue
+        # shellcheck disable=SC2086,SC2115  # the glob IS the pattern
+        rm -rf ${back}${_p} 2>/dev/null
+      done
       : > "$SIMROOT/xfer-ok"
     fi
     # The engine's remote command ends in `; echo rc=$?`, and a real shell is

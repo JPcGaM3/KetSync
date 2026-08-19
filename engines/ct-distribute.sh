@@ -1236,6 +1236,17 @@ do_ct(){   # $1 = production ctid
   # The rc comes back on its own line, the way ct-recall does it, so there is
   # no temporary file to leave behind on a machine this engine is only
   # visiting.
+  #
+  # --exclude=/.zfs, and it is not a container path. The SOURCE is the copy's
+  # ZFS dataset on the backup node, and `.zfs` is that dataset's snapshot
+  # control directory. It is not in the directory listing while snapdir is
+  # hidden, which is ZFS's default - but if it ever is, this rsync has no -x
+  # and would descend into every retained day and carry the lot onto the
+  # compute node. That does not fail. It succeeds, slowly, on the one morning
+  # the fleet has no time, and nothing in the log says why 132G became 900G.
+  # One flag, structural rather than site policy, which is why it is here and
+  # not in ctrep-exclude.conf: a disaster-path engine must not gain a new file
+  # it can refuse to start without.
   local t0 t1 out
   t0=$(date +%s)
   if [[ -t 1 ]]; then
@@ -1246,13 +1257,13 @@ do_ct(){   # $1 = production ctid
     # parsed out of it. The tee lands on THIS machine, which is home - the
     # no-temp-file rule above protects the machine this engine is VISITING.
     local _rsout; _rsout=$(mktemp /tmp/ctdist-rsync.XXXXXX)
-    rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --bwlimit=${bw}m --stats \
+    rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --exclude=/.zfs --bwlimit=${bw}m --stats \
         --info=progress2 --no-inc-recursive \
         -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
         '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?" | tee "$_rsout"
     out=$(cat "$_rsout"); rm -f "$_rsout"
   else
-    out=$(rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --bwlimit=${bw}m --stats \
+    out=$(rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --exclude=/.zfs --bwlimit=${bw}m --stats \
         -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
         '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?")
   fi

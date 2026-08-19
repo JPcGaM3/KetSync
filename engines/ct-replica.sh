@@ -1132,10 +1132,14 @@ move_copy_dest(){   # $1 = the dest the copy's config names TODAY
     " </dev/null >>"$LOG" 2>&1; then
     log "[$CT] MOVE: the copy to $onew did not finish - NOTHING was removed"
     log "[$CT] MOVE:   $TGT still boots from '$from' and its config still says so."
-    log "[$CT] MOVE:   a half-received dataset may be sitting at $onew. This will not"
-    log "[$CT] MOVE:   destroy it for you - look first, then remove it, then run again:"
+    log "[$CT] MOVE:   two things are left behind, and neither is destroyed for you."
+    log "[$CT] MOVE:   a half-received dataset may be sitting at the destination:"
     log "[$CT] MOVE:     ssh $BKP_SSH 'zfs list -r -t all $onew'"
     log "[$CT] MOVE:     ssh $BKP_SSH 'zfs destroy -r $onew'"
+    log "[$CT] MOVE:   and the transfer snapshot on the SOURCE side, which the daily"
+    log "[$CT] MOVE:   prune does not match and will therefore hold space forever:"
+    log "[$CT] MOVE:     ssh $BKP_SSH 'zfs destroy $ofrom@$snap'"
+    log "[$CT] MOVE:   clear both, then run this again."
     st_fail move_send; return 1
   fi
 

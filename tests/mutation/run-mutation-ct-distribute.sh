@@ -462,6 +462,18 @@ mutant "the volume id is rebuilt by hand instead of read from the storage's answ
   's{\Q  if [[ "\E\$allocout\Q" =~ \E\$\Q{CT_DST}:([0-9]+/)?\E\$\Q{volname} ]]; then\E\n\Q    volid="\E\$\Q{BASH_REMATCH[0]}"\E}{  if true; then\n    volid="\$CT_DST:\$volname"}' \
   32
 
+# ---------- the copy's own .zfs -----------------------------------------------
+# The source is the copy's ZFS dataset on the backup node, and this rsync has no
+# -x. With snapdir=visible on that dataset, dropping the exclude does not fail -
+# it carries every retained day onto a compute node, on the morning the storage
+# node died, and says nothing.
+# /g: the flag list is written out twice, once for the tty branch and once for
+# cron. A mutation that changed only the first would leave the branch every
+# simulator actually runs untouched, and pass while proving nothing.
+mutant "every retained day is dragged onto the compute node with the rootfs" \
+  's{\Q--delete --exclude=/.zfs --bwlimit=\E}{--delete --bwlimit=}g' \
+  46
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

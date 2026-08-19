@@ -312,6 +312,15 @@ vol_has(){ # ip sid volname text
   grep -rqF -- "$4" "$p" 2>/dev/null || _err "$1:$2:$3 does not contain '$4'"; }
 vol_exists(){ [[ -e "$SIMROOT/targets/$1/vols/$2/$3" ]] || _err "$1:$2:$3 was not allocated"; }
 no_vol(){ [[ -e "$SIMROOT/targets/$1/vols/$2/$3" ]] && _err "$1:$2:$3 should NOT exist"; return 0; }
+# A copy on the backup node whose own .zfs control directory is in the listing -
+# what snapdir=visible does. The days under it are the thing that must not be
+# dragged onto a compute node on the morning the storage node died.
+copy_zfs_visible(){ # ctid
+  mkdir -p "$BKP/data/subvol-$1-disk-0/.zfs/snapshot/ketsync-2026-01-01/etc"
+  printf 'a week ago\n' > "$BKP/data/subvol-$1-disk-0/.zfs/snapshot/ketsync-2026-01-01/etc/hosts"; }
+vol_lacks(){ # ip sid volname path
+  [[ -e "$SIMROOT/targets/$1/vols/$2/$3" ]] \
+    && _err "$1:$2:$3 reached the target and should not have"; return 0; }
 cfg_exists(){ [[ -f "$PVE/nodes/$1/lxc/$2.conf" ]] || _err "no config $1/lxc/$2.conf"; }
 no_cfg(){ [[ -f "$PVE/nodes/$1/lxc/$2.conf" ]] && _err "config $1/lxc/$2.conf should NOT exist"; return 0; }
 cfg_has(){ grep -qF -- "$3" "$PVE/nodes/$1/lxc/$2.conf" 2>/dev/null || _err "$1/lxc/$2.conf lacks '$3'"; }
@@ -1233,6 +1242,20 @@ if scenario "45: the OLD BKP_DESTS format is named, not read as a working map"; 
   has "is the OLD key=dataset:storage-id form"
   has 'BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"'
   untraced "pvesm alloc"
+  done_scenario
+fi
+
+if scenario "46: the copy's own .zfs is never dragged onto a compute node"; then
+  # snapdir=visible on a copy puts its snapshot control directory into the
+  # listing, and this rsync has no -x. Without the exclude, a placement carries
+  # every retained day across as well - and it SUCCEEDS, slowly, on the one
+  # morning nobody has time to wonder why 132G became 900G.
+  copy_zfs_visible 8300
+  run_engine --ctid 300
+  rc_is 0; clean
+  traced "rsyncexclude /.zfs"
+  vol_has  "$T1" local-lvm vm-9300-disk-0 "customer data for 300"
+  vol_lacks "$T1" local-lvm vm-9300-disk-0/.zfs
   done_scenario
 fi
 

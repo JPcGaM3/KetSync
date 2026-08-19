@@ -941,7 +941,14 @@ do_ct(){   # $1 = production ctid
   # exactly one place - the mutation suite anchors on this line, and a flag
   # that existed only in the branch the simulator does not run would be a
   # flag nothing could prove wrong.
-  local rscmd="rsync -aHAX -x --numeric-ids --sparse --delete --bwlimit=${bw}m --stats"
+  # --exclude=/.zfs: the DESTINATION is the copy's ZFS dataset on the backup
+  # node, and `.zfs` is its snapshot control directory. -x keeps this rsync out
+  # of the auto-mounted snapshots on the READING side, and does nothing for the
+  # writing side: an entry the sender never listed is an entry --delete tries
+  # to remove, and a read-only control directory cannot be removed. That is a
+  # round spent failing one unlink at a time, during a recall. rsync does not
+  # delete what it was told to exclude, so this one flag settles both ends.
+  local rscmd="rsync -aHAX -x --numeric-ids --sparse --delete --exclude=/.zfs --bwlimit=${bw}m --stats"
   if [[ -t 1 ]]; then
     # A person is at this terminal - and a --final round is exactly when one
     # is. Same arrangement as ct-replica and ct-distribute: a live progress

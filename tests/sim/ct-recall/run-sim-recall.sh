@@ -213,6 +213,16 @@ add_copy(){ # src_ctid dest-storage-id
   printf 'rootfs of CT %s, generation 7 - the last replica round before the outage\n' "$1" \
     > "$BKP/fs/$ds/rootfs.txt"
   printf 'this file only ever existed on the copy\n' > "$BKP/fs/$ds/stale.log"; }
+# The copy's own snapshot control directory in the listing - what
+# snapdir=visible does to a dataset. --delete would spend the round failing to
+# unlink a read-only tree, and this is the engine that runs on the way back.
+copy_zfs_visible(){ # copy_vmid dest
+  mkdir -p "$BKP/fs/$2/ct/subvol-$1-disk-0/.zfs/snapshot/ketsync-2026-01-01/etc"
+  printf 'a week ago\n' \
+    > "$BKP/fs/$2/ct/subvol-$1-disk-0/.zfs/snapshot/ketsync-2026-01-01/etc/hosts"; }
+copy_zfs_intact(){ # copy_vmid dest
+  [[ -f "$BKP/fs/$2/ct/subvol-$1-disk-0/.zfs/snapshot/ketsync-2026-01-01/etc/hosts" ]] \
+    || _err "the copy's .zfs was removed by --delete"; }
 copy_state(){ printf '%s\n' "$2" > "$BKP/ct/$1.status"; }
 copy_unmounted(){ # the dataset exists over there but is not mounted
   awk -F'\t' -v n="$1" '$1==n{$2="no"}1' OFS='\t' "$BKP/zfs.tsv" > "$BKP/.z"
@@ -921,6 +931,21 @@ if scenario "53: C3 still refuses an encoded config that names another container
   rc_is 1; clean
   has "GUARD C3"
   untraced "rsync"
+  done_scenario
+fi
+
+if scenario "50: the copy's own .zfs survives the round it is not part of"; then
+  # snapdir=visible on the copy puts its control directory into the listing.
+  # The source has no counterpart, so --delete tries to remove a read-only tree
+  # and spends the round failing one unlink at a time - on the way BACK from a
+  # disaster. -x keeps this rsync out of the snapshots on the reading side and
+  # does nothing at all for the writing side; the exclude settles both.
+  copy_zfs_visible 8300 replica-hdd
+  run_engine --ctid 300
+  rc_is 0; clean
+  traced "rsyncexclude /.zfs"
+  copy_has 8300 replica-hdd "generation 9"
+  copy_zfs_intact 8300 replica-hdd
   done_scenario
 fi
 

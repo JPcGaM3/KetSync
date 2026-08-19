@@ -234,7 +234,7 @@ mutant "rsync crosses into /proc, /sys, /dev and every extra mountpoint" \
   1
 
 mutant "rsync loses --delete, so the copy keeps what the DR container deleted" \
-  's{\Qrsync -aHAX -x --numeric-ids --sparse --delete --bwlimit=\E}{rsync -aHAX -x --numeric-ids --sparse --bwlimit=}' \
+  's{\Qrsync -aHAX -x --numeric-ids --sparse --delete --exclude=/.zfs --bwlimit=\E}{rsync -aHAX -x --numeric-ids --sparse --exclude=/.zfs --bwlimit=}' \
   1 5
 
 # /g, because the source-destination pair now exists in BOTH transfer
@@ -339,6 +339,15 @@ mutant "the engine reads the node map beside itself instead of ketsync's own" \
 mutant "the OLD key=dataset:storage-id map is read as though it worked" \
   's{\Q  if [[ "\E\$_e\Q" == *=* ]]; then\E}{  if false; then}' \
   49
+
+# ---------- the copy's own .zfs -----------------------------------------------
+# -x keeps this rsync out of the auto-mounted snapshots on the READING side and
+# does nothing for the writing side. Without the exclude, --delete spends the
+# round failing to unlink a read-only control directory - on the way back from
+# a disaster, which is the worst hour this engine has.
+mutant "the round is spent failing to delete the copy's own snapshot directory" \
+  's{\Q--delete --exclude=/.zfs --bwlimit=\E}{--delete --bwlimit=}' \
+  50
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

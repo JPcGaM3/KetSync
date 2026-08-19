@@ -379,6 +379,13 @@ mutant "a conf left at the OLD home is silently outranked instead of refused" \
   's{\Q  if [[ -e "\E\$\QCONF" ]]; then\E\n\Q    echo "ERROR: \E\$\QCONF is the OLD home - the conf moved to conf/ctmig.conf." >&2\E}{  if false; then\n    echo "ERROR: \$CONF is the OLD home - the conf moved to conf/ctmig.conf." >&2}' \
   71
 
+# ---------- an intake source that carries its own snapshots -------------------
+# A legacy node on ZFS with snapdir=visible exposes its snapshot control
+# directory, and the new image would be handed that node's whole history.
+mutant "an intake source's own snapshot directory is copied into the new image" \
+  's!\Q    \E\x27\Q--exclude=/.zfs\E\x27\n!!' \
+  1
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

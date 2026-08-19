@@ -373,6 +373,9 @@ if scenario "1: happy path, two CTs on two storages"; then
   traced "rsyncopt --numeric-ids"
   traced "rsyncopt --sparse"
   traced "rsyncopt --exclude=/proc/*"
+  # not a container path: an intake source on ZFS with snapdir=visible would
+  # otherwise put that node's whole retained history into the new image
+  traced "rsyncopt --exclude=/.zfs"
   traced "rsyncopt --bwlimit=230m"
   cfg_exists 10.100.1.31 251; cfg_exists 10.100.1.32 253
   cfg_has 10.100.1.31 251 "rootfs: tank-hdd-nas:251/vm-251-disk-0.raw"

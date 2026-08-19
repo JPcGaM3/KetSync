@@ -1855,6 +1855,10 @@ if scenario "97: a send that fails while the receive succeeds loses nothing"; th
   run_engine --ctid 105 --move-dest
   rc_is 1
   has "MOVE: the copy to replica-ssd/ct/subvol-8105-disk-0 did not finish - NOTHING was removed"
+  # both leftovers named, including the transfer snapshot on the SOURCE side -
+  # the daily prune matches ketsync-<date> only, so nothing would ever clear it
+  has "zfs destroy -r replica-ssd/ct/subvol-8105-disk-0"
+  has "zfs destroy replica-hdd/ct/subvol-8105-disk-0@ketsync-move-"
   cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
   copy_file_has /replica-hdd/ct/subvol-8105-disk-0 rootfs.txt "generation 1"
   done_scenario

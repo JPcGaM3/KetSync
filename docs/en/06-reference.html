@@ -218,7 +218,9 @@
         production what was never copied. Missing = the run is refused, never a built-in list.
         Ships with the three boot-time paths plus <span class="m">/.zfs</span>, which is not a
         container path at all: it is the destination dataset's snapshot control directory, and
-        an excluded entry is one <span class="m">--delete</span> leaves alone</td></tr>
+        an excluded entry is one <span class="m">--delete</span> leaves alone.
+        distribute, recall and migrate carry that one pattern as a flag instead — structural,
+        not site policy, and a disaster-path command must not gain a file it can refuse over</td></tr>
     <tr><td class="m">conf/ctmig.conf</td><td>the migrate-side twin; its BW ceiling is separate
         (doctor nags until the conf merge lands)</td></tr>
   </table>

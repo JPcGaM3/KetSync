@@ -293,11 +293,42 @@ case "$c" in
       [[ "$c" == *" -x "* ]] \
         || violation "rsync out of $src without -x - that copies /proc, /sys, /dev and every extra mountpoint into the DR copy"
     fi
+    # The exclude list, recorded and honoured on BOTH ends the way rsync does
+    # it: an excluded path is not sent, and an excluded path at the destination
+    # is not deleted either (--delete-excluded is the flag you would need to
+    # change that). The destination here is the copy's own ZFS dataset, so its
+    # `.zfs` control directory is exactly the entry --delete would spend the
+    # round failing to remove.
+    EXPATS=()
+    for _a in $c; do
+      case "$_a" in
+        --exclude=*) _p="${_a#--exclude=}"; _p="${_p%\'}"; _p="${_p#\'}"
+                     EXPATS+=("$_p"); trace "rsyncexclude $_p";;
+      esac
+    done
     rc="$(cat "$SIMROOT/rsync.rc" 2>/dev/null)"; rc="${rc:-0}"
     if [[ "$rc" == 0 || "$rc" == 24 ]]; then
       mkdir -p "$BKP/fs$dst"
-      rm -rf "${BKP:?}/fs$dst"/* 2>/dev/null           # --delete
+      PROTECTED=()
+      for _p in ${EXPATS+"${EXPATS[@]}"}; do
+        [[ "$_p" == /* ]] || continue
+        # shellcheck disable=SC2086,SC2115  # the glob IS the pattern
+        for _m in "$BKP/fs$dst"${_p}; do [[ -e "$_m" ]] && PROTECTED+=("$_m"); done
+      done
+      for _e in "$BKP/fs$dst"/* "$BKP/fs$dst"/.[!.]*; do          # --delete
+        [[ -e "$_e" ]] || continue
+        _keep=0
+        for _m in ${PROTECTED+"${PROTECTED[@]}"}; do [[ "$_e" == "$_m" ]] && _keep=1; done
+        (( _keep )) || rm -rf "$_e" 2>/dev/null
+      done
       [[ -d "$back" ]] && cp -a "$back/." "$BKP/fs$dst/" 2>/dev/null
+      for _p in ${EXPATS+"${EXPATS[@]}"}; do
+        [[ "$_p" == /* ]] || continue
+        _skip=0
+        for _m in ${PROTECTED+"${PROTECTED[@]}"}; do [[ "$BKP/fs$dst$_p" == "$_m" ]] && _skip=1; done
+        # shellcheck disable=SC2086,SC2115
+        (( _skip )) || rm -rf "$BKP/fs$dst"${_p} 2>/dev/null
+      done
     fi
     # The engine's remote command ends in `; echo rc=$?` and then reads the
     # stats out of rsync's log file. This fake answers a command string rather

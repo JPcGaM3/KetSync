@@ -77,7 +77,7 @@ held", and the run exits 0 having done nothing.
 
 **7. A stub says it is a stub.** Do not make one half work. There are none
 left: `distribute` stopped being one when `engines/ct-distribute.sh` was
-written, and `recall` when `engines/ct-recall.sh` was, with 67/69 and 53/47
+written, and `recall` when `engines/ct-recall.sh` was, with 68/70 and 54/48
 scenarios and mutations behind them - which is the bar for the next one.
 `isolate`/`restore`/`evacuate`/`cleanup` arrived at 83/80, deliberately smaller because
 `ct-prepare.sh` moves no customer data: there is no transfer to tear, no
@@ -136,8 +136,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 450 tp simulator + 16 dispatcher + 125 c2v, 137 ketsync
-    make mutation # 532 known bugs put back. None may survive
+    make test     # both layers: 452 tp simulator + 16 dispatcher + 125 c2v, 137 ketsync
+    make mutation # 535 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -489,6 +489,15 @@ and a dry run may mount only `ro`.
          ct-failback.sh (B8) and ct-distribute.sh (D8) - it is ONE lock and
          three engines disagreeing about it would be worse than none.
          docs/decisions.md section 2
+    `.zfs` IS NOT A CONTAINER PATH, and every engine that rsyncs a copy's ZFS
+    dataset now says so: `ctrep-exclude.conf` carries it for replica and
+    failback, and distribute, recall and migrate carry `--exclude=/.zfs` as a
+    literal flag - structural rather than site policy, and a disaster-path
+    engine must not gain a new file it can refuse to start without. Reading a
+    dataset whose snapdir is visible drags every retained day along (distribute
+    has no -x, and that one SUCCEEDS, slowly, on the worst morning); writing
+    into one makes --delete spend the round failing to unlink a read-only tree.
+
     R15  a copy PVE itself has locked is left alone. vzdump writes
          `lock: backup` into the copy's config for the whole of a PBS backup,
          and that backup reads the rootfs this engine writes into. What breaks
