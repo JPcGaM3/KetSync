@@ -136,8 +136,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 419 tp simulator + 16 dispatcher + 125 c2v, 135 ketsync
-    make mutation # 498 known bugs put back. None may survive
+    make test     # both layers: 447 tp simulator + 16 dispatcher + 125 c2v, 135 ketsync
+    make mutation # 525 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -167,6 +167,11 @@ catches none of it, which is why `make lint` passes there and proves nothing.
                          ctrep.conf and ctmig.conf (the engines' knobs - moved
                          here from engines/, and an engine finding a copy at
                          the old home REFUSES rather than ranking them),
+                         ctrep-exclude.conf (what replication does NOT copy,
+                         read by ct-replica AND ct-failback - both run --delete
+                         between the same two rootfs, so a pattern that applied
+                         one way only would delete from production what was
+                         never copied. A missing one refuses the run),
                          nodes.tsv (ip -> role, no name column on purpose),
                          fleet.tsv (ct, home, dr, storage - all required, no
                          fallback), nodes.map (GENERATED, never hand-edited)
@@ -438,7 +443,7 @@ and a dry run may mount only `ro`.
         node, BEFORE the transfer; and a net line with no bridge= refuses
         the row instead of being silently dropped
 
-`ct-replica.sh` — R1..R13:
+`ct-replica.sh` — R1..R15:
 
     R1   point-in-time source: snapshot + clone, read the images from the clone
     R2   never rsync into a copy that is RUNNING (DR was promoted)
@@ -484,6 +489,36 @@ and a dry run may mount only `ro`.
          ct-failback.sh (B8) and ct-distribute.sh (D8) - it is ONE lock and
          three engines disagreeing about it would be worse than none.
          docs/decisions.md section 2
+    R15  a copy PVE itself has locked is left alone. vzdump writes
+         `lock: backup` into the copy's config for the whole of a PBS backup,
+         and that backup reads the rootfs this engine writes into. What breaks
+         is not the copy - the next round repairs it - it is the BACKUP, which
+         ends up holding half of one round and half of the next and restores
+         to a filesystem that never existed. Any lock counts, not just backup:
+         every one of them means a tool that is not this one owns the guest.
+         A skip, not a failure - it clears itself when the job ends
+
+Two things ct-replica does that are not guards, and belong here anyway:
+
+    SNAP_KEEP  after a GREEN round the copy is snapshotted on the backup node,
+         once a day, named ketsync-<YYYY-MM-DD>, and SNAP_KEEP of them kept
+         (0 = off, and turning it off destroys nothing already taken). It buys
+         three things off one ssh: a rollback point (rsync --inplace leaves a
+         half-written copy that is neither day), history (replication makes
+         the copy MATCH production, deletions included - the line between a
+         replica and a backup), and browsable days at .zfs/snapshot/, which is
+         why snapdir=visible is set at the same time. A copy that could not be
+         snapshotted is named at the end of the run and the run does not exit
+         0 - the bytes arrived, so it is not a failure, and silence would mean
+         a fleet that quietly stopped keeping history
+    --move-dest  the answer to R8, and the one command in this engine that
+         removes customer data. ORDER IS THE FEATURE: copy (zfs send -R, so
+         the days travel too), verify (mounted, and the same logical bytes),
+         repoint the config and read it back, and only THEN destroy the old
+         dataset. Everything before the last step is free to fail - the old
+         copy is still the one the config boots. One container by --ctid, and
+         it takes no pool name: the pool is the one the row already says, so
+         the command cannot create a disagreement the next round would refuse
 
 `ct-failback.sh` — B1..B6:
 

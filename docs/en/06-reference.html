@@ -159,6 +159,9 @@
     <tr><td class="m">-h / --help</td><td>usage - never asked about, never runs anything (every verb)</td></tr>
     <tr><td class="m">/etc/cron.d/*</td><td>sixth field is the USER; doctor's
         <span class="m">cron.d lines cron itself will not run</span> catches the other shape</td></tr>
+    <tr><td class="m">--move-dest</td><td>with --ctid: move a copy onto the pool its row now
+        names (replica). Copies first, verifies, repoints the config, removes the old last.
+        Takes no pool name — the row is the pool</td></tr>
     <tr><td class="m">-y</td><td>skips the question and nothing else; there is no --force</td></tr>
   </table>
 </section>
@@ -171,11 +174,13 @@
         unmount before resize; grow on ENOSPC; config only after a good sync, never overwritten;
         target id free cluster-wide; the source's net lines land on the island bridge, verified
         uplink-free on the NEW node before any transfer (go-live is a bridge swap)</td></tr>
-    <tr><td class="m">R1-R14</td><td>replica: snapshot+clone source; never into a running copy;
+    <tr><td class="m">R1-R15</td><td>replica: snapshot+clone source; never into a running copy;
         dest mounted; target id free everywhere; config written then read back; ro,noload mounts;
         per-lane and per-copy locks; copy config must match the row; the mock bridge has no uplink;
         a stopped copy off production bridges; a dead source storage is one fact; a live 9xxx
-        freezes that copy (R13); the copy is locked where it lives (R14)</td></tr>
+        freezes that copy (R13); the copy is locked where it lives (R14); a copy PVE has locked
+        — a PBS backup in flight — is skipped, so the backup does not end up half of two
+        rounds (R15)</td></tr>
     <tr><td class="m">B0-B8</td><td>failback: production stopped (unreachable is not stopped);
         B2 lifecycle; image on a real mount and already existing; unmount before resize; grow on
         ENOSPC; --final refuses without its safety snapshot (B7); R14 again (B8)</td></tr>
@@ -205,7 +210,12 @@
         changing provider is an edit plus a re-run)</td></tr>
     <tr><td class="m">conf/ctrep.conf</td><td>BKP_SSH (root@backup-ip — the artery), BW_TOTAL_MB
         (per-machine ceiling, split per lane), OFFSET / DR_OFFSET (300 &rarr; 8300 / 9300),
-        MOCKNET_BRIDGE (vmbr99), SHUTDOWN_GRACE</td></tr>
+        MOCKNET_BRIDGE (vmbr99), SHUTDOWN_GRACE, SNAP_KEEP (daily snapshots kept on each copy;
+        0 = off, and off never deletes what is already there)</td></tr>
+    <tr><td class="m">conf/ctrep-exclude.conf</td><td>what replication does NOT copy, one rsync
+        pattern per line. Read by replica AND failback — both run <span class="m">--delete</span>
+        between the same two rootfs, so a pattern that applied one way only would delete from
+        production what was never copied. Missing = the run is refused, never a built-in list</td></tr>
     <tr><td class="m">conf/ctmig.conf</td><td>the migrate-side twin; its BW ceiling is separate
         (doctor nags until the conf merge lands)</td></tr>
   </table>
@@ -217,6 +227,7 @@
     <tr><td class="m">conf/nodes.tsv</td><td>ip + role, every machine; no name column on purpose</td></tr>
     <tr><td class="m">conf/fleet.tsv</td><td>the DR map: ct, home, dr, dst — all required</td></tr>
     <tr><td class="m">conf/nodes.map</td><td>ip &rarr; PVE node name, GENERATED — never hand-edited</td></tr>
+    <tr><td class="m">conf/ctrep-exclude.conf</td><td>what is NOT copied — one file, read both directions</td></tr>
     <tr><td class="m">inventory/inventory-replica.tsv</td><td>the nightly work list (replica + failback)</td></tr>
     <tr><td class="m">inventory/inventory-migrate.tsv</td><td>the intake work list, used while migrating</td></tr>
     <tr><td class="m">engines/PAUSE · engines/pause/&lt;ctid&gt;</td><td>stop everything (failback windows) · pause one CT</td></tr>

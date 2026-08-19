@@ -118,6 +118,7 @@
     <a href="#mail">mail</a>
     <a href="#read">read</a>
     <a href="#add">add a CT</a>
+    <a href="#days">days &amp; pools</a>
     <a href="#sync">sync</a>
   </div>
 </div>
@@ -196,8 +197,44 @@
 ./ketsync replica --ctid 130</pre></div></details>
 </section>
 
+<section id="days">
+  <div class="eyebrow"><span class="num">5</span><h2>The copy has days, and it can change pool</h2></div>
+  <p>After every green round the copy is snapshotted on the backup node, once a day,
+     and seven of those days are kept (<code class="inl">SNAP_KEEP</code>). That is the line
+     between a replica and a backup: replication makes the copy <b>match</b> production,
+     deletions included, so a file somebody deleted this morning is gone from the copy by
+     the next round — and still sitting in yesterday's snapshot.</p>
+  <p>They are ordinary directories. No <code class="inl">pct</code>, no mounting, nothing to start.</p>
+  <details class="cmd"><summary>on the backup node: list the days, copy a file out</summary><div class="code"><pre><span class="c"># which days exist for CT 130's copy</span>
+ls /replica-hdd/ct/subvol-8130-disk-0/.zfs/snapshot/
+
+<span class="c"># yesterday's version of one file</span>
+cp /replica-hdd/ct/subvol-8130-disk-0/.zfs/snapshot/ketsync-2026-08-18/etc/nginx/nginx.conf /tmp/
+
+<span class="c"># put the WHOLE copy back to a whole day (the copy, never production)</span>
+zfs rollback replica-hdd/ct/subvol-8130-disk-0@ketsync-2026-08-18</pre></div></details>
+  <p>A day where every round failed leaves a gap, and the gap is the record. If a copy could
+     not be snapshotted at all the run says <span class="m">NO SNAPSHOT</span> at the end and
+     does not exit 0 — the bytes arrived, so it is not a failed transfer, but a fleet that
+     quietly stopped keeping history is not something to find out later.</p>
+
+  <p><b>Changing pool.</b> Edit a row's dest and the next round refuses it (guard R8): the
+     dataset the row names and the dataset the config boots are two different places. One
+     command does the move in the order that cannot lose it — copy first (the days travel
+     too), verify, repoint the config, and only then remove the old.</p>
+  <details class="cmd"><summary>edit the row → sync → dry-run → move</summary><div class="code"><pre><span class="c"># inventory/inventory-replica.tsv - change the dest column, bump the generation</span>
+130	replica-ssd
+./ketsync sync
+
+./ketsync replica --ctid 130 --move-dest --dry-run   <span class="c"># read the plan</span>
+./ketsync replica --ctid 130 --move-dest</pre></div></details>
+  <div class="tip"><p>It takes no pool name. The pool is the one the row already says, so the
+     command cannot create a disagreement the next round would refuse again. Interrupting it
+     costs nothing: until the config is repointed, the old copy is still the one that boots.</p></div>
+</section>
+
 <section id="sync">
-  <div class="eyebrow"><span class="num">5</span><h2>sync always, and FORKED</h2></div>
+  <div class="eyebrow"><span class="num">6</span><h2>sync always, and FORKED</h2></div>
   <p>Edit a table on the master, push it yourself — nothing is automatic, and a forgotten
      sync means the backup node holds last month's list with no warning. FORKED means two
      machines hold the same generation with different contents; sync stops and pushes nothing.</p>
@@ -207,7 +244,7 @@ $EDITOR conf/fleet.tsv
 </section>
 
 <section id="rules">
-  <div class="eyebrow"><span class="num">6</span><h2>Three habits of these commands</h2></div>
+  <div class="eyebrow"><span class="num">7</span><h2>Three habits of these commands</h2></div>
   <ul class="clean">
     <li><b>A bare verb refuses</b> (exit 2) and prints its menu — four more characters
         (<code class="inl">--all</code>) is the record that you meant the fleet.</li>

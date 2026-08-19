@@ -1,0 +1,249 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  fake zfs ON THE BACKUP NODE.
+# -----------------------------------------------------------------------------
+#  Separate from replica/bin/zfs, which is the storage node's. They model
+#  different pools on different machines and share nothing but a command name;
+#  one file pretending to be both is how a scenario ends up asserting about the
+#  wrong host.
+#
+#  This one is EXECUTED, not pattern-matched. The fake ssh runs the remote
+#  command through a real bash with this directory first on PATH, so the pipe
+#  in `zfs send | zfs recv`, the `sort | head -n -7` that decides which
+#  snapshots to prune, and `set -o pipefail` all run for real. A fake that
+#  reads the command and decides what it "meant" cannot test any of those, and
+#  they are exactly where a move or a prune goes wrong.
+#
+#  The state it works on lives under $BKP:
+#    zfs.tsv          name <TAB> mounted(yes|no) <TAB> mountpoint
+#    snaps            one <dataset>@<name> per line
+#    snapdata/<snap>/ what that snapshot holds - so a snapshot really is
+#                     history, and a scenario can prove a deleted file is
+#                     still in yesterday's
+#    snapdir          datasets that have had snapdir=visible set on them
+#    fs<mountpoint>/  the live contents
+# =============================================================================
+# shellcheck source=tests/sim/ct-replica/lib.sh
+. "$SIMLIB"
+
+sub="${1:-}"; shift || true
+trace "bkp zfs $sub $*"
+
+SNAPS="$BKP/snaps"; SNAPDATA="$BKP/snapdata"
+[[ -f "$SNAPS" ]] || : > "$SNAPS"           # created on first use, never truncated
+mkdir -p "$SNAPDATA"
+
+# the four accessors this file needs on top of lib.sh's bkp_* helpers
+snap_has(){ grep -qxF "$1" "$SNAPS" 2>/dev/null; }
+snap_add(){ printf '%s\n' "$1" >> "$SNAPS"; }
+snap_del(){ grep -vxF "$1" "$SNAPS" > "$BKP/.s" 2>/dev/null; mv -f "$BKP/.s" "$SNAPS"; }
+snaps_of(){ awk -F'@' -v d="$1" '$1==d{print}' "$SNAPS" 2>/dev/null | sort; }
+ds_dir(){   local m; m="$(bkp_field "$1" 3)"; [[ -n "$m" && "$m" != none ]] && printf '%s\n' "$BKP/fs$m"; }
+# logical bytes = the bytes of the FILES, nothing else. Deterministic across
+# two identical trees in a way `du` is not, which matters because the move
+# compares the two and refuses when they differ.
+logbytes(){ find "$1" -type f -print0 2>/dev/null | xargs -0 cat 2>/dev/null | wc -c; }
+
+case "$sub" in
+
+  # ---- list -----------------------------------------------------------------
+  # Two shapes are used: "does this exist" (exit code only) and "name every
+  # snapshot of this dataset" (the prune's input).
+  list)
+    want_snaps=0; depth=""; names=()
+    while (( $# )); do
+      case "$1" in
+        -t) [[ "${2:-}" == *snapshot* ]] && want_snaps=1; shift 2;;
+        -d) depth="${2:-}"; shift 2;;
+        -o|-s|-S) shift 2;;
+        -H|-r|-p) shift;;
+        -*) shift;;
+        *)  names+=("$1"); shift;;
+      esac
+    done
+    n="${names[0]:-}"
+    if (( want_snaps )) && [[ -n "$depth" ]]; then
+      snaps_of "$n"; exit 0                 # empty output, exit 0: no snapshots yet
+    fi
+    if [[ "$n" == *@* ]]; then
+      snap_has "$n" || { echo "cannot open '$n': dataset does not exist" >&2; exit 1; }
+      printf '%s\n' "$n"; exit 0
+    fi
+    [[ -n "$(bkp_field "$n" 2)" ]] || { echo "cannot open '$n': dataset does not exist" >&2; exit 1; }
+    printf '%s\n' "$n"; exit 0;;
+
+  # ---- create ---------------------------------------------------------------
+  create)
+    ds=""; while (( $# )); do case "$1" in -o) shift 2;; -*) shift;; *) ds="$1"; shift;; esac; done
+    [[ -n "$(bkp_field "$ds" 2)" ]] && { echo "cannot create '$ds': dataset already exists" >&2; exit 1; }
+    [[ -f "$BKP/zfscreate.fail" ]] && { echo "cannot create '$ds': fake failure" >&2; exit 1; }
+    dry_forbids "zfs create $ds on the backup node"
+    bkp_add "$ds" yes "/$ds"; mkdir -p "$BKP/fs/$ds"
+    trace "bkp zfs create $ds"
+    exit 0;;
+
+  # ---- snapshot -------------------------------------------------------------
+  # A snapshot is a COPY of what the dataset holds right now, kept aside. That
+  # is the whole claim the daily snapshot makes - that a file replication has
+  # since deleted is still readable in it - so the fake had better keep the
+  # bytes rather than a note saying it did.
+  snapshot)
+    name="${1:-}"; ds="${name%@*}"
+    [[ -n "$(bkp_field "$ds" 2)" ]] || { echo "cannot open '$ds': dataset does not exist" >&2; exit 1; }
+    snap_has "$name" && { echo "cannot create snapshot '$name': dataset already exists" >&2; exit 1; }
+    [[ -f "$BKP/snapshot.fail" ]] && { echo "cannot create snapshot '$name': out of space" >&2; exit 1; }
+    dry_forbids "zfs snapshot $name on the backup node"
+    d="$(ds_dir "$ds")"
+    mkdir -p "$SNAPDATA/$name"
+    [[ -n "$d" && -d "$d" ]] && cp -a "$d/." "$SNAPDATA/$name/" 2>/dev/null
+    snap_add "$name"
+    exit 0;;
+
+  # ---- set ------------------------------------------------------------------
+  set)
+    kv="${1:-}"; ds="${2:-}"
+    [[ -n "$(bkp_field "$ds" 2)" ]] || { echo "cannot open '$ds': dataset does not exist" >&2; exit 1; }
+    [[ -f "$BKP/zfsset.fail" ]] && { echo "cannot set $kv on '$ds': fake failure" >&2; exit 1; }
+    dry_forbids "zfs set $kv $ds on the backup node"
+    printf '%s\t%s\n' "$ds" "$kv" >> "$BKP/props"
+    exit 0;;
+
+  # ---- get ------------------------------------------------------------------
+  # One line per property, in the order asked - which is what the engine's
+  # `| paste -sd' '` turns back into a row.
+  get)
+    props=""; name=""
+    while (( $# )); do
+      case "$1" in
+        -H|-p) shift;;
+        -o) shift 2;;
+        -*) shift;;
+        *) if [[ -z "$props" ]]; then props="$1"; else name="$1"; fi; shift;;
+      esac
+    done
+    if [[ "$name" == *@* ]]; then
+      snap_has "$name" || exit 1
+    else
+      [[ -n "$(bkp_field "$name" 2)" ]] || exit 1
+    fi
+    IFS=',' read -r -a plist <<< "$props"
+    for p in "${plist[@]}"; do
+      case "$p" in
+        mounted)     printf '%s\n' "$(bkp_field "$name" 2)";;
+        mountpoint)  printf '%s\n' "$(bkp_field "$name" 3)";;
+        logicalreferenced)
+          if [[ "$name" == *@* ]]; then printf '%s\n' "$(logbytes "$SNAPDATA/$name")"
+          else                          printf '%s\n' "$(logbytes "$(ds_dir "$name")")"; fi;;
+        *) echo "-";;
+      esac
+    done
+    exit 0;;
+
+  # ---- destroy --------------------------------------------------------------
+  destroy)
+    rec=0; [[ "${1:-}" == "-r" ]] && { rec=1; shift; }
+    name="${1:-}"
+    if [[ "$name" == *@* ]]; then
+      snap_has "$name" || { echo "cannot open '$name': dataset does not exist" >&2; exit 1; }
+      # Only snapshots this tool made. A snapshot an operator took by hand, or
+      # one PBS left behind, being swept up by the prune is the failure this
+      # whole naming scheme exists to prevent.
+      case "${name#*@}" in
+        ketsync-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]|ketsync-move-*) ;;
+        *) violation "the backup node was told to destroy snapshot $name, which ketsync did not create";;
+      esac
+      dry_forbids "zfs destroy $name on the backup node"
+      snap_del "$name"; rm -rf "${SNAPDATA:?}/$name"
+      exit 0
+    fi
+    [[ -n "$(bkp_field "$name" 2)" ]] || { echo "cannot open '$name': dataset does not exist" >&2; exit 1; }
+    # THE ORDER OF A MOVE, judged where both halves of it are visible. A copy's
+    # dataset may only be destroyed once no config boots from it any more. The
+    # reverse order is the same commands and a customer's DR copy gone.
+    base="${name##*/}"
+    if [[ "$base" =~ ^subvol-([0-9]+)-disk-0$ ]]; then
+      vmid="${BASH_REMATCH[1]}"
+      for f in "$BKP/fs"/etc/pve/nodes/*/lxc/"$vmid".conf; do
+        [[ -e "$f" ]] || continue
+        sid="$(sed -n 's/^rootfs:[[:space:]]*\([^:]*\):.*/\1/p' "$f" | head -1)"
+        parent="$(sed -n 2p "$BKP/storage/$sid" 2>/dev/null)"
+        [[ -n "$parent" && "$parent/$base" == "$name" ]] \
+          && violation "zfs destroy $name while ${f#"$BKP/fs"/etc/pve/nodes/} still boots from it"
+      done
+    fi
+    if (( ! rec )) && [[ -n "$(snaps_of "$name")" ]]; then
+      echo "cannot destroy '$name': filesystem has children" >&2; exit 1
+    fi
+    [[ -f "$BKP/zfsdestroy.fail" ]] && { echo "cannot destroy '$name': dataset is busy" >&2; exit 1; }
+    dry_forbids "zfs destroy $name on the backup node"
+    while IFS= read -r s; do [[ -n "$s" ]] && { snap_del "$s"; rm -rf "${SNAPDATA:?}/$s"; }; done < <(snaps_of "$name")
+    d="$(ds_dir "$name")"; [[ -n "$d" ]] && rm -rf "$d"
+    awk -F'\t' -v n="$name" '$1!=n' "$BKP/zfs.tsv" > "$BKP/.z" 2>/dev/null
+    mv -f "$BKP/.z" "$BKP/zfs.tsv"
+    exit 0;;
+
+  # ---- send / recv ----------------------------------------------------------
+  # A real byte stream through a real pipe: a tar of the snapshot's contents
+  # plus the list of snapshots -R is supposed to carry along with it. The
+  # engine pipes send into recv, so the two halves must be able to fail
+  # independently - that is what `set -o pipefail` is there to catch, and a
+  # send that fails while recv succeeds is the case that proves it.
+  send)
+    repl=0; snap=""
+    while (( $# )); do case "$1" in -R) repl=1; shift;; -*) shift;; *) snap="$1"; shift;; esac; done
+    snap_has "$snap" || { echo "cannot open '$snap': dataset does not exist" >&2; exit 1; }
+    st="$(mktemp -d "$BKP/.send.XXXXXX")"
+    mkdir -p "$st/data" "$st/snapdata"; : > "$st/snaps"
+    cp -a "$SNAPDATA/$snap/." "$st/data/" 2>/dev/null
+    # -R is a REPLICATION stream: every snapshot of the dataset travels, each
+    # with its own contents. Without it only the one being sent goes, and the
+    # copy arrives on the new pool with no history at all - which looks
+    # identical to a successful move until somebody needs last Tuesday.
+    if (( repl )); then names="$(snaps_of "${snap%@*}")"; else names="$snap"; fi
+    while IFS= read -r sn; do
+      [[ -z "$sn" ]] && continue
+      short="${sn#*@}"
+      mkdir -p "$st/snapdata/$short"
+      cp -a "$SNAPDATA/$sn/." "$st/snapdata/$short/" 2>/dev/null
+      printf '%s\n' "$short" >> "$st/snaps"
+    done <<< "$names"
+    tar -cf - -C "$st" . 2>/dev/null
+    rm -rf "$st"
+    # Fails AFTER writing the stream, which is the shape that matters: the
+    # receiving end succeeds and only the exit code says anything went wrong.
+    [[ -f "$BKP/send.fail" ]] && { echo "warning: cannot send '$snap': signal received" >&2; exit 1; }
+    exit 0;;
+
+  receive|recv)
+    ds=""; while (( $# )); do case "$1" in -*) shift;; *) ds="$1"; shift;; esac; done
+    [[ -n "$(bkp_field "$ds" 2)" ]] && { cat >/dev/null; echo "cannot receive new filesystem stream: destination '$ds' exists" >&2; exit 1; }
+    parent="${ds%/*}"
+    [[ -n "$(bkp_field "$parent" 2)" ]] || { cat >/dev/null
+      echo "cannot receive new filesystem stream: parent '$parent' does not exist" >&2; exit 1; }
+    dry_forbids "zfs recv $ds on the backup node"
+    rt="$(mktemp -d "$BKP/.recv.XXXXXX")"
+    tar -xf - -C "$rt" 2>/dev/null
+    # A dataset can arrive whole and still not be mounted - an inherited
+    # canmount, a mountpoint already occupied. From rsync's point of view that
+    # is a directory on the node's ROOT filesystem, which is what R3 exists for.
+    if [[ -f "$BKP/recv.unmounted" ]]; then bkp_add "$ds" no "/$ds"
+    else                                    bkp_add "$ds" yes "/$ds"; fi
+    mkdir -p "$BKP/fs/$ds"
+    cp -a "$rt/data/." "$BKP/fs/$ds/" 2>/dev/null
+    # A receive that lands short. Not corruption - ZFS checksums rule that out -
+    # but the shape a truncated one would leave, so the move's own verification
+    # has something real to catch.
+    if [[ -f "$BKP/recv.short" ]]; then
+      find "$BKP/fs/$ds" -type f | sort | tail -1 | while read -r f; do rm -f "$f"; done
+    fi
+    while IFS= read -r sn; do
+      [[ -z "$sn" ]] && continue
+      snap_add "$ds@$sn"; mkdir -p "$SNAPDATA/$ds@$sn"
+      cp -a "$rt/snapdata/$sn/." "$SNAPDATA/$ds@$sn/" 2>/dev/null
+    done < "$rt/snaps"
+    rm -rf "$rt"
+    [[ -f "$BKP/recv.fail" ]] && { echo "cannot receive: fake failure" >&2; exit 1; }
+    exit 0;;
+esac
+echo "unsupported on the backup node: zfs $sub $*" >&2
+exit 1

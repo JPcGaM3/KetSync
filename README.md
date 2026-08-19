@@ -93,12 +93,16 @@ cannot fix it for you.
 
 ```bash
 cd /root/ketsync
-cp ketsync.conf.sample  ketsync.conf     # KS_ROLE=master, KS_MASTER_IP=<this ip>
-cp nodes.tsv.sample     nodes.tsv
-cp fleet.tsv.sample     fleet.tsv
-cd engines/tp
-cp inventory-replica.sample.tsv  inventory-replica.tsv
+cp conf/ketsync.conf.sample conf/ketsync.conf   # KS_ROLE=master, KS_MASTER_IP=<this ip>
+cp conf/nodes.tsv.sample    conf/nodes.tsv
+cp conf/fleet.tsv.sample    conf/fleet.tsv
+cp inventory/inventory-replica.sample.tsv inventory/inventory-replica.tsv
 ```
+
+`conf/ctrep.conf` and `conf/ctrep-exclude.conf` are already there and already
+right; they are tracked files, not samples. The first holds the engines' knobs,
+the second holds the paths replication does not copy. Neither needs touching to
+get started.
 
 Fill in `nodes.tsv` before anything else — every address this system will ever
 use comes from that one file, and a machine with no row in it is a hard stop
@@ -134,9 +138,9 @@ go through it.
 
 ```bash
 cd /root/ketsync
-cp ketsync.conf.sample  ketsync.conf     # KS_ROLE=slave, KS_MASTER_IP=<the storage node>
-$EDITOR conf/ctrep.conf            # BW_TOTAL_MB for THIS machine's link
-./ketsync doctor                          # builds nodes.map here
+cp conf/ketsync.conf.sample conf/ketsync.conf   # KS_ROLE=slave, KS_MASTER_IP=<the storage node>
+$EDITOR conf/ctrep.conf                        # BW_TOTAL_MB for THIS machine's link
+./ketsync doctor                               # builds nodes.map here
 ```
 
 Do not copy the tables here. `ketsync sync` sends them. Do not copy
@@ -206,7 +210,27 @@ copy every container to the backup node    ./ketsync replica --storage <id>
 see how the last run of each one went      ./ketsync status
 check everything is still wired up         ./ketsync doctor
 edited a table, send it to everyone        ./ketsync sync
+move one copy to the other pool            ./ketsync replica --ctid <id> --move-dest
 ```
+
+**The copy keeps days.** After every green round it is snapshotted on the backup
+node, once a day, named `ketsync-<YYYY-MM-DD>`, and `SNAP_KEEP` of them are kept
+(7 by default; 0 turns it off and deletes nothing already taken). Replication
+makes the copy *match* production, deletions included — the snapshots are what
+make it a backup rather than a mirror, and they are ordinary directories:
+
+```bash
+ls  /replica-hdd/ct/subvol-8110-disk-0/.zfs/snapshot/
+cp  /replica-hdd/ct/subvol-8110-disk-0/.zfs/snapshot/ketsync-2026-08-18/etc/nginx/nginx.conf /tmp/
+zfs rollback replica-hdd/ct/subvol-8110-disk-0@ketsync-2026-08-18
+```
+
+**Changing a copy's pool** is one command rather than a documented dance. Edit
+the row's dest column, `sync`, then `--move-dest`: it copies (the days travel
+too), verifies, repoints the config and reads it back, and removes the old
+dataset last. Interrupting it costs nothing — until the config is repointed the
+old copy is still the one that boots. It takes no pool name, because the pool is
+whatever the row now says.
 
 **`sync` is not automatic.** Edit a table on the master and push it yourself,
 or the backup node holds last month's list and nothing says so.

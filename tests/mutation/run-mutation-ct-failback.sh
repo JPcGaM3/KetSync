@@ -492,6 +492,19 @@ mutant "the pointer to the one-command return is tidied away" \
   's{\Q  log "  or all of it, state-driven and re-runnable:  ketsync recover --all"\E\n}{}' \
   21
 
+# ---------- the exclude list, which is shared with replication ----------------
+# This engine runs rsync --delete in the OTHER direction. A pattern that only
+# ct-replica.sh honoured is a path the copy never had, and this engine then
+# deletes it from PRODUCTION. That is why there is one file and why a missing
+# one refuses rather than falling back to anything.
+mutant "a missing exclude list is carried past, on the return path" \
+  's{\Q  echo "ERROR: the exclude list is missing: \E\$\QEXCL" >&2\E}{  : "\$EXCL"}' \
+  72
+
+mutant "the site's list is ignored here, so the return deletes what it never copied" \
+  's!\Q    "--exclude-from=\E\$\QEXCL"\E!    \x27--exclude=/tmp/*\x27!' \
+  71
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

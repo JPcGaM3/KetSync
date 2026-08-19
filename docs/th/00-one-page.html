@@ -194,6 +194,16 @@
 ./ketsync status</pre></div></details>
       <p>ต้องจบด้วย <span class="m">failed=0</span> — หลังจากนี้ cron ดูแลต่อเอง</p></li>
   </ol>
+  <p><b>สองอย่างที่สำเนาให้กลับมา</b> ทุกรอบที่เขียวจะทิ้ง snapshot ลงวันที่ไว้บนเครื่อง backup เก็บ 7 วัน
+     ไฟล์ที่ถูกลบไปเมื่อเช้าจึงยังอยู่ในของเมื่อวาน — ลำพัง replica ไม่ใช่ backup ตรงนี้แหละที่ทำให้มันเป็น
+     และสำเนาย้าย pool ได้ด้วยคำสั่งเดียว ไม่ต้องไล่ทำมือทีละขั้นอีกแล้ว</p>
+  <details class="cmd"><summary>ดึงไฟล์เมื่อวานกลับมา · ย้ายสำเนาไปอีก pool</summary><div class="code"><pre><span class="c"># on the backup node: which days exist, then take a file out of one</span>
+ls /replica-hdd/ct/subvol-8130-disk-0/.zfs/snapshot/
+cp /replica-hdd/ct/subvol-8130-disk-0/.zfs/snapshot/ketsync-2026-08-18/etc/nginx/nginx.conf /tmp/
+
+<span class="c"># change the row's dest column first, sync, then move it (dry-run reads the plan)</span>
+./ketsync replica --ctid 130 --move-dest --dry-run
+./ketsync replica --ctid 130 --move-dest</pre></div></details>
 </section>
 
 <section id="r2">
@@ -265,6 +275,7 @@ ssh root@10.100.1.32 pct shutdown 9110
     <tr><td class="m">conf/nodes.tsv</td><td>มีเครื่องใหม่เข้าฟลีต</td><td>ip, role</td></tr>
     <tr><td class="m">inventory/inventory-migrate.tsv</td><td>ช่วงย้ายของเข้ามาเท่านั้น</td><td>old_node, old_ctid, new_ctid, new_node, storage</td></tr>
     <tr><td class="m">conf/ketsync.conf</td><td>ตัวตนเครื่องนี้ + เมล</td><td>ต่อเครื่อง ไม่ sync</td></tr>
+    <tr><td class="m">conf/ctrep-exclude.conf</td><td>อะไรที่ไม่ก๊อป ใช้ทั้งสองทิศ</td><td>บรรทัดละ pattern</td></tr>
   </table>
   <div class="tip"><p>แก้เสร็จพิมพ์ <code class="inl">./ketsync doctor</code> ทุกครั้ง มันจะบอกเองว่าแถวไหนไม่ครบ</p></div>
 </section>
@@ -290,6 +301,9 @@ ssh root@10.100.1.32 pct shutdown 9110
     <tr><td><span class="m">no row in fleet.tsv</span></td><td>เติมแถวนั้นแล้ว <span class="m">./ketsync sync</span></td></tr>
     <tr><td>สั่งอะไรก็ขึ้น <span class="m">refused</span></td><td>อ่านบรรทัดถัดไป มันบอกเสมอว่าขาดอะไรและต้องพิมพ์อะไร</td></tr>
     <tr><td>replica ไม่เดินหลังภัยพิบัติ</td><td>ยังมีไฟล์ <span class="m">engines/PAUSE</span> ค้าง — จบงานให้ครบด้วย <span class="m">recover --all --destroy</span></td></tr>
+    <tr><td>CT ตัวหนึ่งขึ้น <span class="m">GUARD R15</span> ทุกรอบ</td><td>PBS กำลัง backup สำเนาตัวนั้นอยู่ ไม่ต้องทำอะไร หายเองเมื่องานจบ</td></tr>
+    <tr><td>แก้ pool ในใบงานแล้วขึ้น <span class="m">GUARD R8</span></td><td><span class="m">./ketsync replica --ctid &lt;id&gt; --move-dest</span> — ก๊อป ตรวจ แล้วค่อยลบของเก่า</td></tr>
+    <tr><td>ท้ายรอบขึ้น <span class="m">NO SNAPSHOT</span></td><td>สำเนาไม่เป็นไร ที่ขาดคือจุดย้อนกลับของวันนั้น — ไปดูเนื้อที่ว่างของ pool นั้น</td></tr>
     <tr><td>ไม่แน่ใจว่าตอนนี้ระบบเป็นยังไง</td><td><span class="m">./ketsync doctor</span> แล้วอ่านจากบนลงล่าง</td></tr>
   </table>
 </section>

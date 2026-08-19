@@ -37,6 +37,20 @@ if [[ -f "$BKP/.down" ]]; then
 fi
 
 case "$c" in
+  # ---- anything whose program is zfs: RUN it, do not read it ---------------
+  # The remote command goes through a real bash with the backup node's own fake
+  # zfs first on PATH. That is deliberate: `zfs send | zfs recv` is a pipe whose
+  # two halves fail independently, and the snapshot prune is
+  # `list | grep | sort | head -n -N | while destroy`. A fake that matched the
+  # text and decided what it meant would be testing its own reading of those,
+  # not them. The exported shell functions the harness uses to reach the
+  # STORAGE node's fakes have to go first, or `zfs` in here resolves to the
+  # wrong machine's pool.
+  *"zfs "*)
+    unset -f zfs mount umount mountpoint findmnt losetup truncate resize2fs e2fsck pvesm rsync df hostname ssh
+    PATH="$SIMBIN/bkp:$PATH" bash -c "$c"
+    exit $?;;
+
   # ---- who is this machine, really (the preflight before anything runs) ----
   *"readlink /etc/pve/local"*)
     n="$(cat "$BKP/node" 2>/dev/null)"
@@ -74,7 +88,7 @@ case "$c" in
   # ---- is the destination storage id there at all ----
   "pvesm status "*)
     sid="${c##*--storage }"; sid="${sid%% *}"
-    s="$(cat "$BKP/storage/$sid" 2>/dev/null)" \
+    s="$(sed -n 1p "$BKP/storage/$sid" 2>/dev/null)" \
       || { echo "storage '$sid' does not exist" >&2; exit 255; }
     echo "Name             Type     Status           Total            Used       Available        %"
     echo "$sid          zfspool   $s      10737418240      1073741824      9663676416    10.00%"
@@ -92,28 +106,6 @@ case "$c" in
       id="${f##*/}"; id="${id%.status}"
       printf '%10s %-10s %-20s\n' "$id" "$(cat "$f")" "copy-$id"
     done
-    exit 0;;
-
-  # ---- R3: the destination dataset, created on first use ----
-  "zfs list "*"zfs create "*)
-    ds="${c##* }"
-    [[ -n "$(bkp_field "$ds" 2)" ]] && exit 0
-    [[ -f "$BKP/zfscreate.fail" ]] && { echo "cannot create '$ds': fake failure" >&2; exit 1; }
-    dry_forbids "zfs create $ds on the backup node"
-    bkp_add "$ds" yes "/$ds"; mkdir -p "$BKP/fs/$ds"
-    trace "bkp zfs create $ds"
-    exit 0;;
-  # ---- R3, dry: the read half of the same guard. A dry run asks whether the
-  # dataset exists and stops there; the create below is the write it skips. ----
-  "zfs list "*)
-    ds="${c#zfs list }"; ds="${ds%% *}"
-    [[ -n "$(bkp_field "$ds" 2)" ]] && exit 0
-    echo "cannot open '$ds': dataset does not exist" >&2; exit 1;;
-  "zfs get "*mounted,mountpoint*)
-    t="${c#*mounted,mountpoint }"; ds="${t%% *}"
-    m="$(bkp_field "$ds" 2)"
-    [[ -z "$m" ]] && exit 1                       # no such dataset: no output at all
-    printf '%s %s\n' "$m" "$(bkp_field "$ds" 3)"  # what `| paste -sd' '` makes of it
     exit 0;;
 
   # ---- reading /etc/pve ----

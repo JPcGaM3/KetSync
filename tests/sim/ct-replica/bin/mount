@@ -46,4 +46,13 @@ add_mount "$mnt"; add_loop "$img" "$mnt"
 # landed on the backup came out of the clone and not out of the live dataset.
 printf '%s\n' "$img" > "$mnt/.image"
 cat "$img" > "$mnt/rootfs.txt" 2>/dev/null
+# Every real container carries boot-time junk, and the shipped exclude list
+# exists to leave it behind. Put some in every mounted image so that "the
+# excludes were applied" is something a scenario can prove by looking at what
+# landed on the backup, rather than by trusting the flag list.
+mkdir -p "$mnt/tmp" "$mnt/run" "$mnt/var/tmp/systemd-private-abc123" "$mnt/var/log"
+echo scratch  > "$mnt/tmp/junk.txt"
+echo pidfile  > "$mnt/run/nginx.pid"
+echo private  > "$mnt/var/tmp/systemd-private-abc123/x"
+echo realdata > "$mnt/var/log/syslog"
 exit 0

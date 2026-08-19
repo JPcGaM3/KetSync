@@ -118,6 +118,7 @@
     <a href="#mail">เมล 3 แบบ</a>
     <a href="#read">อ่านสถานะ</a>
     <a href="#add">เพิ่ม CT</a>
+    <a href="#days">ย้อนหลัง / ย้าย pool</a>
     <a href="#sync">sync + FORKED</a>
   </div>
 </div>
@@ -217,8 +218,42 @@
   </ol>
 </section>
 
+<section id="days">
+  <div class="eyebrow"><span class="num">5</span><h2>สำเนามีย้อนหลังรายวัน และย้าย pool ได้</h2></div>
+  <p>ทุกรอบที่เขียว สำเนาบนเครื่อง backup จะถูก snapshot วันละครั้ง เก็บไว้ 7 วัน
+     (แก้ที่ <code class="inl">SNAP_KEEP</code>) นี่คือเส้นแบ่งระหว่าง <b>สำเนา</b> กับ <b>backup</b>:
+     replica ทำให้สำเนา <b>เหมือน</b> ตัวจริง ลบอะไรก็ลบตาม ไฟล์ที่ใครลบไปเมื่อเช้า
+     รอบถัดไปก็หายจากสำเนาด้วย — แต่ยังอยู่ใน snapshot ของเมื่อวาน</p>
+  <p>เปิดดูได้ตรงๆ เป็นโฟลเดอร์ธรรมดา ไม่ต้อง <code class="inl">pct</code> ไม่ต้อง mount ไม่ต้องเปิดเครื่องอะไรทั้งนั้น</p>
+  <details class="cmd"><summary>บนเครื่อง backup: ดูว่ามีวันไหนบ้าง แล้วดึงไฟล์ออกมา</summary><div class="code"><pre><span class="c"># which days exist for CT 130's copy</span>
+ls /replica-hdd/ct/subvol-8130-disk-0/.zfs/snapshot/
+
+<span class="c"># yesterday's version of one file</span>
+cp /replica-hdd/ct/subvol-8130-disk-0/.zfs/snapshot/ketsync-2026-08-18/etc/nginx/nginx.conf /tmp/
+
+<span class="c"># put the WHOLE copy back to a whole day (the copy, never production)</span>
+zfs rollback replica-hdd/ct/subvol-8130-disk-0@ketsync-2026-08-18</pre></div></details>
+  <p>วันไหนที่ทุกรอบพัง วันนั้นจะไม่มี snapshot — ช่องว่างนั่นแหละคือบันทึก
+     ถ้า snapshot ทำไม่ได้เลย ท้าย log จะขึ้น <span class="m">NO SNAPSHOT</span> และรอบนั้นไม่เขียว
+     ข้อมูลถึงปลายทางแล้วจึงไม่นับว่าก๊อปพัง แต่ระบบที่หยุดเก็บย้อนหลังเงียบๆ คือสิ่งที่ไม่ควรมารู้ทีหลัง</p>
+
+  <p><b>ย้าย pool</b> — พอแก้คอลัมน์ dest ในใบงาน รอบถัดไปจะปฏิเสธ CT ตัวนั้น (guard R8)
+     เพราะ dataset ที่ใบงานบอก กับ dataset ที่ config บูต เป็นคนละที่กัน
+     มีคำสั่งเดียวที่ทำให้ตรงกัน และทำตาม<b>ลำดับที่ทำข้อมูลหายไม่ได้</b>: ก๊อปก่อน (พา snapshot ไปด้วย) →
+     ตรวจ → แก้ config ให้ชี้ที่ใหม่ → ค่อยลบของเก่าเป็นขั้นสุดท้าย</p>
+  <details class="cmd"><summary>แก้ใบงาน → sync → ซ้อม → ย้ายจริง</summary><div class="code"><pre><span class="c"># inventory/inventory-replica.tsv - change the dest column, bump the generation</span>
+130	replica-ssd
+./ketsync sync
+
+./ketsync replica --ctid 130 --move-dest --dry-run   <span class="c"># read the plan</span>
+./ketsync replica --ctid 130 --move-dest</pre></div></details>
+  <div class="tip"><p>ไม่ต้องพิมพ์ชื่อ pool ตามหลัง เพราะ pool คือค่าที่ใบงานบอกอยู่แล้ว
+     คำสั่งจึงสร้างความไม่ตรงกันรอบใหม่ไม่ได้ และหยุดกลางคันได้ฟรี —
+     ตราบใดที่ config ยังไม่ถูกแก้ ของเก่าก็ยังเป็นตัวที่บูตอยู่</p></div>
+</section>
+
 <section id="sync">
-  <div class="eyebrow"><span class="num">5</span><h2>แก้ตารางแล้ว sync เสมอ — และคำว่า FORKED</h2></div>
+  <div class="eyebrow"><span class="num">6</span><h2>แก้ตารางแล้ว sync เสมอ — และคำว่า FORKED</h2></div>
   <p>แก้ตารางที่ master แล้วต้องพิมพ์ <code class="inl">./ketsync sync</code> เอง
      ถ้าลืม เครื่อง backup ถือรายการของเดือนที่แล้วโดยไม่มีอะไรบอก
      ที่ส่งคือตาราง 4 ไฟล์ ส่วน <code class="inl">.conf</code> กับ <code class="inl">nodes.map</code>
@@ -238,7 +273,7 @@ $EDITOR conf/fleet.tsv
 </section>
 
 <section id="rules">
-  <div class="eyebrow"><span class="num">6</span><h2>สามนิสัยของคำสั่งชุดนี้</h2></div>
+  <div class="eyebrow"><span class="num">7</span><h2>สามนิสัยของคำสั่งชุดนี้</h2></div>
   <ul class="clean">
     <li><b>คำสั่งเปล่าปฏิเสธ</b> — <code class="inl">./ketsync replica</code> เฉยๆ ไม่ทำอะไร
         มันพิมพ์เมนูแล้วออกรหัส 2 ต้องบอกขอบเขตเอง (<code class="inl">--all</code> /

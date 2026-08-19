@@ -519,6 +519,124 @@ mutant "a work list left at the OLD home is silently outranked instead of refuse
   's{\Q  if [[ -e "\E\$\QINV" ]]; then\E\n\Q    echo "ERROR: \E\$\QINV is the OLD home - the work lists moved to inventory/." >&2\E}{  if false; then\n    echo "ERROR: \$INV is the OLD home - the work lists moved to inventory/." >&2}' \
   79
 
+# ---------- the per-site exclude list -----------------------------------------
+# Three patterns that used to be typed into the rsync argument list. The thing
+# that can now go wrong is new: a file, which can be absent, ignored, or looked
+# for in the wrong place - and any of those changes what is IN the copy without
+# changing anything about the run that made it.
+mutant "a missing exclude list is carried past, and every copy fills with /tmp" \
+  's{\Q  echo "ERROR: the exclude list is missing: \E\$\QEXCL" >&2\E}{  : "\$EXCL"}' \
+  82
+
+mutant "the list is read and then not handed to rsync" \
+  's!\Q      "--exclude-from=\E\$\QEXCL"\E!      \x27--exclude=/tmp/*\x27!' \
+  80 81
+
+mutant "in a repo tree the list is looked for at the old flat home" \
+  's{\Q  EXCL="\E\$\Q_ksroot/conf/ctrep-exclude.conf"\E}{  :}' \
+  79
+
+# ---------- R15: the copy PVE itself is holding -------------------------------
+# vzdump writes `lock: backup` into the copy's config for the whole of a PBS
+# backup, and that backup reads the rootfs this engine writes into. What breaks
+# is the BACKUP, not the copy - so nothing looks wrong until a restore.
+mutant "a copy PBS is backing up is written into anyway" \
+  's{\Q    if [[ -n "\E\$_plock\Q" ]]; then\E}{    if false; then}' \
+  84 86
+
+mutant "only 'backup' counts, so a rollback in progress is overwritten" \
+  's{\Q    if [[ -n "\E\$_plock\Q" ]]; then\E}{    if [[ "\$_plock" == backup ]]; then}' \
+  85
+
+mutant "the skip is recorded as a good round, so the copy reads as fresh" \
+  's{\Q      st_skip r15_pve_lock; continue\E}{      st_ok; continue}' \
+  84
+
+# ---------- the daily snapshot of the copy ------------------------------------
+# The snapshot is the only thing between a replica and a backup: replication
+# makes the copy MATCH production, deletions included. Every mutation here is a
+# way the snapshots stop being taken, or stop being the days they claim to be,
+# while every log line still says the copy is healthy.
+mutant "a round that failed is snapshotted too, so the rollback point is a torn copy" \
+  's{\Q    log "[\E\$CT\Q] GUARD R5: sync FAILED (rc=\E\$rc\Q) - copy config NOT created"\E}{    snap_after_green "\$TDS" "ketsync-\$(date +%F)"\n    log "[\$CT] GUARD R5: sync FAILED (rc=\$rc) - copy config NOT created"}' \
+  89
+
+mutant "SNAP_KEEP=0 takes one anyway, and prunes every day that was there" \
+  's{\Q  if (( SNAP_KEEP > 0 )); then\E\n\Q    ST_SNAP="ketsync-\E\$\Q(date +%F)"\E}{  if true; then\n    ST_SNAP="ketsync-\$(date +%F)"}' \
+  92
+
+mutant "the prune keeps the oldest days and destroys the newest" \
+  's!\Q      | sort | head -n -\E\$\QSNAP_KEEP \E\\!      | sort -r | head -n -\$SNAP_KEEP \\!' \
+  90
+
+mutant "the prune sweeps up snapshots ketsync never made" \
+  's{\Qketsync-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\E}{.*}' \
+  91
+
+mutant "a second round the same day takes a second snapshot, and the day fails" \
+  's!\Q    if zfs list -H -o name -t snapshot \E\x27\Q\E\$\Qds@\E\$\Qsn\E\x27\Q >/dev/null 2>&1; then\E!    if false; then!' \
+  88
+
+mutant "a snapshot that could not be taken is forgotten by the round" \
+  's{\Q            log "[\E\$CT\Q] WARN:   point and today\E\x27\Qs line of history. Check space and the pool."\E\n\Q            return 1;;\E}{            return 0;;}' \
+  93
+
+mutant "the run exits 0 while copies have no rollback point at all" \
+  's{\Qif (( \E\$\Q{#SNAP_FAILED_IDS[\E\@\Q]} )); then\E\n\Q  [[ -n "\E\$HEALTH_URL}{if false; then\n  [[ -n "\$HEALTH_URL}' \
+  93
+
+mutant "snapdir stays hidden, so nobody can reach the days without zfs" \
+  's!\Q    zfs set snapdir=visible \E\x27\Q\E\$\Qds\E\x27\Q >/dev/null 2>&1 || echo NOSNAPDIR\E!    true!' \
+  87
+
+# ---------- --move-dest: the order is the whole feature -----------------------
+# Copy, verify, repoint, and only then remove. Every step before the last one
+# is free to fail: the old copy is still the one the config boots. Reversed,
+# the same commands are a customer's DR copy gone.
+mutant "the old dataset is removed before anything points away from it" \
+  's{\Q  log "[\E\$CT\Q] MOVE: \E\$onew\Q verified: mounted\E}{  ssh \$SSH_OPT "\$BKP_SSH" "zfs destroy -r \x27\$ofrom\x27" </dev/null >>"\$LOG" 2>\&1\n  log "[\$CT] MOVE: \$onew verified: mounted}' \
+  95
+
+mutant "a send that failed reads as a move that finished" \
+  's{\Q      set -o pipefail\E}{      set +o pipefail}' \
+  97
+
+mutant "a dataset already sitting at the destination is written over" \
+  's!\Q  if ssh \E\$SSH_OPT\Q "\E\$BKP_SSH\Q" "zfs list -H -o name \E\x27\Q\E\$\Qonew\E\x27\Q" </dev/null >/dev/null 2>&1; then\E!  if false; then!' \
+  99
+
+mutant "the verification compares nothing, so a short receive passes" \
+  's{\Q  if [[ -z "\E\$\Q{nlogical:-}" || -z "\E\$\Q{ologic:-}" || "\E\$nlogical\Q" != "\E\$ologic\Q" ]]; then\E}{  if [[ 1 == 2 ]]; then}' \
+  98
+
+mutant "an unmounted destination is accepted, and the next round fills the root fs" \
+  's{\Q  if [[ "\E\$\Q{nmounted:-}" != yes ]]; then\E}{  if [[ 1 == 2 ]]; then}' \
+  105
+
+mutant "the copy's history is dropped on the way across" \
+  's!\Q      zfs send -R \E\x27\Q\E\$\Qofrom@\E\$\Qsnap\E\x27\Q | zfs recv \E\x27\Q\E\$\Qonew\E\x27\E!      zfs send \x27\$ofrom@\$snap\x27 | zfs recv \x27\$onew\x27!' \
+  96
+
+mutant "--move-dest takes a pool name, which the row may not agree with" \
+  's{\Q               if [[ \E\$\Q# -ge 2 && "\E\$\Q2" != -* ]]; then\E}{               if false; then}' \
+  100
+
+mutant "--move-dest with no --ctid moves whatever the inventory happens to say" \
+  's{\Q  if [[ -z "\E\$ONLY_CTID\Q" ]]; then\E\n\Q    echo "--move-dest needs --ctid <id>\E}{  if false; then\n    echo "--move-dest needs --ctid <id>}' \
+  100
+
+mutant "a copy already on the row's pool is moved onto itself" \
+  's{\Q  if [[ "\E\$from\Q" == "\E\$DEST\Q" ]]; then\E}{  if false; then}' \
+  101
+
+mutant "a dry move does the move" \
+  's{\Q  if (( DRY )); then\E\n\Q    log "[\E\$CT\Q] DRY: would move copy\E}{  if false; then\n    log "[\$CT] DRY: would move copy}' \
+  102
+
+mutant "--move-dest is read after R8 has already refused the row" \
+  's{\Q    if (( MOVE_DEST )); then\E\n\Q      move_copy_dest "\E\$csid\Q"\E}{    if false; then\n      move_copy_dest "\$csid"}' \
+  95
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

@@ -225,12 +225,18 @@ GROW_PCT=5
 GROW_MAX_RETRY=3
 MNT_BASE=$SIMROOT/mnt
 EOF
+  exclude '/tmp/*' '/run/*' '/var/tmp/systemd-private-*'
   SIM_BKP_HOST=100.100.100.35; }
 conf_set(){ # key value
   { grep -v "^$1=" "$WORK/ctrep.conf" || true; } > "$WORK/.conf"
   mv -f "$WORK/.conf" "$WORK/ctrep.conf"
   printf '%s=%s\n' "$1" "$2" >> "$WORK/ctrep.conf"; return 0; }
 inventory(){ printf '%s\n' "$@" > "$WORK/inventory-replica.tsv"; }
+# The SAME list ct-replica.sh reads. This engine copies the same rootfs in the
+# other direction and also runs --delete, so a pattern that applied one way
+# only would delete from PRODUCTION what was never copied to the copy.
+exclude(){    printf '%s\n' "$@" > "$WORK/ctrep-exclude.conf"; }
+no_exclude(){ rm -f "$WORK/ctrep-exclude.conf"; }
 pause_replica(){ : > "$WORK/PAUSE"; }
 kill_next_rsync(){ : > "$SIMROOT/rsync.kill"; }
 rsync_rc(){ printf '%s\n' "$*" > "$SIMROOT/rsync.rc"; echo 0 > "$SIMROOT/rsync.n"; }
@@ -1089,6 +1095,7 @@ if scenario "57: vendored under a ketsync, its nodes.map wins over the copy besi
   # conf and work list in their moved homes - left beside the engine they
   # would be refused outright, which is ct-replica scenario 79's job to prove
   cp "$WORK/ctrep.conf" "$REPO/conf/"
+  cp "$WORK/ctrep-exclude.conf" "$REPO/conf/"
   cp "$WORK/inventory-replica.tsv" "$REPO/inventory/"
   cp -r "$WORK/state" "$REPO/engines/" 2>/dev/null || mkdir -p "$REPO/engines/state"
   ln -s "$ENGINE" "$REPO/engines/ct-failback.sh"
@@ -1264,6 +1271,28 @@ if scenario "70: the OLD BKP_DESTS format is named, not read as a working map"; 
   rc_is 2
   has "is the OLD key=dataset:storage-id form"
   has 'BKP_DESTS="replica-hdd:replica-hdd/ct replica-ssd:replica-ssd/ct"'
+  untraced "rsync"
+  done_scenario
+fi
+
+if scenario "71: the exclude list is the SAME file replication reads"; then
+  # The reason this engine reads it at all: it runs --delete in the other
+  # direction. A pattern that only replication honoured would mean a path the
+  # copy never had, and this engine would then delete it from PRODUCTION.
+  exclude '/var/cache/nginx/*'
+  run_engine --ctid 105
+  rc_is 0; clean
+  traced   "rsyncopt --exclude-from=$WORK/ctrep-exclude.conf"
+  untraced "rsyncopt --exclude=/tmp/*"
+  done_scenario
+fi
+
+if scenario "72: a missing exclude list refuses this engine too, before it writes"; then
+  no_exclude
+  run_engine --ctid 105
+  rc_is 2
+  has "the exclude list is missing"
+  has "This engine reads the SAME file"
   untraced "rsync"
   done_scenario
 fi

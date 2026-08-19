@@ -7,13 +7,14 @@
 # shellcheck source=tests/sim/replica/lib.sh
 . "$SIMLIB"
 dst="${*: -1}"; src="${*: -2:1}"; src="${src%/}"
-logfile=""; wants_stats=0; deletes=0; dryrun=0
+logfile=""; wants_stats=0; deletes=0; dryrun=0; exclfile=""
 for a in "$@"; do
   case "$a" in
-    --log-file=*) logfile="${a#--log-file=}";;
-    --stats)      wants_stats=1;;
-    --delete)     deletes=1;;
-    -n|--dry-run) dryrun=1;;
+    --log-file=*)    logfile="${a#--log-file=}";;
+    --exclude-from=*) exclfile="${a#--exclude-from=}";;
+    --stats)         wants_stats=1;;
+    --delete)        deletes=1;;
+    -n|--dry-run)    dryrun=1;;
   esac
 done
 trace "rsync $src -> $dst"
@@ -23,6 +24,24 @@ trace "rsync $src -> $dst"
 # -x is the flag that keeps a 2T mp0 out of a rootfs image; it was correct
 # in the tree and nothing would have said so on the day it stopped being.
 for _a in "$@"; do case "$_a" in -*) trace "rsyncopt $_a";; esac; done
+
+# --- the exclude list ---------------------------------------------------------
+# Recorded by CONTENT, not by filename: what a scenario cares about is which
+# patterns reached rsync, and the file is in a temp sandbox whose path nothing
+# should have to spell. Real rsync ignores blanks and #-comments in this file,
+# so the fake does too - a comment being read as a pattern would silently stop
+# a real path from being copied.
+EXPATS=()
+if [[ -n "$exclfile" ]]; then
+  if [[ ! -r "$exclfile" ]]; then
+    violation "rsync --exclude-from=$exclfile, which does not exist - rsync would refuse and nothing would be copied"
+  else
+    while IFS= read -r _p; do
+      [[ -z "$_p" || "$_p" == \#* || "$_p" == \;* ]] && continue
+      EXPATS+=("$_p"); trace "rsyncexclude $_p"
+    done < "$exclfile"
+  fi
+fi
 
 # The one rsync a dry run may make is one that cannot move a byte. Without -n
 # this call carries --delete, so a run that called itself dry would empty the
@@ -127,5 +146,13 @@ d="$BKP/fs$rpath"
 if (( ! dryrun )) && [[ -d "$d" && ( "$rc" == 0 || "$rc" == 24 || "$rc" == 23 ) ]]; then
   (( deletes )) && find "$d" -mindepth 1 -delete 2>/dev/null
   [[ -d "$src" ]] && cp -a "$src/." "$d/" 2>/dev/null
+  # The excludes are APPLIED, not merely counted. A pattern that reached rsync
+  # and changed nothing is a pattern nobody would notice going missing, and the
+  # whole point of moving this list into a file is that a site edits it.
+  for _p in ${EXPATS+"${EXPATS[@]}"}; do
+    [[ "$_p" == /* ]] || continue          # relative patterns match anywhere: not modelled
+    # shellcheck disable=SC2086,SC2115  # the glob IS the pattern; $d is never empty here
+    rm -rf ${d}${_p} 2>/dev/null
+  done
 fi
 exit "$rc"

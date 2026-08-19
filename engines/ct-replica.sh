@@ -28,11 +28,20 @@
 #    ct-replica.sh --ctid 105               only that SOURCE ct
 #    ct-replica.sh --dry-run                every guard, the plan, no write and
 #                                           no snapshot - so no transfer number
+#    ct-replica.sh --ctid 105 --move-dest   move that copy onto the pool its
+#                                           inventory row NOW names, in one
+#                                           command: copy, verify, repoint the
+#                                           config, and only then remove the
+#                                           old. This is the answer to R8.
 #
 #  layout — everything resolves relative to this script, the folder can be
 #  moved or renamed freely; only re-point the cron line:
 #    ct-replica.sh    this engine
 #    ctrep.conf       site tuning (backup target, dests, bandwidth) — optional
+#    ctrep-exclude.conf  what is NOT copied, one rsync pattern per line. Read
+#                        by ct-failback.sh too, because that copies the same
+#                        rootfs back and also runs --delete. REQUIRED: a
+#                        missing one is refused, never replaced by a guess
 #    inventory-replica.tsv   which CTs to copy (see
 #                            inventory-replica.sample.tsv). A separate file
 #                            from ct-migrate.sh's inventory-migrate.tsv on purpose:
@@ -62,7 +71,7 @@
 #  A filter that matches no row exits NON-ZERO: under cron, exit 0 with no work
 #  done looks exactly like a healthy night.
 # -----------------------------------------------------------------------------
-#  THE GUARDS (R1..R14) — same contract as ct-migrate's G1..G7: each exists
+#  THE GUARDS (R1..R15) — same contract as ct-migrate's G1..G7: each exists
 #  because of a real incident on this fleet; keep them and keep their ORDER.
 #
 #   R1  point-in-time source, never a moving one. A ZFS-backed storage is
@@ -104,7 +113,8 @@
 #       If someone edits the dest column AFTER the copy was created, the sync
 #       would fill the NEW dataset while the config still points at the OLD
 #       one — a copy that looks fresh but boots stale data. Refuse, and make
-#       the human move or remove the old copy first.
+#       the human move or remove the old copy first. `--move-dest` is that
+#       move, done in the safe order and with every other guard still on.
 #
 #   R9  the mock bridge must have NO uplink. Copies carry production IPs and
 #       MACs; the ONLY thing keeping that harmless is that MOCKNET_BRIDGE
@@ -142,6 +152,27 @@
 #       replicated, and it clears itself when somebody runs the `pct destroy`
 #       the DR guide already ends with.
 #
+#  AFTER A GREEN ROUND the copy is snapshotted on the backup node, once a day,
+#  and SNAP_KEEP of those are kept. Three things come out of one cheap call:
+#    - a rollback point. rsync --inplace rewrites blocks where they lie, so a
+#      round that dies half way leaves a copy that is neither yesterday nor
+#      today. `zfs rollback` puts it back to a whole day.
+#    - history. A file a customer deleted, or a directory something encrypted,
+#      is still in yesterday's snapshot - the live copy has already been made
+#      to match production, which is exactly what replication is for and
+#      exactly why replication alone is not a backup.
+#    - browsable files, at <mountpoint>/.zfs/snapshot/ketsync-<date>/ - which
+#      is why snapdir=visible is set on the dataset at the same time.
+#  ONLY after a green round, so every snapshot names a copy that was whole.
+#
+#   R15 a copy PVE itself has locked is left alone. vzdump writes `lock: backup`
+#       into the copy's config for the whole of a PBS backup, and that backup
+#       reads the same rootfs this engine writes into. rsync --delete running
+#       underneath it does not corrupt the copy - it corrupts the BACKUP, which
+#       ends up holding half of one round and half of the next and restores to
+#       a filesystem that never existed. A skip, not a failure: nothing is
+#       wrong, the lock clears when the job ends, and the next round copies it.
+#
 #   R14 the copy is locked on the machine that HOLDS it, not on this one. R7
 #       and R10 are local flocks and settle nothing between machines, and more
 #       than one machine writes into a copy - during an outage distribute and
@@ -162,6 +193,7 @@ export PATH
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # folder is relocatable
 INV="$BASE/inventory-replica.tsv"
 CONF="$BASE/ctrep.conf"
+EXCL="$BASE/ctrep-exclude.conf"
 # Repo shape: the per-site conf lives in conf/ and the work list in
 # inventory/, one level up - the same walk-up as nodes.map. A flat tree (the
 # simulators build one) keeps both beside the engine. A copy left at the OLD
@@ -183,6 +215,7 @@ if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" ]]; then
   fi
   CONF="$_ksroot/conf/ctrep.conf"
   INV="$_ksroot/inventory/inventory-replica.tsv"
+  EXCL="$_ksroot/conf/ctrep-exclude.conf"
 fi
 
 # ---------- defaults (override in ctrep.conf, never here) ----------
@@ -214,6 +247,10 @@ BW_TOTAL_MB=230                  # tool-wide ceiling in MiB/s across ALL lanes
 LANES=1                          # how many lanes may run at once (cron schedules)
 BW_MIN_MB=20                     # floor so a big LANES cannot starve a transfer
 RUNS_KEEP=200                    # per-CT run history kept in state/<id>.runs.jsonl
+SNAP_KEEP=7                      # daily ZFS snapshots kept ON THE COPY, taken
+                                 # after a green round. 0 = take none (and
+                                 # prune none - turning it off never destroys
+                                 # what is already there)
 LOG_KEEP_DAYS=14
 MNT_BASE=/mnt/ct-replica         # deliberately ABSOLUTE: live loop-mounts must
                                  # not sit inside a folder someone can move
@@ -226,7 +263,7 @@ SSH_CIPHERS=aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr
 # -------------------------------------------------------------------
 
 # ---------- args ----------
-LANE_STORAGE=""; ONLY_CTID=""; DRY=0
+LANE_STORAGE=""; ONLY_CTID=""; DRY=0; MOVE_DEST=0
 # A value-taking flag whose value was lost to a copy-paste used to hang here
 # forever: `shift 2` fails when only one argument is left, the old `|| true`
 # swallowed that failure, and $# never reached zero. This lane runs from cron
@@ -245,6 +282,20 @@ while (( $# )); do
     # ct-failback.sh insists on being told. Refusing a flag that means exactly
     # what the tool already does teaches nothing and costs a run.
     --all)     shift;;
+    # Takes NO value, and says so when it is given one. The pool this moves the
+    # copy TO is not something to type here: it is the dest column of the row,
+    # which is the thing that changed and the reason R8 is now refusing. A
+    # value here could disagree with the row, and then the very next round
+    # would refuse the copy this command just moved.
+    --move-dest)
+               if [[ $# -ge 2 && "$2" != -* ]]; then
+                 echo "--move-dest takes no value (got '$2')." >&2
+                 echo "  The pool it moves the copy to is the one this row's dest column" >&2
+                 echo "  already names. Edit the row in inventory-replica.tsv first, then:" >&2
+                 echo "    ct-replica.sh --ctid <id> --move-dest" >&2
+                 exit 2
+               fi
+               MOVE_DEST=1; shift;;
     --dry-run) DRY=1; shift;;
     # Walks the comment block instead of counting lines: a fixed range used to
     # stop short of the exit-code contract, which is the half of the header
@@ -260,7 +311,7 @@ if [[ -f "$CONF" ]]; then
   . "$CONF" || { echo "failed to read $CONF" >&2; exit 1; }
 fi
 for _v in OFFSET DR_OFFSET AUTO_DISCOVER LIVE_FALLBACK MOCKNET \
-          BW_TOTAL_MB LANES BW_MIN_MB RUNS_KEEP LOG_KEEP_DAYS; do
+          BW_TOTAL_MB LANES BW_MIN_MB RUNS_KEEP SNAP_KEEP LOG_KEEP_DAYS; do
   if [[ ! "${!_v}" =~ ^[0-9]+$ ]]; then
     echo "ctrep.conf: $_v='${!_v}' is not a plain integer" >&2; exit 1
   fi
@@ -310,6 +361,29 @@ done
 # on a pool nobody chose. Every row says where its copy goes, or the run is
 # refused - the same rule fleet.tsv's dst column already follows.
 
+# ---------- the exclude list ----------
+# The three patterns this tool has always excluded used to live in the rsync
+# argument list, which meant the one thing every site eventually wants to
+# change was the one thing you had to edit an engine to change - and an edited
+# engine is a merge conflict on the next pull.
+#
+# It is REFUSED rather than defaulted when the file is not there. Falling back
+# to a built-in list would mean a site that carefully wrote its own excludes,
+# and then lost the file to a bad deploy, silently gets the shipped three back
+# and a copy full of the paths it meant to keep out. The message below says
+# exactly what the file holds, so restoring it by hand takes ten seconds.
+if [[ ! -r "$EXCL" ]]; then
+  echo "ERROR: the exclude list is missing: $EXCL" >&2
+  echo "ERROR:   it ships with the tool and holds the paths replication does not copy." >&2
+  echo "ERROR:   Nothing is guessed in its place - a copy is only as good as what is in" >&2
+  echo "ERROR:   it, and that list is the one thing a site changes. Restore it from the" >&2
+  echo "ERROR:   repo, or write it back by hand - the shipped contents are three lines:" >&2
+  echo "ERROR:     /tmp/*" >&2
+  echo "ERROR:     /run/*" >&2
+  echo "ERROR:     /var/tmp/systemd-private-*" >&2
+  exit 2
+fi
+
 # Static split, not dynamic: a lane that computed its share while alone would
 # keep it after a second lane starts, and together they would break the
 # ceiling. Predictable beats optimal when the ceiling is a hard constraint.
@@ -322,6 +396,24 @@ if [[ -n "$LANE_STORAGE" ]]; then
     *" $LANE_STORAGE "*) ;;
     *) echo "--storage $LANE_STORAGE is not in SRC_STORAGES ($SRC_STORAGES)" >&2; exit 2;;
   esac
+fi
+
+# One container at a time, named out loud. Moving a pool's worth of copies with
+# one word is not a thing anybody should be able to do by accident, and the
+# reason to move one is always about that one: it outgrew its tier, or it needs
+# to start fast in a DR. If a whole tier really is moving, that is a row at a
+# time, and each one is a command somebody read before they ran it.
+if (( MOVE_DEST )); then
+  if [[ -z "$ONLY_CTID" ]]; then
+    echo "--move-dest needs --ctid <id>: it moves ONE copy between pools." >&2
+    echo "  Moving every copy in the inventory with one word is not offered." >&2
+    exit 2
+  fi
+  if [[ -n "$LANE_STORAGE" ]]; then
+    echo "--move-dest and --storage do not go together: --storage is the cron lane," >&2
+    echo "  --move-dest is one container by id." >&2
+    exit 2
+  fi
 fi
 
 # ---------- ssh ----------
@@ -685,11 +777,12 @@ json_bool(){ [[ "${1:-0}" == 1 ]] && printf 'true' || printf 'false'; }
 RS_FILES=0; RS_LITERAL=0; RS_SENT=0; RS_TOTAL=0; RS_SECS=0
 ST_CTID=""; ST_TGT=""; ST_SRC_NODE=""; ST_SRC_STORAGE=""; ST_DEST=""; ST_DS=""
 ST_CFG_PRESENT=0; ST_MOCKNET=0; ST_STATUS=""; ST_REASON=""; ST_RC=-1; ST_MP=()
+ST_SNAP=""      # the snapshot this round left on the copy, "failed", or empty
 
 st_reset(){
   ST_CTID=""; ST_TGT=""; ST_SRC_NODE=""; ST_SRC_STORAGE=""; ST_DEST=""; ST_DS=""
   ST_CFG_PRESENT=0; ST_MOCKNET=0; ST_STATUS=""; ST_REASON=""; ST_RC=-1
-  ST_MSG=""; ST_MP=()
+  ST_MSG=""; ST_MP=(); ST_SNAP=""
   RS_FILES=0; RS_LITERAL=0; RS_SENT=0; RS_TOTAL=0; RS_SECS=0
 }
 
@@ -719,6 +812,7 @@ _st_snapshot_json(){
   printf '  "config_present": %s,\n'  "$(json_bool "$ST_CFG_PRESENT")"
   printf '  "mocknet": %s,\n'         "$(json_bool "$ST_MOCKNET")"
   printf '  "mp_empty": [%s],\n'      "$mp"
+  printf '  "snapshot": %s,\n'        "$(json_str "$ST_SNAP")"
   printf '  "last": %s\n'             "$(_st_run_json)"
   printf '}\n'
 }
@@ -886,6 +980,207 @@ hsize(){
   else                             printf '%dB' "$b"; fi
 }
 
+# --- the daily snapshot of the copy ------------------------------------------
+# Taken on the backup node, after a green round, and named after the DATE so
+# "once a day" needs no state file to remember: the name either exists or it
+# does not. The date is this machine's, and it is in the name, so a reader
+# never has to work out whose clock made it.
+#
+# One ssh does all three things - take it, make .zfs browsable, prune the
+# excess - because this runs once per container per round and a round is
+# already four round trips deep. The prune matches ONLY ketsync-<date>: a
+# snapshot somebody took by hand, or one PBS left behind, is not this tool's
+# to destroy. `sort` is chronological because the name is ISO; that is the
+# whole reason for the dashes.
+#
+# Returns non-zero only when TODAY'S SNAPSHOT DOES NOT EXIST afterwards. A
+# prune that could not run is reported and forgiven - it costs space, not
+# history, and space is visible. A snapshot that was never taken is a day of
+# history that silently is not there, which is the thing worth failing over.
+# $CT is the log prefix: this is only ever called from inside the per-container
+# loop, where every other line is prefixed the same way.
+snap_after_green(){   # $1 = dataset on the backup node   $2 = snapshot name
+  local ds="$1" sn="$2" out rc=0 l
+  out=$(ssh $SSH_OPT "$BKP_SSH" "
+    if zfs list -H -o name -t snapshot '$ds@$sn' >/dev/null 2>&1; then
+      echo HAVE
+    elif zfs snapshot '$ds@$sn'; then
+      echo TOOK
+    else
+      echo NOSNAP; exit 1
+    fi
+    zfs set snapdir=visible '$ds' >/dev/null 2>&1 || echo NOSNAPDIR
+    zfs list -H -o name -t snapshot -d 1 '$ds' 2>/dev/null \
+      | grep -E '@ketsync-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\$' \
+      | sort | head -n -$SNAP_KEEP \
+      | while read -r s; do
+          if zfs destroy \"\$s\"; then echo \"PRUNED \$s\"; else echo \"STUCK \$s\"; fi
+        done
+  " </dev/null 2>&1) || rc=$?
+  case "$out" in
+    *TOOK*) log "[$CT] snapshot: $ds@$sn (keeping $SNAP_KEEP; browse at $sn under .zfs/snapshot/)";;
+    *HAVE*) : ;;   # already taken today - said once, on the round that took it
+    *)      log "[$CT] WARN: could not snapshot the copy: $ds@$sn (rc=$rc)"
+            while IFS= read -r l; do [[ -n "$l" ]] && log "[$CT] WARN:   $l"; done <<< "$out"
+            log "[$CT] WARN:   the copy itself is fine - what is missing is today's rollback"
+            log "[$CT] WARN:   point and today's line of history. Check space and the pool."
+            return 1;;
+  esac
+  while IFS= read -r l; do
+    case "$l" in
+      PRUNED*)    log "[$CT] snapshot: pruned ${l#PRUNED }";;
+      STUCK*)     log "[$CT] WARN: snapshot ${l#STUCK } would not go - it is holding space";;
+      NOSNAPDIR*) log "[$CT] WARN: snapdir=visible could not be set on $ds - .zfs stays hidden";;
+    esac
+  done <<< "$out"
+  return 0
+}
+
+# --- --move-dest: change which pool a copy lives on, in the safe order -------
+# The problem this solves is R8. Somebody edits a row's dest column - the copy
+# outgrew the HDD tier, or it has to start fast in a DR - and from that moment
+# every round refuses that container, because the dataset the row names and the
+# dataset the config boots are two different places. The fix was a documented
+# sequence of zfs and editor commands, run by hand, on the day somebody was
+# already busy. Half of that sequence removes data.
+#
+# THE ORDER IS THE WHOLE FEATURE: copy, verify, repoint, and only then remove.
+# At every point before the last step the OLD copy is still the one the config
+# boots, so an interrupted move loses nothing and can simply be run again. The
+# reverse order - remove and then copy - is the same commands and a disaster.
+#
+# It is not a separate mode with its own preflight. It runs inside the normal
+# per-container loop, after every guard: a copy that is RUNNING (R2), one with
+# a live DR placement (R13), one another machine holds (R14) and one PVE has
+# locked (R15) are all things you must not move, and they already say so.
+#
+# There is no file-by-file comparison at the end, deliberately. `zfs send`
+# streams are checksummed and `zfs recv` refuses a stream that does not add up,
+# so a torn transfer fails the receive rather than landing quietly. What is
+# checked instead is what a checksum cannot say: that the result is a mounted
+# dataset holding the same number of logical bytes as the snapshot it came from.
+# $CT, $TGT, $DEST and $tgtcfg come from the loop, like everywhere else here.
+move_copy_dest(){   # $1 = the dest the copy's config names TODAY
+  local from="$1" ofrom onew snap out nmounted nlogical ologic newcfg
+  if [[ -z "$from" ]]; then
+    log "[$CT] MOVE: copy $TGT has no rootfs line to read a pool from - nothing to move"
+    log "[$CT] MOVE:   that config is broken in a way this cannot guess at. Read it:"
+    log "[$CT] MOVE:     ssh $BKP_SSH 'cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf'"
+    st_fail move_no_rootfs; return 1
+  fi
+  if [[ "$from" == "$DEST" ]]; then
+    log "[$CT] MOVE: copy $TGT is already on '$DEST' - nothing to move"
+    log "[$CT] MOVE:   the row and the copy agree. A normal round syncs it."
+    st_skip move_not_needed; return 0
+  fi
+  if [[ -z "${DEST_DS[$from]:-}" ]]; then
+    log "[$CT] MOVE: copy $TGT sits on storage '$from', which BKP_DESTS does not name"
+    log "[$CT] MOVE:   this cannot work out which dataset holds it, so it will not guess."
+    log "[$CT] MOVE:   add '$from' to BKP_DESTS in $(basename "$CONF"), or move it by hand."
+    st_fail move_unknown_pool; return 1
+  fi
+  ofrom="${DEST_DS[$from]}/subvol-$TGT-disk-0"
+  onew="${DEST_DS[$DEST]}/subvol-$TGT-disk-0"
+  snap="ketsync-move-$(date +%Y%m%d-%H%M%S)"
+
+  if (( DRY )); then
+    log "[$CT] DRY: would move copy $TGT from '$from' to '$DEST', in this order:"
+    log "[$CT] DRY:   1. refuse if $onew already exists"
+    log "[$CT] DRY:   2. zfs snapshot $ofrom@$snap"
+    log "[$CT] DRY:   3. zfs send -R $ofrom@$snap | zfs recv $onew   (local to $BKP_NODE)"
+    log "[$CT] DRY:   4. verify $onew is mounted and holds the same logical bytes"
+    log "[$CT] DRY:   5. rewrite the copy config rootfs to '$DEST', and read it back"
+    log "[$CT] DRY:   6. only then: zfs destroy -r $ofrom"
+    log "[$CT] DRY:   the old copy stays bootable until step 5 succeeds"
+    st_ok; return 0
+  fi
+
+  # Nothing is ever written into a dataset this run did not create. A dataset
+  # already sitting at the destination is either a copy somebody made or the
+  # wreckage of a move that died, and both need eyes rather than a --force.
+  if ssh $SSH_OPT "$BKP_SSH" "zfs list -H -o name '$onew'" </dev/null >/dev/null 2>&1; then
+    log "[$CT] MOVE: $onew already exists on $BKP_NODE - refusing"
+    log "[$CT] MOVE:   nothing here overwrites a dataset it did not create. If that is"
+    log "[$CT] MOVE:   the wreckage of a move that died, look at it and then remove it:"
+    log "[$CT] MOVE:     ssh $BKP_SSH 'zfs list -r -t all $onew'"
+    log "[$CT] MOVE:     ssh $BKP_SSH 'zfs destroy -r $onew'"
+    st_fail move_dest_exists; return 1
+  fi
+
+  log "[$CT] MOVE: $TGT  '$from' -> '$DEST'"
+  log "[$CT] MOVE:   $ofrom  ->  $onew"
+  log "[$CT] MOVE:   copying first. Until the config is repointed the OLD copy is still"
+  log "[$CT] MOVE:   the one that boots, so this is safe to interrupt and run again."
+  # -R, not a plain send: it carries the ketsync-<date> snapshots too. Those
+  # are the copy's history, and a move that silently dropped them would trade
+  # a week of rollback points for a change of pool.
+  if ! ssh $SSH_OPT "$BKP_SSH" "
+      set -o pipefail
+      zfs snapshot '$ofrom@$snap' || exit 1
+      zfs send -R '$ofrom@$snap' | zfs recv '$onew'
+    " </dev/null >>"$LOG" 2>&1; then
+    log "[$CT] MOVE: the copy to $onew did not finish - NOTHING was removed"
+    log "[$CT] MOVE:   $TGT still boots from '$from' and its config still says so."
+    log "[$CT] MOVE:   a half-received dataset may be sitting at $onew. This will not"
+    log "[$CT] MOVE:   destroy it for you - look first, then remove it, then run again:"
+    log "[$CT] MOVE:     ssh $BKP_SSH 'zfs list -r -t all $onew'"
+    log "[$CT] MOVE:     ssh $BKP_SSH 'zfs destroy -r $onew'"
+    st_fail move_send; return 1
+  fi
+
+  read -r nmounted nlogical < <(ssh $SSH_OPT "$BKP_SSH" \
+      "zfs get -H -o value mounted,logicalreferenced '$onew' 2>/dev/null | paste -sd' '" \
+      </dev/null 2>/dev/null)
+  ologic=$(ssh $SSH_OPT "$BKP_SSH" \
+      "zfs get -H -o value logicalreferenced '$ofrom@$snap' 2>/dev/null" </dev/null 2>/dev/null)
+  if [[ "${nmounted:-}" != yes ]]; then
+    log "[$CT] MOVE: $onew is not mounted (mounted=${nmounted:-?}) - NOTHING was removed"
+    log "[$CT] MOVE:   an unmounted dataset is a directory on the node's root fs, and the"
+    log "[$CT] MOVE:   next round would pour this container into it. Fix the mount first."
+    st_fail move_not_mounted; return 1
+  fi
+  if [[ -z "${nlogical:-}" || -z "${ologic:-}" || "$nlogical" != "$ologic" ]]; then
+    log "[$CT] MOVE: the new dataset does not hold what the old one did - NOTHING was removed"
+    log "[$CT] MOVE:   $ofrom@$snap  logicalreferenced ${ologic:-<no answer>}"
+    log "[$CT] MOVE:   $onew         logicalreferenced ${nlogical:-<no answer>}"
+    log "[$CT] MOVE:   $TGT still boots from '$from'. Compare them by hand before removing"
+    log "[$CT] MOVE:   anything: ssh $BKP_SSH 'zfs list -o space -r ${DEST_DS[$DEST]}'"
+    st_fail move_verify; return 1
+  fi
+  log "[$CT] MOVE: $onew verified: mounted, $nlogical logical bytes, same as the source"
+
+  # The point of no return, and it is a config edit rather than a delete: after
+  # this line the copy boots from the NEW dataset. Read back and compared for
+  # the same reason R5 does it - a write cut short leaves a config nothing here
+  # would ever rewrite.
+  newcfg=$(printf '%s\n' "$tgtcfg" | sed -E "s#^(rootfs:[[:space:]]*)[^:]+:#\\1$DEST:#")
+  if printf '%s\n' "$newcfg" | ssh $SSH_OPT "$BKP_SSH" "cat > /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf" \
+     && [[ "$(ssh $SSH_OPT "$BKP_SSH" "cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf" </dev/null 2>/dev/null)" == "$newcfg" ]]; then
+    log "[$CT] MOVE: copy config $TGT now boots from '$DEST'"
+  else
+    log "[$CT] MOVE: the config on $BKP_NODE does not match what was sent - STOPPING HERE"
+    log "[$CT] MOVE:   both datasets exist and NOTHING was removed, so nothing is lost."
+    log "[$CT] MOVE:   set the rootfs line by hand, then remove the old dataset:"
+    log "[$CT] MOVE:     rootfs: $DEST:subvol-$TGT-disk-0,size=..."
+    log "[$CT] MOVE:     ssh $BKP_SSH 'zfs destroy -r $ofrom'"
+    st_fail move_cfg; return 1
+  fi
+
+  # Only now. Everything above can fail without costing anything; this is the
+  # one irreversible line in the whole command, and it runs after the config
+  # has been written AND read back.
+  if ssh $SSH_OPT "$BKP_SSH" "zfs destroy -r '$ofrom'" </dev/null >>"$LOG" 2>&1; then
+    log "[$CT] MOVE: removed the old dataset $ofrom"
+  else
+    log "[$CT] WARN: the old dataset $ofrom would not go. The move is DONE and correct -"
+    log "[$CT] WARN:   this is space, not data: ssh $BKP_SSH 'zfs destroy -r $ofrom'"
+  fi
+  ssh $SSH_OPT "$BKP_SSH" "zfs destroy '$onew@$snap'" </dev/null >>"$LOG" 2>&1 \
+    || log "[$CT] WARN: transfer snapshot $onew@$snap is still there - space, not correctness"
+  log "[$CT] MOVE: done. $TGT is on '$DEST'; the next round syncs into it normally."
+  st_ok; return 0
+}
+
 # --- one run at a time per TARGET copy ---------------------------------------
 # Lane locks (R7) assume lanes are disjoint, and per-storage lanes are: a CT has
 # exactly one rootfs storage. The "all" lane is not - it overlaps every storage
@@ -1019,6 +1314,10 @@ ok=0; skipped=0; failed=0
 # CTs R13 held back because a DR placement is still live. Separate from failed:
 # nothing is wrong with them, but the run must not read as a healthy night.
 DR_ACTIVE_IDS=()
+# Copies that were transferred fine but got no snapshot. Not failed - the data
+# is on the backup - and not silent either: a fleet that quietly stopped making
+# rollback points looks identical to one that is making them.
+SNAP_FAILED_IDS=()
 matched=0            # CTs that survived --storage/--ctid; 0 = the flag is wrong
 FAILED_IDS=()
 
@@ -1282,8 +1581,43 @@ for CT in "${CTS[@]}"; do
   # --- R8: an existing copy config must agree with THIS row's dest ---
   # Read once here; reused at the bottom so config creation costs no extra ssh.
   tgtcfg=$(ssh $SSH_OPT "$BKP_SSH" "cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf 2>/dev/null" </dev/null 2>/dev/null)
+  # --move-dest moves a copy that EXISTS. With none there, there is nothing to
+  # move and nothing to be confused about: a plain round makes one, on the pool
+  # the row names, which is where the operator wanted it in the first place.
+  if (( MOVE_DEST )) && [[ -z "$tgtcfg" ]]; then
+    log "[$CT] MOVE: there is no copy $TGT on $BKP_NODE yet - nothing to move"
+    log "[$CT] MOVE:   a normal round creates it on '$DEST':  ct-replica.sh --ctid $CT"
+    st_fail move_no_copy; continue
+  fi
   if [[ -n "$tgtcfg" ]]; then
     ST_CFG_PRESENT=1
+    # --- R15: PVE itself is holding this copy, so it is not ours right now ---
+    # Read out of the config we already have, before anything below reports on a
+    # guest another tool is in the middle of. R14's lock is the one ketsync
+    # takes; this is the one PVE takes, and neither can see the other.
+    #
+    # The case that matters is `lock: backup`: PBS is reading this copy's rootfs
+    # while rsync --delete would be writing into it. The copy survives that -
+    # the next round repairs it - but the BACKUP does not. It ends up holding
+    # files from two different rounds and restores to a filesystem that never
+    # existed on any machine, and nothing about it looks wrong until the day
+    # somebody restores it.
+    #
+    # Any lock counts, not just backup. snapshot, rollback, migrate, destroy -
+    # every one of them means a tool that is not this one owns the guest right
+    # now, and none of them wants an rsync underneath. The value is logged so
+    # the operator knows which.
+    _plock=$(printf '%s\n' "$tgtcfg" | sed -n 's/^lock:[[:space:]]*\(.*\)/\1/p' | head -1)
+    if [[ -n "$_plock" ]]; then
+      log "[$CT] GUARD R15: copy $TGT is locked by PVE on $BKP_NODE (lock: $_plock) - skip"
+      log "[$CT] GUARD R15:   something else owns this guest right now. For 'backup' that is"
+      log "[$CT] GUARD R15:   vzdump reading the rootfs this run would be writing into: the copy"
+      log "[$CT] GUARD R15:   would survive, the backup would not - it would hold half of one"
+      log "[$CT] GUARD R15:   round and half of the next."
+      log "[$CT] GUARD R15:   nothing to undo. The lock clears when that job ends and the next"
+      log "[$CT] GUARD R15:   round copies this container normally."
+      st_skip r15_pve_lock; continue
+    fi
     if printf '%s\n' "$tgtcfg" | grep -qE '^net[0-9]+:'; then
       ST_MOCKNET=1
       # R11: going live during DR means moving the copy onto a real bridge, and
@@ -1306,12 +1640,21 @@ for CT in "${CTS[@]}"; do
       fi
     fi
     csid=$(printf '%s\n' "$tgtcfg" | sed -n 's/^rootfs:[[:space:]]*\([^:]*\):.*/\1/p' | head -1)
+    # Before R8, because R8 is the thing being answered. Every guard that says
+    # "do not touch this copy" has already run above.
+    if (( MOVE_DEST )); then
+      move_copy_dest "$csid"
+      continue
+    fi
     if [[ "$csid" != "$DEST" ]]; then
       log "[$CT] GUARD R8: copy $TGT config points at '${csid:-<none>}' but this row's dest is '$DEST'"
       log "[$CT] GUARD R8:   the dest column changed after the copy was created; syncing now would fill"
       log "[$CT] GUARD R8:   the new dataset while the config still boots the old one"
-      log "[$CT] GUARD R8:   fix: move the copy yourself (zfs send/recv + edit the config), or destroy"
-      log "[$CT] GUARD R8:   the old copy (config + dataset) and let the next run recreate it on '$DEST'"
+      log "[$CT] GUARD R8:   fix: move it, in the safe order, with one command:"
+      log "[$CT] GUARD R8:     ct-replica.sh --ctid $CT --move-dest"
+      log "[$CT] GUARD R8:   (copies first, verifies, repoints the config, and only then removes"
+      log "[$CT] GUARD R8:   the old dataset - add --dry-run to read the plan first). Or destroy"
+      log "[$CT] GUARD R8:   the old copy yourself and let the next round recreate it on '$DEST'."
       st_fail r8_dest_changed; continue
     fi
   fi
@@ -1358,6 +1701,11 @@ for CT in "${CTS[@]}"; do
       log "[$CT] DRY: copy config $TGT already exists on $BKP_NODE - R5 would leave it untouched"
     fi
     log "[$CT] DRY: source image $RAW on '$sid' would be read from the clone, not live"
+    if (( SNAP_KEEP > 0 )); then
+      log "[$CT] DRY: after a green round it would snapshot $TDS@ketsync-$(date +%F), keeping $SNAP_KEEP"
+    else
+      log "[$CT] DRY: SNAP_KEEP=0 - this copy gets no snapshot and no rollback point"
+    fi
     log "[$CT] dry-run - nothing was written"
     st_ok; continue
   fi
@@ -1378,10 +1726,11 @@ for CT in "${CTS[@]}"; do
   log "[$CT] SYNC -> $TGT dest=$DEST (used ${used:-?}, bw=$BWLIMIT, src=$sid)"
   st_begin                      # publish "in flight" before the long part starts
   # --timeout=300 catches an IO-stall on the receiver that keeps TCP alive
-  # (ServerAlive cannot see it). excludes = boot-time junk that is worthless
-  # in a DR copy and the main thing that trips ro,noload after a CT restart.
+  # (ServerAlive cannot see it). The excludes come from ctrep-exclude.conf,
+  # which ct-failback.sh reads too - both directions run --delete, so a pattern
+  # that applied one way only would DELETE from production on the way back.
   RS=(-aHAX --numeric-ids --delete --inplace "--bwlimit=$BWLIMIT" --timeout=300
-      '--exclude=/tmp/*' '--exclude=/run/*' '--exclude=/var/tmp/systemd-private-*'
+      "--exclude-from=$EXCL"
       -e "ssh $SSH_DATA")
   SF=$(mktemp "${TMPDIR:-/tmp}/ctrep-stats.XXXXXX" 2>/dev/null) || SF=""
   [[ -n "$SF" ]] && RS+=(--stats "--log-file=$SF" '--log-file-format=')
@@ -1470,6 +1819,20 @@ for CT in "${CTS[@]}"; do
       st_fail cfg_write; continue
     fi
   fi
+
+  # --- the round was green, so freeze it ---
+  # Here and nowhere else: everything above this line can still turn the round
+  # into a failure, and a snapshot of a copy that was only half written is a
+  # rollback point that restores to nothing. SNAP_KEEP=0 turns it off, and
+  # turning it off leaves whatever is already there alone - a knob that
+  # destroys history when you set it to zero is a knob nobody dares touch.
+  if (( SNAP_KEEP > 0 )); then
+    ST_SNAP="ketsync-$(date +%F)"
+    if ! snap_after_green "$TDS" "$ST_SNAP"; then
+      ST_SNAP=failed
+      SNAP_FAILED_IDS+=("$CT/$TGT")
+    fi
+  fi
   st_ok
 done
 
@@ -1509,6 +1872,18 @@ if (( ${#DR_ACTIVE_IDS[@]} )); then
   log "DR ACTIVE:   recall each one, then destroy the 9xxx. This clears itself."
 fi
 
+# Said the same way SOURCE DOWN is, and for the same reason: the bytes arrived,
+# so counting these as failures would be a lie, and exiting 0 would be a
+# different one. A copy with no snapshot has no rollback point and no history -
+# which is only discovered on the day somebody needs one.
+if (( ${#SNAP_FAILED_IDS[@]} )); then
+  log "NO SNAPSHOT: ${#SNAP_FAILED_IDS[@]} copy(ies) were replicated but not snapshotted"
+  log "NO SNAPSHOT:   ${SNAP_FAILED_IDS[*]}   (production/copy)"
+  log "NO SNAPSHOT:   the data is on $BKP_NODE. What is missing is the rollback point"
+  log "NO SNAPSHOT:   and the day's history: check free space on the destination pool."
+  log "NO SNAPSHOT:   SNAP_KEEP=0 in $(basename "$CONF") turns snapshots off altogether."
+fi
+
 if (( failed > 0 )); then
   log "NEEDS ATTENTION -> CT: ${FAILED_IDS[*]}"
   [[ -n "$HEALTH_URL" ]] && { curl -fsS -m 10 "$HEALTH_URL/fail" >/dev/null 2>&1 || true; }
@@ -1519,6 +1894,10 @@ if (( _down )); then
   exit 1
 fi
 if (( ${#DR_ACTIVE_IDS[@]} )); then
+  [[ -n "$HEALTH_URL" ]] && { curl -fsS -m 10 "$HEALTH_URL/fail" >/dev/null 2>&1 || true; }
+  exit 1
+fi
+if (( ${#SNAP_FAILED_IDS[@]} )); then
   [[ -n "$HEALTH_URL" ]] && { curl -fsS -m 10 "$HEALTH_URL/fail" >/dev/null 2>&1 || true; }
   exit 1
 fi

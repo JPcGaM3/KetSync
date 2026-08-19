@@ -77,6 +77,7 @@ new_world(){
   : > "$SIMROOT/loopmap";     : > "$SIMROOT/fs.tsv";      : > "$SIMROOT/zfs.tsv"
   : > "$SIMROOT/mount.fail";  : > "$SIMROOT/umount.fail"; : > "$SIMROOT/zfs.fail"
   : > "$SIMROOT/cfgwrite.trunc"; : > "$BKP/zfs.tsv";     : > "$SIMROOT/ctlpath"
+  : > "$BKP/snaps";           : > "$BKP/props";          mkdir -p "$BKP/snapdata"
   echo 0 > "$SIMROOT/rsync.n"; echo "0 0 0 0 0 0" > "$SIMROOT/rsync.rc"
   # files literal sent total - what the fake rsync reports in its --stats block
   echo "161 2469606195 2470127483 118111600640" > "$SIMROOT/rsync.stats"
@@ -99,7 +100,8 @@ new_world(){
   bkp_identity bkp02 "bkp02 pve01 pve02"
   bkp_node_dir bkp02; bkp_node_dir pve01; bkp_node_dir pve02
   bkp_bridge vmbr99 "vlan99 internal"
-  bkp_storage replica-hdd active; bkp_storage replica-ssd active
+  bkp_storage replica-hdd active replica-hdd/ct
+  bkp_storage replica-ssd active replica-ssd/ct
   bkp_dataset replica-hdd/ct yes /replica-hdd/ct
   bkp_dataset replica-ssd/ct yes /replica-ssd/ct
 
@@ -144,7 +146,13 @@ fail_zfs(){ printf '%s\n' "$1" >> "$SIMROOT/zfs.fail"; }   # e.g. "snapshot tank
 bkp_identity(){ printf '%s\n' "$1" > "$BKP/node"; printf '%s\n' "$2" > "$BKP/nodes"; }
 bkp_node_dir(){ mkdir -p "$BKP/fs/etc/pve/nodes/$1/lxc" "$BKP/fs/etc/pve/nodes/$1/qemu-server"; }
 bkp_bridge(){   local b="$1"; shift; printf '%s\n' "$@" > "$BKP/bridges/$b"; }
-bkp_storage(){  printf '%s\n' "$2" > "$BKP/storage/$1"; }
+# id, status, and the PARENT DATASET that storage id resolves to. The dataset
+# is not decoration: the backup node's zfs fake uses it to answer "does a
+# config still boot from the dataset I have just been told to destroy", which
+# is the one invariant --move-dest turns on.
+bkp_storage(){  printf '%s\n' "$2" > "$BKP/storage/$1"
+                [[ -n "${3:-}" ]] && printf '%s\n' "$3" >> "$BKP/storage/$1"
+                return 0; }
 bkp_dataset(){  # dataset mounted(yes|no) mountpoint
   printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$BKP/zfs.tsv"
   [[ "$2" == yes ]] && mkdir -p "$BKP/fs$3"; return 0; }
@@ -199,8 +207,10 @@ LANES=1
 BW_MIN_MB=20
 LOG_KEEP_DAYS=14
 RUNS_KEEP=200
+SNAP_KEEP=7
 MNT_BASE=$SIMROOT/mnt
 EOF
+  exclude '/tmp/*' '/run/*' '/var/tmp/systemd-private-*'
   SIM_MOCK_BRIDGE=vmbr99; }
 conf_set(){ # key value
   { grep -v "^$1=" "$WORK/ctrep.conf" || true; } > "$WORK/.conf"
@@ -209,7 +219,11 @@ conf_set(){ # key value
   [[ "$1" == MOCKNET_BRIDGE ]] && SIM_MOCK_BRIDGE="$2"
   return 0; }
 inventory(){ printf '%s\n' "$@" > "$WORK/inventory-replica.tsv"; }
-exclude(){   printf '%s\n' "$@" > "$WORK/exclude.tsv"; }
+# The per-site exclude list, in the flat shape a sandbox has. new_world writes
+# the three lines the tool ships with; a scenario calls this again to become a
+# site that has edited them - or removes the file, which both engines refuse.
+exclude(){    printf '%s\n' "$@" > "$WORK/ctrep-exclude.conf"; }
+no_exclude(){ rm -f "$WORK/ctrep-exclude.conf"; }
 truncate_cfg_write(){ printf '%s\n' "$1" >> "$SIMROOT/cfgwrite.trunc"; }   # tgt vmid
 kill_next_rsync(){ : > "$SIMROOT/rsync.kill"; }
 rsync_rc(){ printf '%s\n' "$*" > "$SIMROOT/rsync.rc"; echo 0 > "$SIMROOT/rsync.n"; }
@@ -401,6 +415,28 @@ for k in sys.argv[1].split("."):
 print(d)' "$2" 2>/dev/null)"
   [[ "$got" == "$3" ]] || _err "history $1 last: $2 = '$got', expected '$3'"; }
 
+# ---------- snapshots on the backup node ----------
+# The engine's daily snapshot of a copy, and --move-dest's transfer snapshot,
+# both live in $BKP/snaps with their contents under $BKP/snapdata. A scenario
+# can plant one (a week of history that already exists, or one a human took by
+# hand and which nothing here may sweep up) and assert on what survived.
+bkp_snap(){ printf '%s\n' "$1" >> "$BKP/snaps"; mkdir -p "$BKP/snapdata/$1"
+            printf '%s\n' "${2:-planted}" > "$BKP/snapdata/$1/rootfs.txt"; }
+# what a copy's dataset holds right now, so a move has something to carry
+copy_put(){ mkdir -p "$BKP/fs$1"; printf '%s\n' "$3" > "$BKP/fs$1/$2"; }
+snap_exists(){ grep -qxF "$1" "$BKP/snaps" 2>/dev/null || _err "snapshot $1 is missing on the backup node"; }
+snap_absent(){ grep -qxF "$1" "$BKP/snaps" 2>/dev/null && _err "snapshot $1 must NOT exist"; return 0; }
+snaps_are(){   # dataset, then every snapshot short name that must be left
+  local ds="$1" got want; shift
+  got="$(awk -F'@' -v d="$ds" '$1==d{print $2}' "$BKP/snaps" 2>/dev/null | sort | tr '\n' ' ')"
+  if (( $# )); then want="$(printf '%s\n' "$@" | sort | tr '\n' ' ')"; else want=""; fi
+  [[ "$got" == "$want" ]] || _err "snapshots of $ds: '$got', expected '$want'"; }
+snap_holds(){  # snapshot, file, text - history is only history if the bytes are in it
+  grep -qF -- "$3" "$BKP/snapdata/$1/$2" 2>/dev/null \
+    || _err "snapshot $1: $2 does not hold '$3' (got: $(cat "$BKP/snapdata/$1/$2" 2>/dev/null))"; }
+snapdir_visible(){ grep -qF "$1	snapdir=visible" "$BKP/props" 2>/dev/null \
+    || _err "snapdir=visible was never set on $1 - .zfs stays hidden"; }
+
 scenario(){
   N="${1%%:*}"
   [[ -n "$ONLY" && "$ONLY" != "$N" ]] && return 1
@@ -512,7 +548,9 @@ if scenario "6: R1 LIVE_FALLBACK=1 reads the live image and says so every round"
   rc_is 0; clean                       # a live read on a non-ZFS fs is not a violation
   has "WARN R1: 'tank-ssd-nas' is on xfs - syncing from LIVE images (no point-in-time; LIVE_FALLBACK=1)"
   traced "mount -o loop,ro,noload $SIMROOT/pool/tank-ssd/hosting-ssd/images/113/vm-113-disk-0.raw"
-  untraced "zfs snapshot"
+  # named, not bare: the copy on the backup node IS snapshotted after a green
+  # round, and its trace line also contains the words "zfs snapshot"
+  untraced "zfs snapshot tank-ssd@"
   cfg_exists 8113
   done_scenario
 fi
@@ -1501,6 +1539,7 @@ if scenario "79: repo shape - a file left at the OLD home is refused, not ranked
   : > "$WORK/bin/ketsync"; : > "$WORK/lib/common.sh"
   ln -s "$ENGINE" "$WORK/engines/ct-replica.sh"
   cp "$WORK/ctrep.conf" "$WORK/conf/ctrep.conf"
+  cp "$WORK/ctrep-exclude.conf" "$WORK/conf/ctrep-exclude.conf"
   mv "$WORK/inventory-replica.tsv" "$WORK/inventory/inventory-replica.tsv"
   mv "$WORK/ctrep.conf" "$WORK/engines/ctrep.conf"          # the stale copy
   OUT="$("$WORK/engines/ct-replica.sh" --all 2>&1)"; RC=$?
@@ -1513,8 +1552,377 @@ if scenario "79: repo shape - a file left at the OLD home is refused, not ranked
   rc_is 2
   has "the work lists moved to inventory/"
   rm "$WORK/engines/inventory-replica.tsv"
+  # With both stale copies gone the walk-up has to find ALL THREE files in the
+  # repo tree, the exclude list included. It is looked for one directory up
+  # like the other two, and an engine that only re-pointed two of them refuses
+  # every run on a real fleet with a message about a file that is right there.
+  OUT="$("$WORK/engines/ct-replica.sh" --all 2>&1)"; RC=$?
+  hasnt "the exclude list is missing"
   OUT="$("$WORK/engines/ct-replica.sh" --help 2>&1)"; RC=$?
   rc_is 0
+  done_scenario
+fi
+
+# =============================================================================
+#  the per-site exclude list
+# =============================================================================
+if scenario "80: the shipped excludes reach rsync, and that junk never lands on the copy"; then
+  run_engine --ctid 105
+  rc_is 0; clean
+  traced "rsyncexclude /tmp/*"
+  traced "rsyncexclude /run/*"
+  traced "rsyncexclude /var/tmp/systemd-private-*"
+  # the flags are half the claim; what is IN the copy is the other half
+  copy_has    /replica-hdd/ct/subvol-8105-disk-0 var/log/syslog
+  copy_absent /replica-hdd/ct/subvol-8105-disk-0 tmp/junk.txt
+  copy_absent /replica-hdd/ct/subvol-8105-disk-0 run/nginx.pid
+  copy_absent /replica-hdd/ct/subvol-8105-disk-0 var/tmp/systemd-private-abc123/x
+  done_scenario
+fi
+
+if scenario "81: a site that edits the list gets ITS patterns, and only those"; then
+  exclude '/var/log/*'
+  run_engine --ctid 105
+  rc_is 0; clean
+  traced   "rsyncexclude /var/log/*"
+  untraced "rsyncexclude /tmp/*"
+  copy_absent /replica-hdd/ct/subvol-8105-disk-0 var/log/syslog
+  # the shipped three are no longer in the file, so they are no longer applied:
+  # the file IS the list, not an addition to a built-in one
+  copy_has /replica-hdd/ct/subvol-8105-disk-0 tmp/junk.txt
+  done_scenario
+fi
+
+if scenario "82: a missing exclude list refuses the run instead of guessing one"; then
+  no_exclude
+  run_engine --ctid 105
+  rc_is 2
+  has "the exclude list is missing"
+  has "/var/tmp/systemd-private-*"
+  untraced "rsync "
+  cfg_absent 8105
+  done_scenario
+fi
+
+if scenario "83: comments and blank lines in the list are not patterns"; then
+  exclude '# boot-time junk' '' '/tmp/*' '; another comment style'
+  run_engine --ctid 105
+  rc_is 0; clean
+  traced   "rsyncexclude /tmp/*"
+  untraced "rsyncexclude # boot-time junk"
+  untraced "rsyncexclude ; another comment style"
+  copy_absent /replica-hdd/ct/subvol-8105-disk-0 tmp/junk.txt
+  copy_has    /replica-hdd/ct/subvol-8105-disk-0 run/nginx.pid
+  done_scenario
+fi
+
+# =============================================================================
+#  R15 - the copy PVE itself is holding
+# =============================================================================
+if scenario "84: R15 a copy PBS is backing up is skipped, never written into"; then
+  bkp_cfg bkp02 8105 <<'CFG'
+arch: amd64
+hostname: ct105.example
+lock: backup
+rootfs: replica-hdd:subvol-8105-disk-0,size=20G
+onboot: 0
+net0: name=eth0,bridge=vmbr99,hwaddr=BC:24:11:00:01:05,ip=10.100.50.5/24,tag=50,type=veth
+CFG
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "GUARD R15: copy 8105 is locked by PVE on bkp02 (lock: backup) - skip"
+  has "=== lane 'all' finished: ok=0 skipped=1 failed=0 ==="
+  untraced "rsync "
+  st_is 105 last.status skipped
+  st_is 105 last.reason r15_pve_lock
+  done_scenario
+fi
+
+if scenario "85: R15 any lock counts, and the log names which one"; then
+  bkp_cfg bkp02 8105 <<'CFG'
+arch: amd64
+hostname: ct105.example
+lock: rollback
+rootfs: replica-hdd:subvol-8105-disk-0,size=20G
+onboot: 0
+net0: name=eth0,bridge=vmbr99,hwaddr=BC:24:11:00:01:05,ip=10.100.50.5/24,tag=50,type=veth
+CFG
+  run_engine --ctid 105
+  rc_is 0
+  has "(lock: rollback) - skip"
+  untraced "rsync "
+  done_scenario
+fi
+
+if scenario "86: R15 holds back one container, not the fleet"; then
+  bkp_cfg bkp02 8105 <<'CFG'
+arch: amd64
+hostname: ct105.example
+lock: backup
+rootfs: replica-hdd:subvol-8105-disk-0,size=20G
+onboot: 0
+net0: name=eth0,bridge=vmbr99,hwaddr=BC:24:11:00:01:05,ip=10.100.50.5/24,tag=50,type=veth
+CFG
+  run_engine
+  rc_is 0; clean
+  has "=== lane 'all' finished: ok=1 skipped=1 failed=0 ==="
+  cfg_exists 8113
+  copy_has /replica-ssd/ct/subvol-8113-disk-0 rootfs.txt
+  done_scenario
+fi
+
+# =============================================================================
+#  the daily snapshot of the copy
+# =============================================================================
+if scenario "87: a green round leaves a dated snapshot, and makes .zfs browsable"; then
+  TODAY="$(date +%F)"
+  run_engine --ctid 105
+  rc_is 0; clean
+  snap_exists "replica-hdd/ct/subvol-8105-disk-0@ketsync-$TODAY"
+  snapdir_visible replica-hdd/ct/subvol-8105-disk-0
+  has "snapshot: replica-hdd/ct/subvol-8105-disk-0@ketsync-$TODAY"
+  st_is 105 snapshot "ketsync-$TODAY"
+  done_scenario
+fi
+
+if scenario "88: a second round the same day takes no second snapshot, and history stays"; then
+  TODAY="$(date +%F)"
+  run_engine --ctid 105
+  rc_is 0
+  snap_holds "replica-hdd/ct/subvol-8105-disk-0@ketsync-$TODAY" rootfs.txt "generation 1"
+  add_image tank-hdd-nas 105 2                 # the container changed
+  run_engine --ctid 105
+  rc_is 0; clean
+  snaps_are replica-hdd/ct/subvol-8105-disk-0 "ketsync-$TODAY"
+  copy_file_has /replica-hdd/ct/subvol-8105-disk-0 rootfs.txt "generation 2"
+  # the live copy has moved on; the snapshot has not. That is the whole point.
+  snap_holds "replica-hdd/ct/subvol-8105-disk-0@ketsync-$TODAY" rootfs.txt "generation 1"
+  done_scenario
+fi
+
+if scenario "89: a round that fails takes no snapshot, and leaves yesterday's alone"; then
+  bkp_dataset replica-hdd/ct/subvol-8105-disk-0 yes /replica-hdd/ct/subvol-8105-disk-0
+  bkp_snap replica-hdd/ct/subvol-8105-disk-0@ketsync-2026-01-08 yesterday
+  rsync_rc 11
+  TODAY="$(date +%F)"
+  run_engine --ctid 105
+  rc_is 1
+  snap_absent "replica-hdd/ct/subvol-8105-disk-0@ketsync-$TODAY"
+  snap_exists replica-hdd/ct/subvol-8105-disk-0@ketsync-2026-01-08
+  done_scenario
+fi
+
+if scenario "90: only the oldest go, and only ever SNAP_KEEP of them are kept"; then
+  bkp_dataset replica-hdd/ct/subvol-8105-disk-0 yes /replica-hdd/ct/subvol-8105-disk-0
+  for d in 01 02 03 04 05 06 07 08; do
+    bkp_snap "replica-hdd/ct/subvol-8105-disk-0@ketsync-2026-01-$d" "day $d"
+  done
+  TODAY="$(date +%F)"
+  run_engine --ctid 105
+  rc_is 0; clean
+  snaps_are replica-hdd/ct/subvol-8105-disk-0 \
+    ketsync-2026-01-03 ketsync-2026-01-04 ketsync-2026-01-05 ketsync-2026-01-06 \
+    ketsync-2026-01-07 ketsync-2026-01-08 "ketsync-$TODAY"
+  has "snapshot: pruned replica-hdd/ct/subvol-8105-disk-0@ketsync-2026-01-01"
+  has "snapshot: pruned replica-hdd/ct/subvol-8105-disk-0@ketsync-2026-01-02"
+  done_scenario
+fi
+
+if scenario "91: a snapshot nobody here made is never pruned, however old it is"; then
+  conf_set SNAP_KEEP 1
+  bkp_dataset replica-hdd/ct/subvol-8105-disk-0 yes /replica-hdd/ct/subvol-8105-disk-0
+  bkp_snap replica-hdd/ct/subvol-8105-disk-0@before-the-upgrade "a human took this"
+  bkp_snap replica-hdd/ct/subvol-8105-disk-0@ketsync-2026-01-01 old
+  TODAY="$(date +%F)"
+  run_engine --ctid 105
+  rc_is 0; clean
+  snaps_are replica-hdd/ct/subvol-8105-disk-0 before-the-upgrade "ketsync-$TODAY"
+  done_scenario
+fi
+
+if scenario "92: SNAP_KEEP=0 takes none - and does not destroy what is already there"; then
+  conf_set SNAP_KEEP 0
+  bkp_dataset replica-hdd/ct/subvol-8105-disk-0 yes /replica-hdd/ct/subvol-8105-disk-0
+  bkp_snap replica-hdd/ct/subvol-8105-disk-0@ketsync-2026-01-01 old
+  TODAY="$(date +%F)"
+  run_engine --ctid 105
+  rc_is 0; clean
+  snaps_are replica-hdd/ct/subvol-8105-disk-0 ketsync-2026-01-01
+  st_is 105 snapshot ""
+  done_scenario
+fi
+
+if scenario "93: a copy that could not be snapshotted is named, and the run does not exit 0"; then
+  : > "$BKP/snapshot.fail"
+  run_engine --ctid 105
+  rc_is 1
+  has "WARN: could not snapshot the copy"
+  has "NO SNAPSHOT: 1 copy(ies) were replicated but not snapshotted"
+  has "105/8105"
+  # the bytes DID arrive - this is not a failed transfer, and must not read as one
+  has "=== lane 'all' finished: ok=1 skipped=0 failed=0 ==="
+  copy_has /replica-hdd/ct/subvol-8105-disk-0 rootfs.txt
+  st_is 105 snapshot failed
+  done_scenario
+fi
+
+if scenario "94: a dry run says what it would snapshot, and snapshots nothing"; then
+  TODAY="$(date +%F)"
+  run_engine --ctid 105 --dry-run
+  rc_is 0; clean
+  has "DRY: after a green round it would snapshot replica-hdd/ct/subvol-8105-disk-0@ketsync-$TODAY, keeping 7"
+  snap_absent "replica-hdd/ct/subvol-8105-disk-0@ketsync-$TODAY"
+  done_scenario
+fi
+
+# =============================================================================
+#  --move-dest: the copy changes pool, in the order that cannot lose it
+# =============================================================================
+# Every move scenario starts from the state R8 refuses: a copy that exists on
+# one pool, and a row that now names another.
+move_world(){
+  bkp_cfg bkp02 8105 <<'CFG'
+arch: amd64
+hostname: ct105.example
+memory: 2048
+rootfs: replica-hdd:subvol-8105-disk-0,size=20G
+onboot: 0
+net0: name=eth0,bridge=vmbr99,hwaddr=BC:24:11:00:01:05,ip=10.100.50.5/24,tag=50,type=veth
+CFG
+  bkp_dataset replica-hdd/ct/subvol-8105-disk-0 yes /replica-hdd/ct/subvol-8105-disk-0
+  copy_put /replica-hdd/ct/subvol-8105-disk-0 rootfs.txt "rootfs of CT 105, generation 1"
+  inventory "105	replica-ssd" "113	replica-ssd"
+}
+
+if scenario "95: --move-dest copies, verifies, repoints, and only then removes"; then
+  move_world
+  run_engine --ctid 105 --move-dest
+  rc_is 0; clean
+  has "MOVE: 8105  'replica-hdd' -> 'replica-ssd'"
+  has "MOVE: replica-ssd/ct/subvol-8105-disk-0 verified"
+  has "MOVE: copy config 8105 now boots from 'replica-ssd'"
+  has "MOVE: removed the old dataset replica-hdd/ct/subvol-8105-disk-0"
+  cfg_has 8105 "rootfs: replica-ssd:subvol-8105-disk-0,size=20G"
+  cfg_has 8105 "hostname: ct105.example"
+  copy_file_has /replica-ssd/ct/subvol-8105-disk-0 rootfs.txt "generation 1"
+  [[ -d "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0" ]] \
+    && _err "the old dataset is still on the backup node"
+  untraced "rsync "
+  done_scenario
+fi
+
+if scenario "96: --move-dest carries the copy's history with it"; then
+  move_world
+  bkp_snap replica-hdd/ct/subvol-8105-disk-0@ketsync-2026-01-07 "day 7"
+  bkp_snap replica-hdd/ct/subvol-8105-disk-0@ketsync-2026-01-08 "day 8"
+  run_engine --ctid 105 --move-dest
+  rc_is 0; clean
+  snaps_are replica-ssd/ct/subvol-8105-disk-0 ketsync-2026-01-07 ketsync-2026-01-08
+  snap_holds replica-ssd/ct/subvol-8105-disk-0@ketsync-2026-01-07 rootfs.txt "day 7"
+  snaps_are replica-hdd/ct/subvol-8105-disk-0
+  done_scenario
+fi
+
+if scenario "97: a send that fails while the receive succeeds loses nothing"; then
+  move_world
+  : > "$BKP/send.fail"
+  run_engine --ctid 105 --move-dest
+  rc_is 1
+  has "MOVE: the copy to replica-ssd/ct/subvol-8105-disk-0 did not finish - NOTHING was removed"
+  cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
+  copy_file_has /replica-hdd/ct/subvol-8105-disk-0 rootfs.txt "generation 1"
+  done_scenario
+fi
+
+if scenario "98: a receive that lands short is caught, and nothing is removed"; then
+  move_world
+  : > "$BKP/recv.short"
+  run_engine --ctid 105 --move-dest
+  rc_is 1
+  has "MOVE: the new dataset does not hold what the old one did - NOTHING was removed"
+  cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
+  copy_file_has /replica-hdd/ct/subvol-8105-disk-0 rootfs.txt "generation 1"
+  done_scenario
+fi
+
+if scenario "99: a dataset already sitting at the destination is refused, never overwritten"; then
+  move_world
+  bkp_dataset replica-ssd/ct/subvol-8105-disk-0 yes /replica-ssd/ct/subvol-8105-disk-0
+  copy_put /replica-ssd/ct/subvol-8105-disk-0 rootfs.txt "somebody else put this here"
+  run_engine --ctid 105 --move-dest
+  rc_is 1
+  has "already exists on bkp02 - refusing"
+  copy_file_has /replica-ssd/ct/subvol-8105-disk-0 rootfs.txt "somebody else put this here"
+  cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
+  done_scenario
+fi
+
+if scenario "100: --move-dest is one container by id, and takes no pool name"; then
+  move_world
+  run_engine --move-dest
+  rc_is 2
+  has "--move-dest needs --ctid <id>"
+  run_engine --ctid 105 --move-dest replica-ssd
+  rc_is 2
+  has "--move-dest takes no value (got 'replica-ssd')"
+  run_engine --ctid 105 --move-dest --storage tank-hdd-nas
+  rc_is 2
+  has "--move-dest and --storage do not go together"
+  cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
+  done_scenario
+fi
+
+if scenario "101: a copy already on the row's pool is left alone and said so"; then
+  move_world
+  inventory "105	replica-hdd"
+  run_engine --ctid 105 --move-dest
+  rc_is 0; clean
+  has "MOVE: copy 8105 is already on 'replica-hdd' - nothing to move"
+  has "=== lane 'all' finished: ok=0 skipped=1 failed=0 ==="
+  cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
+  done_scenario
+fi
+
+if scenario "102: --move-dest --dry-run prints the order and writes nothing"; then
+  move_world
+  run_engine --ctid 105 --move-dest --dry-run
+  rc_is 0; clean
+  has "DRY: would move copy 8105 from 'replica-hdd' to 'replica-ssd'"
+  has "6. only then: zfs destroy -r replica-hdd/ct/subvol-8105-disk-0"
+  cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
+  [[ -d "$BKP/fs/replica-ssd/ct/subvol-8105-disk-0" ]] \
+    && _err "a dry move created the destination dataset"
+  done_scenario
+fi
+
+if scenario "103: --move-dest with no copy to move says so instead of making one"; then
+  inventory "105	replica-ssd"
+  run_engine --ctid 105 --move-dest
+  rc_is 1
+  has "MOVE: there is no copy 8105 on bkp02 yet - nothing to move"
+  cfg_absent 8105
+  untraced "rsync "
+  done_scenario
+fi
+
+if scenario "105: a destination that arrived unmounted is refused, and nothing removed"; then
+  move_world
+  : > "$BKP/recv.unmounted"
+  run_engine --ctid 105 --move-dest
+  rc_is 1
+  has "MOVE: replica-ssd/ct/subvol-8105-disk-0 is not mounted (mounted=no) - NOTHING was removed"
+  cfg_has 8105 "rootfs: replica-hdd:subvol-8105-disk-0"
+  copy_file_has /replica-hdd/ct/subvol-8105-disk-0 rootfs.txt "generation 1"
+  done_scenario
+fi
+
+if scenario "104: R8 now names the one command that fixes it"; then
+  move_world
+  run_engine --ctid 105
+  rc_is 1
+  has "GUARD R8: copy 8105 config points at 'replica-hdd' but this row's dest is 'replica-ssd'"
+  has "ct-replica.sh --ctid 105 --move-dest"
+  untraced "rsync "
   done_scenario
 fi
 

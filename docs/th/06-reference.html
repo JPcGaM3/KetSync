@@ -168,6 +168,8 @@ ribute</td></tr>
     <tr><td class="m">--node &lt;ip&gt;</td><td>ทำทั้งเครื่อง ไม่ใช่ราย CT</td><td>evacuate, restore</td></tr>
     <tr><td class="m">--digest</td><td>ส่งรายงาน doctor ทั้งฉบับเข้าเมล (master เท่านั้น)</td><td>watch</td></tr>
     <tr><td class="m">--test</td><td>ส่งเมลทดสอบไป KS_MAIL_INFRA หลังตั้ง postfix เสร็จ</td><td>mail-setup</td></tr>
+    <tr><td class="m">--move-dest</td><td>ใช้คู่ <span class="m">--ctid</span> ย้ายสำเนาไป pool ที่ใบงานระบุไว้ตอนนี้
+        — ไม่ต้องพิมพ์ชื่อ pool ตาม เพราะใบงานคือคำตอบอยู่แล้ว</td><td>replica</td></tr>
     <tr><td class="m">-y</td><td>ตัดสินใจไปแล้ว — ข้ามแค่คำถาม ไม่ข้ามด่านสักด่าน ไม่มี --force</td><td>ทุกตัวที่เขียน</td></tr>
   </table>
 </section>
@@ -202,6 +204,20 @@ ribute</td></tr>
     <tr><td class="m">R12</td><td>storage ต้นทางตายทั้งก้อน = ข้อเท็จจริงเดียว ข้ามพร้อมบอกครั้งเดียว และรอบนั้นไม่เขียว</td></tr>
     <tr><td class="m">R13</td><td>มี 9xxx อยู่ = ข้อมูลใหม่สุดอยู่ที่อื่น สำเนาถูกปล่อยไว้จนกว่าใครจะ destroy 9xxx</td></tr>
     <tr><td class="m">R14</td><td>lock สำเนาที่เครื่องที่ถือมัน — kernel ปลายทางเป็นกรรมการ ใช้ร่วมกับ B8/D8/C8</td></tr>
+    <tr><td class="m">R15</td><td>สำเนาที่ PVE ล็อกอยู่เอง (เช่น <span class="m">lock: backup</span> ตอน PBS กำลัง backup) = ข้าม
+        ตัวสำเนาไม่พัง รอบหน้าซ่อมให้อยู่แล้ว ที่พังคือ <b>ไฟล์ backup</b> ซึ่งจะได้ครึ่งรอบเก่าครึ่งรอบใหม่
+        นับเป็น skip ไม่ใช่ error หายเองเมื่องานนั้นจบ</td></tr>
+  </table>
+  <p>สองอย่างที่ replica ทำเพิ่ม ไม่ใช่ guard แต่อยู่ตรงนี้ให้หาง่าย:</p>
+  <table>
+    <tr><td class="m">snapshot รายวัน</td><td>รอบไหนเขียว สำเนาบนเครื่อง backup จะถูก snapshot วันละครั้ง
+        ชื่อ <span class="m">ketsync-&lt;วันที่&gt;</span> เก็บไว้ <span class="m">SNAP_KEEP</span> วัน
+        ได้สามอย่างจากคำสั่งเดียว: จุดย้อนกลับเมื่อรอบใดรอบหนึ่งตายกลางคัน, ประวัติ (replica ทำให้สำเนา
+        <b>เหมือน</b> ตัวจริง ลบอะไรก็ลบตาม — snapshot คือเส้นแบ่งระหว่างสำเนากับ backup),
+        และเปิดดูไฟล์ย้อนหลังได้ที่ <span class="m">.zfs/snapshot/</span> ตรงๆ</td></tr>
+    <tr><td class="m">--move-dest</td><td>คำตอบของ R8 ย้ายสำเนาข้าม pool ด้วยคำสั่งเดียว
+        <b>ลำดับคือทั้งหมดของเรื่อง</b>: ก๊อปก่อน (พา snapshot ไปด้วย) → ตรวจ → แก้ config ให้ชี้ที่ใหม่แล้วอ่านกลับมาเทียบ →
+        ค่อยลบของเก่าเป็นขั้นสุดท้าย ทุกขั้นก่อนหน้านั้นพังได้ ของเก่ายังบูตได้อยู่</td></tr>
   </table>
   <h3>failback — B</h3>
   <table>
@@ -261,7 +277,17 @@ ribute</td></tr>
     <tr><td class="m">OFFSET / DR_OFFSET</td><td>300 &rarr; 8300 (สำเนา) และ 300 &rarr; 9300 (ตัวชั่วคราว)</td></tr>
     <tr><td class="m">MOCKNET_BRIDGE</td><td>bridge ปิดตาย (vmbr99) ที่สำเนาและตัวที่ถูก isolate ไปอยู่</td></tr>
     <tr><td class="m">SHUTDOWN_GRACE</td><td>เวลารอ shutdown ตอน evacuate/isolate (สั้น เพราะสัญญาณเข้าคิวแล้ว)</td></tr>
+    <tr><td class="m">SNAP_KEEP</td><td>เก็บ snapshot รายวันของสำเนาไว้กี่วัน (ค่าที่ให้มาคือ 7)
+        ใส่ 0 = ไม่ทำเลย และการปิดไม่ลบของเก่าที่มีอยู่ทิ้ง</td></tr>
   </table>
+  <h3>conf/ctrep-exclude.conf — อะไรที่ไม่ก๊อป</h3>
+  <p>บรรทัดละหนึ่ง pattern ของ rsync บรรทัดว่างกับบรรทัดที่ขึ้นต้นด้วย # ไม่นับ
+     <b>replica กับ failback อ่านไฟล์เดียวกัน</b> เพราะทั้งคู่ใช้ <span class="m">--delete</span> กับ rootfs คู่เดียวกัน
+     คนละทิศ — pattern ที่มีผลข้างเดียวแปลว่าไฟล์นั้นไม่เคยถูกก๊อปไปที่สำเนา แล้ววันที่ failback กลับมา
+     มันจะถูก <b>ลบออกจากตัวจริง</b> ไฟล์นี้หาย = ทั้งสองตัวปฏิเสธไม่ยอมรัน ไม่มีการเดารายการให้
+     ที่ให้มาคือสามบรรทัดเดิม: <span class="m">/tmp/*</span>, <span class="m">/run/*</span>,
+     <span class="m">/var/tmp/systemd-private-*</span> — เพิ่มได้เฉพาะของที่รู้ว่าคืออะไร
+     ทุก pattern ที่เพิ่ม คือข้อมูลที่สำเนาจะไม่มี</p>
   <p><code class="inl">conf/ctmig.conf</code> คือชุดเดียวกันฝั่ง migrate ที่ต่างคือ
      BW ของมันแยกเพดานกับ ctrep (doctor เตือนเรื่องนี้อยู่จนกว่า conf จะรวมเป็นไฟล์เดียว)</p>
 </section>
@@ -274,6 +300,7 @@ ribute</td></tr>
     <tr><td class="m">conf/nodes.tsv</td><td>IP + บทบาท ของทุกเครื่อง — ไม่มีคอลัมน์ชื่อ ตั้งใจ</td><td>ตอนมีเครื่องใหม่</td></tr>
     <tr><td class="m">conf/fleet.tsv</td><td>แผนที่ DR: ct, home, dr, dst — ครบทุกคอลัมน์ ไม่มี default</td><td>ตอนรับลูกค้าใหม่</td></tr>
     <tr><td class="m">conf/nodes.map</td><td>IP &rarr; ชื่อ node ระบบสร้างเอง <b>ห้ามแก้มือ</b></td><td>ไม่ต้องแตะ</td></tr>
+    <tr><td class="m">conf/ctrep-exclude.conf</td><td>รายการที่ไม่ก๊อป — replica กับ failback อ่านไฟล์เดียวกัน</td><td>นานๆ ที</td></tr>
     <tr><td class="m">inventory/inventory-replica.tsv</td><td>ใบงานก๊อปทุกคืน (replica + failback ใช้ร่วม)</td><td>บ่อยที่สุด</td></tr>
     <tr><td class="m">inventory/inventory-migrate.tsv</td><td>ใบงานย้ายเข้าฟลีต ใช้เฉพาะช่วงย้าย</td><td>ช่วงย้ายของ</td></tr>
     <tr><td class="m">engines/PAUSE</td><td>มีไฟล์นี้ = replica หยุดทั้งระบบ ใช้ช่วง failback เท่านั้น</td><td>เฉพาะ DR</td></tr>

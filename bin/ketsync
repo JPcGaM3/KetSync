@@ -125,6 +125,10 @@ replica: the live image here -> a stopped copy on the backup node
   --ctid <id>            one container
   --storage <id>         one source storage - this is what cron uses, so the
                          bandwidth ceiling is shared per lane
+  --move-dest            with --ctid: move that copy onto the pool its row now
+                         names. Copies first, verifies, repoints the config,
+                         and only then removes the old dataset. This is what
+                         guard R8 tells you to run after you edit a dest column
   --dry-run              every guard runs, nothing is written
 MENU
 ;;

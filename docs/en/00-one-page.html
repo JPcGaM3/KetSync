@@ -196,6 +196,17 @@
 ./ketsync status</pre></div></details>
       <p>It must end <span class="m">failed=0</span>; cron takes it from there.</p></li>
   </ol>
+  <p><b>Two things the copy gives you back.</b> Each green round leaves a dated snapshot on
+     the backup node and seven days are kept, so a file deleted this morning is still in
+     yesterday's — replication alone is not a backup, this is what makes it one. And a copy
+     can change pool with one command instead of a manual dance.</p>
+  <details class="cmd"><summary>get a file back · move a copy to the other pool</summary><div class="code"><pre><span class="c"># on the backup node: which days exist, then take a file out of one</span>
+ls /replica-hdd/ct/subvol-8130-disk-0/.zfs/snapshot/
+cp /replica-hdd/ct/subvol-8130-disk-0/.zfs/snapshot/ketsync-2026-08-18/etc/nginx/nginx.conf /tmp/
+
+<span class="c"># change the row's dest column first, sync, then move it (dry-run reads the plan)</span>
+./ketsync replica --ctid 130 --move-dest --dry-run
+./ketsync replica --ctid 130 --move-dest</pre></div></details>
 </section>
 
 <section id="r2">
@@ -266,6 +277,7 @@ ssh root@10.100.1.32 pct start 9110</pre></div></details></li>
     <tr><td class="m">conf/nodes.tsv</td><td>a new machine joins</td><td>ip, role</td></tr>
     <tr><td class="m">inventory/inventory-migrate.tsv</td><td>only while migrating in</td><td>old_node, old_ctid, new_ctid, new_node, storage</td></tr>
     <tr><td class="m">conf/ketsync.conf</td><td>this machine's identity + mail</td><td>per machine, never synced</td></tr>
+    <tr><td class="m">conf/ctrep-exclude.conf</td><td>what is NOT copied, both directions</td><td>one rsync pattern per line</td></tr>
   </table>
 </section>
 
@@ -290,6 +302,9 @@ ssh root@10.100.1.32 pct start 9110</pre></div></details></li>
     <tr><td><span class="m">no row in fleet.tsv</span></td><td>add the row, then <span class="m">./ketsync sync</span></td></tr>
     <tr><td>everything says <span class="m">refused</span></td><td>read the next line - it always names what is missing and what to type</td></tr>
     <tr><td>replication does not resume after a disaster</td><td><span class="m">engines/PAUSE</span> still exists; finish with <span class="m">recover --all --destroy</span></td></tr>
+    <tr><td>one container says <span class="m">GUARD R15</span> every round</td><td>PBS is backing that copy up right now. Nothing to do - it clears when the job ends</td></tr>
+    <tr><td>one container says <span class="m">GUARD R8</span> after you edited its pool</td><td><span class="m">./ketsync replica --ctid &lt;id&gt; --move-dest</span> - copies, verifies, then removes the old</td></tr>
+    <tr><td><span class="m">NO SNAPSHOT</span> at the end of a round</td><td>the copy is fine, the day's rollback point is not: check free space on that pool</td></tr>
     <tr><td>not sure what state the fleet is in</td><td><span class="m">./ketsync doctor</span>, read top to bottom</td></tr>
   </table>
 </section>
