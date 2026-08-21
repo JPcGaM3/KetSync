@@ -77,7 +77,7 @@ held", and the run exits 0 having done nothing.
 
 **7. A stub says it is a stub.** Do not make one half work. There are none
 left: `distribute` stopped being one when `engines/ct-distribute.sh` was
-written, and `recall` when `engines/ct-recall.sh` was, with 68/70 and 54/48
+written, and `recall` when `engines/ct-recall.sh` was, with 68/73 and 54/48
 scenarios and mutations behind them - which is the bar for the next one.
 `isolate`/`restore`/`evacuate`/`cleanup` arrived at 83/80, deliberately smaller because
 `ct-prepare.sh` moves no customer data: there is no transfer to tear, no
@@ -137,7 +137,7 @@ follow-up.
 
     make lint     # both layers: bash -n, shellcheck, the language rule
     make test     # both layers: 455 tp simulator + 16 dispatcher + 125 c2v, 137 ketsync
-    make mutation # 538 known bugs put back. None may survive
+    make mutation # 541 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -621,6 +621,18 @@ Two things ct-replica does that are not guards, and belong here anyway:
         is a flock on the machine typing the commands and everything this
         engine does happens elsewhere - during a DR it is driven from two
         machines on purpose. R14, same code, same file
+
+    The allocation's NAME AND FORMAT are one decision and pvesm checks that
+    they agree, so every shape states its format instead of inheriting the
+    storage's default. A zfspool storage defaults to raw - a zvol, named
+    vm-<vmid>-* - and a container rootfs has to be asked for as
+    `--format subvol` before the subvol- name is legal at all. Without it PVE
+    answers `illegal name 'subvol-9110-disk-0' - should be 'vm-9110-*'`, which
+    reads like the name is wrong when the format is what is missing. This
+    engine never passed one, the simulator's fake pvesm never checked, and the
+    two agreed with each other until a real disaster morning put three
+    containers on a zfspool destination. The fake now refuses exactly the way
+    PVE does.
 
 `ct-recall.sh` — C1..C8:
 

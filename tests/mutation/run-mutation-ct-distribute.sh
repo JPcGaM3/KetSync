@@ -467,6 +467,26 @@ mutant "the volume id is rebuilt by hand instead of read from the storage's answ
 # -x. With snapdir=visible on that dataset, dropping the exclude does not fail -
 # it carries every retained day onto a compute node, on the morning the storage
 # node died, and says nothing.
+# ---------- the allocation's name and its format --------------------------
+# A zfspool storage defaults to raw - a zvol named vm-<vmid>-* - so a container
+# rootfs has to be asked for as --format subvol before the subvol- name is
+# legal at all. Without it PVE answers "illegal name 'subvol-9110-disk-0' -
+# should be 'vm-9110-*'", which reads like the name is wrong when the format is
+# what is missing. The engine went its whole life without passing one and the
+# simulator's fake pvesm was kind enough not to notice, until a real disaster
+# morning put three containers on a zfspool destination.
+mutant "the allocation inherits the storage's default format instead of stating one" \
+  's{\Q --format \E\$\Qallocfmt\E}{}' \
+  2
+
+mutant "a dataset is asked for as raw, which is a zvol with the wrong name" \
+  's{\Q    dataset) volname="subvol-\E\$CT_DR\Q-disk-0";  allocfmt=subvol;;\E}{    dataset) volname="subvol-\$CT_DR-disk-0";  allocfmt=raw;;}' \
+  2
+
+mutant "a block volume is asked for as subvol, which no lvm understands" \
+  's{\Q    block)   volname="vm-\E\$CT_DR\Q-disk-0";      allocfmt=raw;;\E}{    block)   volname="vm-\$CT_DR-disk-0";      allocfmt=subvol;;}' \
+  1
+
 # /g: the flag list is written out twice, once for the tty branch and once for
 # cron. A mutation that changed only the first would leave the branch every
 # simulator actually runs untouched, and pass while proving nothing.

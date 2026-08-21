@@ -1174,11 +1174,22 @@ do_ct(){   # $1 = production ctid
   fi
 
   # ---- allocate, by shape -------------------------------------------------
-  local volname volid path mnt
+  local volname volid path mnt allocfmt
+  # The NAME and the FORMAT are one decision, and pvesm checks that they agree.
+  # A zfspool storage defaults to raw - a zvol - and then refuses the name this
+  # engine correctly wants for a container rootfs:
+  #
+  #   illegal name 'subvol-9110-disk-0' - should be 'vm-9110-*'
+  #
+  # which reads like the name is wrong when what is wrong is the format nobody
+  # passed. Every shape states its format rather than inheriting the storage's
+  # default: a dir storage whose default is qcow2 would refuse a .raw name in
+  # exactly the same way, and the next storage type nobody has met yet gets to
+  # fail loudly at the top of this case instead of subtly at the bottom of PVE.
   case "$shape" in
-    block)   volname="vm-$CT_DR-disk-0";;
-    image)   volname="vm-$CT_DR-disk-0.raw";;
-    dataset) volname="subvol-$CT_DR-disk-0";;
+    block)   volname="vm-$CT_DR-disk-0";      allocfmt=raw;;
+    image)   volname="vm-$CT_DR-disk-0.raw";  allocfmt=raw;;
+    dataset) volname="subvol-$CT_DR-disk-0";  allocfmt=subvol;;
   esac
   # The storage layer NAMES what it allocates, and the name is not ours to
   # rebuild: a dir storage answers with the owner's vmid inside the volume
@@ -1187,7 +1198,7 @@ do_ct(){   # $1 = production ctid
   # three volumes and then could not resolve a single path: the allocation
   # succeeded under one name and everything after it asked about another.
   local allocout
-  allocout=$(rsh "$CT_TO" "pvesm alloc $CT_DST $CT_DR $volname ${CT_SIZE} 2>&1" | tail -1)
+  allocout=$(rsh "$CT_TO" "pvesm alloc $CT_DST $CT_DR $volname ${CT_SIZE} --format $allocfmt 2>&1" | tail -1)
   if [[ "$allocout" != *"$volname"* ]]; then
     log "[$ct] ERROR: pvesm alloc failed on $CT_TONODE: ${allocout:-<no output>}"
     st_fail "$ct" alloc_failed; return 1

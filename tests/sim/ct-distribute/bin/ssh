@@ -187,8 +187,31 @@ case "$c" in
 
   "pvesm alloc "*)
     dry_forbids "pvesm alloc on $host" || exit 1
-    read -r _ _ sid _vmid volname _size <<<"$c"
+    read -r _ _ sid _vmid volname _size _rest <<<"$c"
     [[ -f "$T/storage/$sid.type" ]] || { echo "storage '$sid' does not exist" >&2; exit 2; }
+    # THE NAME AND THE FORMAT ARE ONE DECISION, and pvesm checks that they
+    # agree. This fake did not, which is how an engine that never passed
+    # --format stayed green here for the whole of its life and then met a
+    # zfspool destination on a real disaster morning:
+    #
+    #   illegal name 'subvol-9110-disk-0' - should be 'vm-9110-*'
+    #
+    # A zfspool storage defaults to raw - a zvol, named vm-<vmid>-* - and a
+    # container rootfs has to be asked for as `--format subvol` before the
+    # subvol- name is legal at all. Worded exactly as PVE words it, because
+    # the message is what somebody will be reading at four in the morning.
+    fmt=""
+    for _w in $c; do
+      case "$_w" in --format) fmt=NEXT;; *) [[ "$fmt" == NEXT ]] && fmt="$_w";; esac
+    done
+    [[ "$fmt" == NEXT ]] && fmt=""
+    [[ -n "$fmt" ]] || fmt=raw          # every plugin here defaults to raw
+    case "$fmt" in
+      subvol) [[ "$(st_field "$host" "$sid" type)" == zfspool ]]                 || { echo "storage '$sid' does not support format 'subvol'" >&2; exit 2; }
+              [[ "$volname" == subvol-$_vmid-* ]]                 || { echo "illegal name '$volname' - should be 'subvol-$_vmid-*'" >&2; exit 2; };;
+      raw)    [[ "$volname" == vm-$_vmid-* ]]                 || { echo "illegal name '$volname' - should be 'vm-$_vmid-*'" >&2; exit 2; };;
+      *)      echo "unknown format '$fmt'" >&2; exit 2;;
+    esac
     # Allocating into a storage PVE says is inactive is the G1/B3 disaster in
     # another costume: the path exists, the write succeeds, and it lands on the
     # node's root disk.
