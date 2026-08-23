@@ -87,6 +87,14 @@ else
     # R2. A running copy means DR was promoted and this is the live system now.
     [[ "$(cat "$BKP/ct/$vmid.status" 2>/dev/null)" == running ]] \
       && violation "rsync into copy $vmid while it is RUNNING - that is the promoted DR system"
+    # R15, the writing direction. A copy with a config and no `lock:` line is
+    # a copy vzdump's schedule can snapshot at this exact moment - half of one
+    # round, half of the other, archived. The rsync itself is where the window
+    # is open, so the rsync is where the fake looks.
+    _cf="$BKP/fs/etc/pve/nodes/$(cat "$BKP/node" 2>/dev/null)/lxc/$vmid.conf"
+    if [[ -f "$_cf" ]] && ! grep -q '^lock:' "$_cf"; then
+      violation "rsync into copy $vmid while its config is UNLOCKED - a vzdump schedule firing now would archive a half-rewritten rootfs"
+    fi
     # R4's job, and the one G7 does for ct-migrate: --delete into a dataset some
     # OTHER guest boots from empties that guest instead of this copy. The only
     # config allowed to name this volume is this copy's own, on the backup node.

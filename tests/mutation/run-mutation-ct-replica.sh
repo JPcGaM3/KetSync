@@ -544,9 +544,13 @@ mutant "in a repo tree the list is looked for at the old flat home" \
 # vzdump writes `lock: backup` into the copy's config for the whole of a PBS
 # backup, and that backup reads the rootfs this engine writes into. What breaks
 # is the BACKUP, not the copy - so nothing looks wrong until a restore.
+# 84 only, deliberately down from "84 86": with the R15 read mutated off, the
+# write-window lock's race branch (pct set refusing an already-locked guest)
+# now catches the fleet run that 86 stages - the second layer holding against
+# the first layer's removal is defence in depth doing its job, not a gap.
 mutant "a copy PBS is backing up is written into anyway" \
   's{\Q    if [[ -n "\E\$_plock\Q" ]]; then\E}{    if false; then}' \
-  84 86
+  84
 
 mutant "only 'backup' counts, so a rollback in progress is overwritten" \
   's{\Q    if [[ -n "\E\$_plock\Q" ]]; then\E}{    if [[ "\$_plock" == backup ]]; then}' \
@@ -669,6 +673,27 @@ mutant "--move-dest is read after R8 has already refused the row" \
 mutant "a conf that half-reads runs on defaults, the way it used to" \
   's{\Q  if [[ -s "\E\$_conferr\Q" ]]; then\E}{  if false; then}' \
   109
+
+
+# ---------- R15, the writing direction ----------------------------------------
+# The window is the rsync itself, so the fake watches the rsync: a copy with a
+# config and no lock line while bytes move is a violation, and every mutation
+# here is a way that window silently reopens.
+mutant "the copy is never locked, and a mid-round backup archives a torn rootfs" \
+  's{\Q    if ssh \E\$SSH_OPT\Q "\E\$BKP_SSH\Q" "pct set \E\$TGT\Q --lock disk" </dev/null >>"\E\$LOG\Q" 2>&1; then\E}{    if ssh \$SSH_OPT "\$BKP_SSH" "true" </dev/null >>"\$LOG" 2>\&1; then}' \
+  110
+
+mutant "the lock outlives the round, so the NEXT backup of the copy fails too" \
+  's!\Q  [[ -n "\E\$CFG_LOCKED\Q" ]] || return 0\E!  return 0!' \
+  110 113
+
+mutant "a backup that wins the race is written under anyway" \
+  's{\Q      st_skip r15_lock_race; continue\E}{      CFG_LOCKED=""}' \
+  111
+
+mutant "our own leftover lock is blamed on vzdump, forever" \
+  's{\Q      if [[ "\E\$_plock\Q" == disk ]]; then\E}{      if false; then}' \
+  112
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

@@ -94,6 +94,26 @@ case "$c" in
     echo "$sid          zfspool   $s      10737418240      1073741824      9663676416    10.00%"
     exit 0;;
 
+  # ---- the config lock, both directions of R15 ----
+  # `pct set --lock` refuses a guest that is already locked - that refusal IS
+  # vzdump winning the race, so the fake reproduces it rather than clobbering.
+  "pct set "*--lock*)
+    id="$(awk '{print $3}' <<<"$c")"; val="${c##*--lock }"; val="${val%% *}"
+    f="$BKP/fs/etc/pve/nodes/$(cat "$BKP/node")/lxc/$id.conf"
+    [[ -f "$f" ]] || { echo "Configuration file '$id.conf' does not exist" >&2; exit 2; }
+    grep -q '^lock:' "$f" && { echo "CT is locked ($(sed -n 's/^lock: *//p' "$f"))" >&2; exit 25; }
+    # the race a scenario cannot stage from outside: vzdump acquires between
+    # the engine's R15 read of the config and this set
+    [[ -f "$BKP/lockrace" ]] && { rm -f "$BKP/lockrace"; echo "CT is locked (backup)" >&2; exit 25; }
+    dry_forbids "pct set $id --lock on the backup node"
+    printf 'lock: %s\n' "$val" >> "$f"; trace "bkp cfglock $id $val"; exit 0;;
+  "pct unlock "*)
+    id="$(awk '{print $3}' <<<"$c")"
+    f="$BKP/fs/etc/pve/nodes/$(cat "$BKP/node")/lxc/$id.conf"
+    dry_forbids "pct unlock $id on the backup node"
+    [[ -f "$f" ]] && { grep -v '^lock:' "$f" > "$f.n"; mv -f "$f.n" "$f"; }
+    trace "bkp cfgunlock $id"; exit 0;;
+
   # ---- R2 ----
   "pct status "*)
     id="$(awk '{print $3}' <<<"$c")"; f="$BKP/ct/$id.status"

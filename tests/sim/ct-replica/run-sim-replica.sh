@@ -1997,6 +1997,81 @@ if scenario "105: a destination that arrived unmounted is refused, and nothing r
   done_scenario
 fi
 
+# =============================================================================
+#  R15, the writing direction: the copy is locked while the bytes move
+# =============================================================================
+if scenario "110: while a round writes, the copy is locked, and unlocked the moment it is done"; then
+  run_engine --ctid 105                       # first round: no config, nothing to lock
+  rc_is 0; clean
+  untraced "bkp cfglock"
+  run_engine --ctid 105                       # the copy exists now - this is the window
+  rc_is 0; clean
+  traced "bkp cfglock 8105 disk"
+  traced "bkp cfgunlock 8105"
+  # afterwards the lock is gone: vzdump's NEXT schedule must see a normal guest
+  cfg_hasnt 8105 '^lock:'
+  done_scenario
+fi
+
+if scenario "111: a backup that wins the race is a skip, not a write underneath it"; then
+  bkp_cfg bkp02 8105 <<'CFG'
+arch: amd64
+hostname: ct105.example
+rootfs: replica-hdd:subvol-8105-disk-0,size=20G
+onboot: 0
+net0: name=eth0,bridge=vmbr99,hwaddr=BC:24:11:00:01:05,ip=10.100.50.5/24,tag=50,type=veth
+CFG
+  bkp_dataset replica-hdd/ct/subvol-8105-disk-0 yes /replica-hdd/ct/subvol-8105-disk-0
+  : > "$BKP/lockrace"                         # vzdump takes the lock between R15's read and ours
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "could not lock copy 8105 - a backup started after this round's checks"
+  has "=== lane 'all' finished: ok=0 skipped=1 failed=0 ==="
+  untraced "rsync "
+  done_scenario
+fi
+
+if scenario "112: a lock this tool left behind is named as ours, with the command that ends it"; then
+  bkp_cfg bkp02 8105 <<'CFG'
+arch: amd64
+hostname: ct105.example
+lock: disk
+rootfs: replica-hdd:subvol-8105-disk-0,size=20G
+onboot: 0
+net0: name=eth0,bridge=vmbr99,hwaddr=BC:24:11:00:01:05,ip=10.100.50.5/24,tag=50,type=veth
+CFG
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "still carries 'lock: disk' on bkp02 - skip"
+  has "leftover from a round that died mid-write"
+  has "pct unlock 8105"
+  hasnt "vzdump reading the rootfs"
+  # named, never broken: ours-crashed and a human's disk operation look
+  # identical from here, so the config keeps its lock until a person decides
+  cfg_has 8105 "lock: disk"
+  untraced "rsync "
+  done_scenario
+fi
+
+if scenario "113: a failed round still unlocks the copy on its way out"; then
+  bkp_cfg bkp02 8105 <<'CFG'
+arch: amd64
+hostname: ct105.example
+rootfs: replica-hdd:subvol-8105-disk-0,size=20G
+onboot: 0
+net0: name=eth0,bridge=vmbr99,hwaddr=BC:24:11:00:01:05,ip=10.100.50.5/24,tag=50,type=veth
+CFG
+  bkp_dataset replica-hdd/ct/subvol-8105-disk-0 yes /replica-hdd/ct/subvol-8105-disk-0
+  rsync_rc 11
+  run_engine --ctid 105
+  rc_is 1
+  traced "bkp cfglock 8105 disk"
+  traced "bkp cfgunlock 8105"
+  # a leftover here would block vzdump's next backup AND R15's next round both
+  cfg_hasnt 8105 '^lock:'
+  done_scenario
+fi
+
 if scenario "104: R8 now names the one command that fixes it"; then
   move_world
   run_engine --ctid 105

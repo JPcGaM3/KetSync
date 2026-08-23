@@ -168,6 +168,14 @@
 #      destination entry the source has no counterpart for.
 #  ONLY after a green round, so every snapshot names a copy that was whole.
 #
+#   R15 works BOTH directions now. While this engine writes into a copy the
+#       copy carries `lock: disk` in pmxcfs, so a vzdump schedule that fires
+#       mid-round refuses that guest - loudly, in the job log - instead of
+#       snapshotting a half-rewritten rootfs into an archive that restores to
+#       a filesystem that never existed. Set only while a config exists, and
+#       cleared on every way out of the round; a leftover (a round that died
+#       mid-write) is named by the next round with the pct unlock that ends it.
+#
 #   R15 a copy PVE itself has locked is left alone. vzdump writes `lock: backup`
 #       into the copy's config for the whole of a PBS backup, and that backup
 #       reads the same rootfs this engine writes into. rsync --delete running
@@ -1344,6 +1352,18 @@ peek_dst_lock(){   # $1 = ssh destination, $2 = vmid -> 0 free, 1 held, 2 no ans
 # happened. A CT still marked "running" here was interrupted, and saying so
 # beats leaving a state file that claims a sync is still in progress.
 CUR_MNT=""
+# The config lock this run set on the copy, cleared on EVERY way out of the
+# iteration - success, a failed rsync, and the EXIT trap alike. pmxcfs keeps
+# it across reboots, so a leftover is not harmless: it blocks vzdump's next
+# backup of that copy and R15's next round both. The stale-lock branch in R15
+# is the net under this trapeze, not a licence to skip the release.
+CFG_LOCKED=""
+release_cfg_lock(){
+  [[ -n "$CFG_LOCKED" ]] || return 0
+  ssh $SSH_OPT "$BKP_SSH" "pct unlock $CFG_LOCKED" </dev/null >>"$LOG" 2>&1 \
+    || log "[$CFG_LOCKED] WARN: pct unlock $CFG_LOCKED failed - the copy stays locked, vzdump will"
+  CFG_LOCKED=""
+}
 end_iteration(){
   if [[ -n "$CUR_MNT" ]]; then
     mountpoint -q "$CUR_MNT" 2>/dev/null && { umount "$CUR_MNT" >>"$LOG" 2>&1 || true; }
@@ -1351,10 +1371,12 @@ end_iteration(){
   fi
   release_tgt_lock
   # Here rather than in cleanup(), because cleanup() tears the ssh control
-  # masters down and this needs one: releasing over a connection that is
+  # masters down and these need one: releasing over a connection that is
   # already gone opens a fresh one, and on a killed run that is the moment the
   # network is least likely to cooperate. cleanup() calls end_iteration first,
-  # so the order holds on the trap path too.
+  # so the order holds on the trap path too. The config lock goes first: it is
+  # the one whose leftover survives a reboot.
+  release_cfg_lock
   release_dst_lock
   [[ "$ST_STATUS" == running ]] && { ST_STATUS=interrupted; ST_REASON=interrupted; }
   st_flush
@@ -1678,6 +1700,25 @@ for CT in "${CTS[@]}"; do
     # the operator knows which.
     _plock=$(printf '%s\n' "$tgtcfg" | sed -n 's/^lock:[[:space:]]*\(.*\)/\1/p' | head -1)
     if [[ -n "$_plock" ]]; then
+      if [[ "$_plock" == disk ]]; then
+        # `disk` is the value THIS engine sets while it writes into the copy
+        # (see the transfer step), so a round that died mid-rsync leaves it
+        # behind in pmxcfs - which survives every reboot - and R15 would then
+        # hold this copy back forever while the log said vzdump was to blame.
+        # It cannot be a live run's: this run holds the R14 lock right now,
+        # and R14 is what makes runs exclusive. It is either ketsync's own
+        # leftover or a disk operation a human is running by hand, and those
+        # two cannot be told apart from here - so nothing is broken
+        # automatically, and the one command that clears it is named instead.
+        log "[$CT] GUARD R15: copy $TGT still carries 'lock: disk' on $BKP_NODE - skip"
+        log "[$CT] GUARD R15:   that is the lock THIS tool sets while it writes into the copy, and"
+        log "[$CT] GUARD R15:   no replica run is live (this run holds the copy's R14 lock). So it"
+        log "[$CT] GUARD R15:   is a leftover from a round that died mid-write - or a disk operation"
+        log "[$CT] GUARD R15:   somebody is running by hand, and those look identical from here."
+        log "[$CT] GUARD R15:   if nothing else is touching $TGT, clear it and the next round runs:"
+        log "[$CT] GUARD R15:     ssh $BKP_SSH 'pct unlock $TGT'"
+        st_skip r15_stale_lock; continue
+      fi
       log "[$CT] GUARD R15: copy $TGT is locked by PVE on $BKP_NODE (lock: $_plock) - skip"
       log "[$CT] GUARD R15:   something else owns this guest right now. For 'backup' that is"
       log "[$CT] GUARD R15:   vzdump reading the rootfs this run would be writing into: the copy"
@@ -1792,6 +1833,31 @@ for CT in "${CTS[@]}"; do
   fi
   CUR_MNT="$MNT"                # from here a kill must still bring it back down
   used=$(df -h "$MNT" 2>/dev/null | awk 'NR==2{print $3}')
+  # --- R15, the other direction: while THIS run writes, vzdump must not read.
+  # R15 above covers a backup that started first. This covers a backup whose
+  # schedule fires mid-round: rsync is rewriting the copy file by file, vzdump
+  # snapshots it at some instant in the middle, and the archive holds half of
+  # one round and half of the other - readable, restorable, and wrong. So the
+  # copy is locked in pmxcfs for exactly the window the bytes move, with the
+  # one enumerated value nothing else on this fleet uses: `backup` is vzdump's
+  # own, `mounted` is what a human's pct mount sets, `disk` is ours. vzdump
+  # refuses a locked guest LOUDLY - that copy's backup fails in the job log and
+  # the mail - which is the trade this buys: a failed backup somebody sees
+  # instead of a torn one nobody does. Only when a config exists: with no
+  # config there is nothing vzdump could target.
+  CFG_LOCKED=""
+  if [[ -n "$tgtcfg" ]]; then
+    if ssh $SSH_OPT "$BKP_SSH" "pct set $TGT --lock disk" </dev/null >>"$LOG" 2>&1; then
+      CFG_LOCKED="$TGT"
+    else
+      # The race R15 cannot see: vzdump took the lock between R15's read and
+      # this write. Backing up won the copy for this round; skip, exactly as
+      # R15 would have, rather than writing under a running backup.
+      log "[$CT] GUARD R15: could not lock copy $TGT - a backup started after this round's checks"
+      log "[$CT] GUARD R15:   vzdump owns the copy now. Skipped, same as if it had been first."
+      st_skip r15_lock_race; continue
+    fi
+  fi
   log "[$CT] SYNC -> $TGT dest=$DEST (used ${used:-?}, bw=$BWLIMIT, src=$sid)"
   st_begin                      # publish "in flight" before the long part starts
   # --timeout=300 catches an IO-stall on the receiver that keeps TCP alive

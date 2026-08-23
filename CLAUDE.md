@@ -145,8 +145,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 462 tp simulator + 16 dispatcher + 125 c2v, 138 ketsync
-    make mutation # 552 known bugs put back. None may survive
+    make test     # both layers: 466 tp simulator + 16 dispatcher + 125 c2v, 138 ketsync
+    make mutation # 556 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -507,6 +507,17 @@ and a dry run may mount only `ro`.
     has no -x, and that one SUCCEEDS, slowly, on the worst morning); writing
     into one makes --delete spend the round failing to unlink a read-only tree.
 
+    R15  works BOTH directions. While this engine writes into a copy, the copy
+         carries `lock: disk` in pmxcfs, so a vzdump schedule firing mid-round
+         refuses that guest loudly instead of archiving a half-rewritten
+         rootfs. Set only while a config exists, released on every way out of
+         the round including the trap; the value is `disk` because `backup` is
+         vzdump's own and `mounted` is what a human's pct mount sets, and a
+         leftover has to be tellable apart from both. The race - vzdump taking
+         the lock between R15's read and this write - comes back as pct set
+         refusing, and is a skip. The next round names a leftover as ours,
+         with the pct unlock that clears it, and breaks nothing by itself.
+         And the reading direction:
     R15  a copy PVE itself has locked is left alone. vzdump writes
          `lock: backup` into the copy's config for the whole of a PBS backup,
          and that backup reads the rootfs this engine writes into. What breaks

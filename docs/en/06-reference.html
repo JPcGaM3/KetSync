@@ -179,8 +179,9 @@
         per-lane and per-copy locks; copy config must match the row; the mock bridge has no uplink;
         a stopped copy off production bridges; a dead source storage is one fact; a live 9xxx
         freezes that copy (R13); the copy is locked where it lives (R14); a copy PVE has locked
-        — a PBS backup in flight — is skipped, so the backup does not end up half of two
-        rounds (R15)</td></tr>
+        — a PBS backup in flight — is skipped, and while a round WRITES the copy carries
+        <span class="m">lock: disk</span> so a backup schedule firing mid-round fails loudly
+        for that guest instead of archiving a half-rewritten rootfs (R15, both directions)</td></tr>
     <tr><td class="m">B0-B8</td><td>failback: production stopped (unreachable is not stopped);
         B2 lifecycle; image on a real mount and already existing; unmount before resize; grow on
         ENOSPC; --final refuses without its safety snapshot (B7); R14 again (B8)</td></tr>
