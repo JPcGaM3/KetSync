@@ -136,7 +136,7 @@ one thing.
 | `ts` | local time the run finished, ISO 8601 with offset. |
 | `epoch` | the same instant in seconds, for sorting. |
 | `lane` | `all` for a full run, otherwise the storage id passed to `--storage`. |
-| `mode` | `presync` or `stopped`. `stopped` is the final delta off a CT you stopped yourself. |
+| `mode` | `presync` or `final`. `final` is the last delta off a CT you stopped yourself (records written while the flag was still called `--stopped` say `stopped` here). |
 | `status` | `running` / `ok` / `failed` / `skipped` / `interrupted`. |
 | `reason` | stable slug for why it was not ok. Empty when ok. |
 | `message` | the first ERROR / GUARD / WARN / HINT / NOTE line this CT logged. The headline for a human. |
@@ -204,8 +204,10 @@ Pre-transfer, no data moved:
     node_busy         another lane holds the source node lock (see above)
     ssh_old_node      the old node is unreachable
     ct_not_found      no such CT on the old node
-    not_stopped       --stopped was used on a CT that is still running
-    no_image          --stopped with no image yet; run a presync first
+    not_stopped       --final was used on a CT that is still running
+    no_image          historical: --final (then called --stopped) used to
+                      refuse a CT with no image yet. It now takes the first
+                      full copy instead, so new runs never file this
     pct_mount         could not mount the CT on the old node
     not_running       presync needs a running CT to read /proc/<pid>/root
     pool_space        not enough room in the pool to allocate the image
@@ -253,7 +255,7 @@ this and nothing else, and `ctmig show <ctid>` prints it.
 What you want to see is a fall towards a floor. The floor is whatever the
 container writes between two runs; it never reaches zero on a live CT. When the
 floor is small enough that copying it during a maintenance window is
-acceptable, stop the CT and run `--stopped`.
+acceptable, stop the CT and run `--final`.
 
 A flat or rising series means the CT writes faster than the syncs converge —
 usually a database or a busy log. Sync more often, or accept that this one

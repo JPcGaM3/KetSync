@@ -699,7 +699,7 @@ wave.
 
 **No cutover in the tooling.** Nothing here starts, stops, reboots or rolls
 back a guest. The last thing a migration does is move the final delta with
-`--stopped`; a human stops the container, a human adds `net0`, a human starts
+`--final`; a human stops the container, a human adds `net0`, a human starts
 it. Cutover and DR promotion are decisions with customers on the other end, and
 they are made by somebody looking at the machine.
 

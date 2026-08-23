@@ -14,14 +14,14 @@
 #
 #  This tool does NOT do cutover. Stopping the old CT, pointing each net
 #  line back at its real bridge, starting the new CT - all done by hand.
-#  The one exception is --stopped below, which is a data operation, not a
+#  The one exception is --final below, which is a data operation, not a
 #  lifecycle one.
 #
 #  usage:
 #    ct-migrate.sh                            all rows, one lane
 #    ct-migrate.sh   --storage tank-ssd-nas   only rows on that storage (one lane)
 #    ct-migrate.sh   --ctid 251               only that new_ctid
-#    ct-migrate.sh   --ctid 251 --stopped     FINAL delta sync, old CT must be
+#    ct-migrate.sh   --ctid 251 --final       FINAL delta sync, old CT must be
 #                                            stopped; reads it via `pct mount`.
 #                                            With no image yet it takes the
 #                                            FIRST full copy instead of a
@@ -29,7 +29,7 @@
 #                                            that is already down
 #                                            because /proc/<pid>/root is gone
 #    ct-migrate.sh   --dry-run                every guard, every number, no
-#                                            write. Not valid with --stopped.
+#                                            write. Not valid with --final.
 #
 #  tuning lives in ctmig.conf next to this script — NOT in here. Anything this
 #  script defines below is only a default.
@@ -154,7 +154,7 @@ SSH_CIPHERS=aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr
 # -------------------------------------------------------------------
 
 # ---------- args ----------
-LANE_STORAGE=""; ONLY_CTID=""; STOPPED=0; DRY=0
+LANE_STORAGE=""; ONLY_CTID=""; FINAL=0; DRY=0
 # A value-taking flag whose value was lost to a copy-paste used to hang here
 # forever: `shift 2` fails when only one argument is left, the old `|| true`
 # swallowed that failure, and $# never reached zero. Under cron that is a
@@ -174,7 +174,13 @@ while (( $# )); do
     # ct-failback.sh insists on being told. Refusing a flag that means exactly
     # what the tool already does teaches nothing and costs a run.
     --all)     shift;;
-    --stopped) STOPPED=1; shift;;
+    # --final, the same word recall and failback use for the same operation:
+    # the LAST delta, taken from a source a human has already stopped. This
+    # engine spent its first months calling it --stopped - one verb out of
+    # five with a private name for the fleet-wide idea - and the old flag is
+    # not kept as an alias: one operation, one name, and an unknown flag is
+    # refused the same way every other engine refuses one.
+    --final) FINAL=1; shift;;
     --dry-run) DRY=1; shift;;
     # Walks the comment block instead of counting lines: a fixed range used to
     # stop short of the exit-code contract, which is the half of the header
@@ -183,15 +189,15 @@ while (( $# )); do
     *) echo "unknown argument: $1" >&2; exit 2;;
   esac
 done
-if (( STOPPED )) && [[ -z "$ONLY_CTID" ]]; then
-  echo "--stopped is a single-CT operation: pass --ctid <new_ctid> too" >&2; exit 2
+if (( FINAL )) && [[ -z "$ONLY_CTID" ]]; then
+  echo "--final is a single-CT operation: pass --ctid <new_ctid> too" >&2; exit 2
 fi
-# --stopped exposes the source with `pct mount` on the old node, which is a
+# --final exposes the source with `pct mount` on the old node, which is a
 # write on somebody else's machine, and without it there is no source to
 # compare against - the delta would be invented. A number that is wrong on the
 # one run where being wrong costs a cutover window is worse than no number.
-if (( STOPPED )) && (( DRY )); then
-  echo "--stopped needs 'pct mount' on the old node, which a dry run must not do" >&2
+if (( FINAL )) && (( DRY )); then
+  echo "--final needs 'pct mount' on the old node, which a dry run must not do" >&2
   echo "  dry-run the presync instead:  ct-migrate.sh --ctid $ONLY_CTID --dry-run" >&2
   exit 2
 fi
@@ -271,7 +277,7 @@ SSHOPT_DATA="$SSHOPT_COMMON -o ControlMaster=no -o ControlPath=none -o Compressi
 # One lane per storage keeps the schedules independent: an HDD lane grinding
 # through a 400G CT must not block the SSD lane behind the same lock.
 LANE="${LANE_STORAGE:-all}"
-(( STOPPED )) && LANE="$LANE-final"
+(( FINAL )) && LANE="$LANE-final"
 LANE="${LANE//[^A-Za-z0-9._-]/_}"
 
 # ---------- where the log goes ----------
@@ -429,7 +435,7 @@ fi
 
 exec 9>"$BASE/.sync-$LANE.lock"
 if ! flock -n 9; then
-  if (( STOPPED )); then
+  if (( FINAL )); then
     log "lane '$LANE' is busy - a sync is already running; pause the cron for this lane first"
     exit 1
   fi
@@ -537,7 +543,7 @@ to_gib(){
 # --- rsync accounting -------------------------------------------------------
 # Filled by run_rsync, consumed by the state file. All bytes, all integers.
 #   RS_LITERAL is the one that answers "has the delta converged yet" - it is the
-#   data rsync actually had to invent, i.e. what a final --stopped run will cost.
+#   data rsync actually had to invent, i.e. what a --final run will cost.
 #   RS_WIRE is wire bytes, which is what the bandwidth ceiling is about. It
 #   comes off rsync's "Total bytes received" line because THIS ENGINE PULLS:
 #   the source is root@<old node>:/..., so the local rsync is the receiver and
@@ -757,7 +763,7 @@ json_bool(){ [[ "${1:-0}" == 1 ]] && printf 'true' || printf 'false'; }
 ST_CTID=""; ST_OLD_CTID=""; ST_OLD_NODE=""; ST_NEW_NODE=""; ST_STORAGE=""
 ST_IMG=""; ST_IMG_GIB=0; ST_CFG_PRESENT=0; ST_CFG_SIZE=""; ST_DRIFT=0
 ST_STATUS=""; ST_REASON=""; ST_RC=-1; ST_GROW=0; ST_MODE=presync; ST_MP=()
-(( STOPPED )) && ST_MODE=stopped
+(( FINAL )) && ST_MODE=final
 
 st_reset(){
   ST_CTID=""; ST_OLD_CTID=""; ST_OLD_NODE=""; ST_NEW_NODE=""; ST_STORAGE=""
@@ -951,7 +957,7 @@ release_node_lock(){  # closing the fd is what drops the flock
   NODE_LOCK=""
 }
 
-# --stopped mounts the source CT on the old node; it must come back down on
+# --final mounts the source CT on the old node; it must come back down on
 # EVERY exit path, including the ones that `continue` out of the loop.
 SRC_MOUNT_NODE=""; SRC_MOUNT_CT=""
 cleanup_src(){
@@ -1145,10 +1151,10 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   fi
 
   # --- pick the source: running CT via /proc, or stopped CT via pct mount ---
-  if (( STOPPED )); then
+  if (( FINAL )); then
     st=$(ssh $SSHOPT "root@$old_node" "pct status $old_ctid" </dev/null 2>/dev/null || true)
     if [[ "$st" != *stopped* ]]; then
-      log "[$new_ctid] ERROR: --stopped needs CT $old_ctid on $old_node to be stopped (got: ${st:-unknown})"
+      log "[$new_ctid] ERROR: --final needs CT $old_ctid on $old_node to be stopped (got: ${st:-unknown})"
       log "[$new_ctid] ERROR:   stop it yourself first - this tool does not touch CT lifecycle"
       st_fail not_stopped; continue
     fi
@@ -1159,7 +1165,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
     SRC_MOUNT_NODE="$old_node"; SRC_MOUNT_CT="$old_ctid"
     SRC="root@$old_node:/var/lib/lxc/$old_ctid/rootfs/"
     # With no image yet this is the FIRST copy, not a delta - and that is a
-    # legitimate ask, not a misuse. --stopped used to refuse it and send the
+    # legitimate ask, not a misuse. --final used to refuse it and send the
     # operator to presync, which refuses a stopped container right back: a CT
     # that is already down - decommissioned, or shut down for exactly this
     # move - had no path into the fleet at all, and the two refusals pointed
@@ -1192,11 +1198,11 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
     [[ -z "$oldsize" ]] && { log "[$new_ctid] WARN: cannot read rootfs size, defaulting 8G"; oldsize=8G; }
     quota_gib=$(to_gib "$oldsize")
     # A running CT answers from inside itself; a stopped one cannot run pct
-    # exec at all, but by this point --stopped has already pct-mounted it, so
+    # exec at all, but by this point --final has already pct-mounted it, so
     # its own filesystem answers from the outside. Without this branch every
     # first copy from a stopped CT fell back to quota+headroom - 40G allocated
     # for 1G of data, silently, per container.
-    if (( STOPPED )); then
+    if (( FINAL )); then
       usedb=$(ssh $SSHOPT "root@$old_node" "df -B1 -P /var/lib/lxc/$old_ctid/rootfs" </dev/null 2>/dev/null \
               | awk 'NR==2{print $3}')
     else
@@ -1272,7 +1278,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   arm_mnt "$MNT" "$IMG"         # from here a kill must still bring it back down
   log "[$new_ctid] rsync <= $SRC"
   log "[$new_ctid]    into  $IMG (${ST_IMG_GIB}G) on '$storage', mounted at $MNT"
-  log "[$new_ctid]    target $new_node, bw=$BWLIMIT, mode=$( (( STOPPED )) && echo stopped-final || echo presync )"
+  log "[$new_ctid]    target $new_node, bw=$BWLIMIT, mode=$( (( FINAL )) && echo final || echo presync )"
   st_begin                      # publish "in flight" before the long part starts
   run_rsync "$SRC" "$MNT/"; rc=$?
   ST_RC=$rc
@@ -1353,7 +1359,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
     log "[$new_ctid] GUARD G5: sync FAILED (rc=$rc) - config NOT created; do NOT start this CT"
     st_fail "$( [[ $rc -eq 11 ]] && echo g4_enospc || echo g5_rsync )"; continue
   fi
-  if (( STOPPED )) && [[ $rc -eq 24 ]]; then
+  if (( FINAL )) && [[ $rc -eq 24 ]]; then
     log "[$new_ctid] WARN: rc=24 (files vanished) on a STOPPED CT - something is still writing to it; investigate before go-live"
   fi
   cleanup_src

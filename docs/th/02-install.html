@@ -367,6 +367,11 @@ cp conf/fleet.tsv.sample     conf/fleet.tsv
 cp inventory/inventory-replica.sample.tsv inventory/inventory-replica.tsv</pre></div></details>
   <p>ไฟล์ที่ลงท้าย <code class="inl">.sample</code> คือตัวอย่าง ก๊อปแล้วตัดคำว่า sample ออกถึงใช้จริง
      ตัวอย่างจะถูกอัปเดตตอน <code class="inl">git pull</code> ส่วนตัวจริงของคุณจะไม่ถูกทับ</p>
+  <p>อยากได้ปุ่ม TAB ช่วยเติมคำสั่ง (<code class="inl">./ketsync repl</code> แล้วกด TAB ได้
+     <code class="inl">replica</code> รวมถึง flag กับค่า <code class="inl">--ctid</code> จาก inventory จริง)
+     ก็เปิดได้ เครื่องละครั้งเดียว:</p>
+  <details class="cmd"><summary>เปิด TAB completion (ไม่บังคับ)</summary><div class="code"><pre>echo 'source /root/ketsync/tools/ketsync-completion.bash' &gt;&gt; /root/.bashrc
+source /root/.bashrc</pre></div></details>
 </section>
 
 <section id="s7">

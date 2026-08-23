@@ -156,8 +156,12 @@ MENU
 migrate: an old standalone node -> a raw image on the storage node
 
   --all                  every row in inventory-migrate.tsv
-  --ctid <id>            one container
-  --dry-run              every guard runs, nothing is written
+  --ctid <id>            one container, by its NEW id (column 3)
+  --storage <id>         one lane - rows whose storage column matches
+  --final                the last delta. The old CT must be STOPPED; also
+                         takes the FIRST full copy when no image exists yet
+  --dry-run              every guard runs, nothing is written. Not valid
+                         with --final (it would need pct mount)
 MENU
 ;;
     cleanup) cat <<'MENU'

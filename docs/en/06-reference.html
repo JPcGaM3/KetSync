@@ -247,6 +247,9 @@
         lines — open it and read CT 252's day the way a vzdump task log reads.
         Same 14-day pruning; the day log keeps the whole run</td></tr>
     <tr><td class="m">state/watch.tsv</td><td>what watch holds raised</td></tr>
+    <tr><td class="m">tools/ketsync-completion.bash</td><td>TAB completion: verbs, per-verb flags, and
+        values read from the real tables (--ctid from the inventories, --dest from BKP_DESTS).
+        Enable once: <span class="m">echo 'source /root/ketsync/tools/ketsync-completion.bash' &gt;&gt; /root/.bashrc</span></td></tr>
   </table>
   <p><code class="inl">.sample</code> files are the tracked examples; copy and drop the suffix.
      The real ones are per-site and never overwritten by git.</p>

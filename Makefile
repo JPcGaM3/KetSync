@@ -20,6 +20,7 @@ ENGINES := $(ROOT)/engines/ct-migrate.sh $(ROOT)/engines/ct-replica.sh \
            $(ROOT)/engines/ct-recall.sh $(ROOT)/engines/ct-prepare.sh
 
 SHIPPED := $(ROOT)/bin/ketsync $(ROOT)/lib/*.sh $(ROOT)/tools/*.sh \
+           $(ROOT)/tools/ketsync-completion.bash \
            $(ENGINES) $(ROOT)/engines/tp $(ROOT)/contrib/*.sh
 
 # The harnesses are shipped too: a suite with a syntax error is a gate that
@@ -88,7 +89,7 @@ test-tp:         ## the dispatcher: tp status, tp doctor, argument pass-through
 test-c2v:        ## what both CT-to-VM phase-2 scripts write
 	@$(ROOT)/tests/c2v/run-c2v.sh
 
-test-ketsync:    ## the decision layer: sync, distribute, the confirmation, doctor, recover, watch, mail-setup
+test-ketsync:    ## the decision layer: sync, distribute, the confirmation, doctor, recover, watch, mail-setup, completion
 	@$(ROOT)/tests/sim/sync/run-sim-sync.sh
 	@$(ROOT)/tests/sim/distribute/run-sim-distribute.sh
 	@$(ROOT)/tests/sim/confirm/run-sim-confirm.sh
@@ -96,6 +97,7 @@ test-ketsync:    ## the decision layer: sync, distribute, the confirmation, doct
 	@$(ROOT)/tests/sim/recover/run-sim-recover.sh
 	@$(ROOT)/tests/sim/watch/run-sim-watch.sh
 	@$(ROOT)/tests/sim/mail/run-sim-mail.sh
+	@$(ROOT)/tests/sim/completion/run-sim-completion.sh
 
 # -- mutations ----------------------------------------------------------------
 mutation: mutation-engines mutation-ketsync  ## put every known bug back, prove the suites notice
@@ -117,6 +119,7 @@ mutation-ketsync:  ## the decision layer's own mutations
 	@$(ROOT)/tests/mutation/run-mutation-recover.sh
 	@$(ROOT)/tests/mutation/run-mutation-watch.sh
 	@$(ROOT)/tests/mutation/run-mutation-mail.sh
+	@$(ROOT)/tests/mutation/run-mutation-completion.sh
 
 # The gates assume a Debian userland. On macOS they do not merely fail, they
 # pass wrongly - no flock, bash 3.2 - see the top of the script.

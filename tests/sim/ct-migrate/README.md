@@ -61,9 +61,9 @@ non-empty, even when the engine's own exit code and log look fine.
     10      mp0 is migrated without data and every empty path is named
     11      --storage runs one lane only
     12      LANES splits the tool-wide bandwidth ceiling
-    13      --stopped refuses a CT that is still running
-    14      --stopped final delta mounts, syncs, and always unmounts
-    15      --stopped unmounts the source even when the sync fails
+    13      --final refuses a CT that is still running
+    14      --final delta mounts, syncs, and always unmounts
+    15      --final unmounts the source even when the sync fails
     16      .done freezes a finished CT
     17      G6  an existing config is never rewritten
     18      the old node being unreachable is a clear, distinct error
@@ -93,7 +93,7 @@ when `jsonschema` is importable:
     35      an incomplete inventory row produces no state file at all
     36      history accumulates one valid line per run
     37      a storage id full of JSON-hostile characters still parses
-    38      --stopped records the mode it ran in
+    38      --final records the mode it ran in
     39      mp0 paths that will be empty are named in the state file too
     40      two CTs on the same source node both complete
 
@@ -113,7 +113,8 @@ inventory file itself, so most of them assert that the engine ran *nothing*:
 
     ./tests/mutation/run-mutation.sh    (or: make mutation)
 
-Expected output: `=== 13 mutations killed, 0 survived ===`
+Expected output: `=== <all> mutations killed, 0 survived ===` (the number
+grows with the engine; the suite prints it)
 
 The harness patches one known bug into a copy of `ct-migrate.sh` with `perl`,
 points the simulator at that copy through `ENGINE=`, and fails if the scenarios

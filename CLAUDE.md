@@ -138,6 +138,13 @@ that suite is a line of output, which makes it the easiest suite here to write
 badly, so each mutation silences exactly one check and requires the scenario
 for it to notice.
 
+The TAB completion has 12 and 9, and it earned a suite for the same reason
+the confirmation did: it is the one piece of this system that types into the
+operator's command line. Its first scenario is a DRIFT check - the verb list
+in `tools/ketsync-completion.bash` is diffed against the dispatch table in
+`bin/ketsync` itself - so adding a subcommand without teaching TAB about it
+is a red gate, not a quiet gap.
+
 `role` is the last one without a simulator, and that is the remaining debt. A
 mutation that proves the simulator can fail is part of the simulator, not a
 follow-up.
@@ -145,8 +152,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 476 tp simulator + 16 dispatcher + 125 c2v, 138 ketsync
-    make mutation # 599 known bugs put back. None may survive
+    make test     # both layers: 478 tp simulator + 16 dispatcher + 125 c2v, 150 ketsync
+    make mutation # 609 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -219,8 +226,9 @@ catches none of it, which is why `make lint` passes there and proves nothing.
                          kill a scenario
     tests/tp/ tests/c2v/ the engine dispatcher, and what the CT-to-VM
                          scripts write
-    tools/               the repo's own police: the language rule and the
-                         log-separator rule
+    tools/               the repo's own police (the language rule and the
+                         log-separator rule), and ketsync-completion.bash -
+                         TAB completion, drift-checked against the dispatcher
 
 The engines came from the standalone `tp` repo at commit `b4ddc0c` and are
 edited here; there is no upstream to pull from.
@@ -266,13 +274,16 @@ must be mirrored in its mutation file in the same change. Never "fix" a broken
 anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
-    ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     49 mutations
-    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh     58 mutations
-    ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    60 mutations
-    ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  68 mutations
-    ct-recall.sh     tests/mutation/run-mutation-ct-recall.sh      47 mutations
-    ct-prepare.sh    tests/mutation/run-mutation-ct-prepare.sh     78 mutations
-    tp               tests/mutation/run-mutation-tp.sh           9 mutations
+    ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     66 mutations
+    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    104 mutations
+    ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    72 mutations
+    ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  81 mutations
+    ct-recall.sh     tests/mutation/run-mutation-ct-recall.sh      56 mutations
+    ct-prepare.sh    tests/mutation/run-mutation-ct-prepare.sh     82 mutations
+    tp               tests/mutation/run-mutation-tp.sh              9 mutations
+
+    (the numbers drift upward; each suite prints its own count, and the gate
+    is 0 survived, not a total)
 
 A mutation the runner could not apply is not the only way this goes quiet.
 Three mutations in the migrate suite were, for a while, perl programs that did
@@ -303,7 +314,7 @@ Commands are copied and pasted at 2am; they have to survive that.
 **3. Nothing here starts a container, and nothing creates one.**
 No rollback state machine either. Cutover, DR promotion and the return trip are
 decisions made by hand, on purpose, by somebody looking at the machine. The
-engines refuse to run when the lifecycle is wrong (`--stopped`, B1, B2, R2,
+engines refuse to run when the lifecycle is wrong (migrate `--final`, B1, B2, R2,
 D1) — they never fix it themselves. Bringing a service back is a decision with
 a customer on the other end: `distribute` prints the `pct start` and stops
 there, and that has not moved.

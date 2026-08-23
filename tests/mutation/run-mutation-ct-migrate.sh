@@ -261,8 +261,8 @@ mutant "--dry-run writes the state file over the last real run" \
   's! \Q&& return 0\E\n\Q  local f="\E\$BASE\Q/state/\E\$ST_PREFIX\E!\n  local f="\$BASE/state/\$ST_PREFIX!' \
   57b
 
-mutant "--stopped --dry-run is quietly allowed to pct mount the old node" \
-  's{\Qif (( STOPPED )) && (( DRY )); then\E}{if false; then}' \
+mutant "--final --dry-run is quietly allowed to pct mount the old node" \
+  's{\Qif (( FINAL )) && (( DRY )); then\E}{if false; then}' \
   57c
 
 # ---------- the log is a deliverable, not a side effect --------------------
@@ -407,7 +407,7 @@ mutant "the no-row error goes back to two bare columns and no hint about --ctid"
   48
 
 
-# ---------- --stopped takes the first copy too --------------------------------
+# ---------- --final takes the first copy too ----------------------------------
 mutant "the first-copy path grows the old refusal back, and a down CT is stranded" \
   's{\Q    if [[ ! -f "\E\$IMG\Q" ]]; then\E\n\Q      log "[\E\$new_ctid\Q] FIRST full copy from a STOPPED CT (pct mount) <= \E\$old_node\Q:\E\$old_ctid\Q"\E}{    if [[ ! -f "\$IMG" ]]; then\n      log "[\$new_ctid] ERROR: no image yet - refused"; st_fail no_image; continue\n      log "x"}' \
   14b
@@ -423,6 +423,14 @@ mutant "a stopped CT is sized by pct exec, which cannot answer, so quota+headroo
 mutant "the log quietly goes back to a second directory under engines/" \
   's!\Q  LOGDIR="\E\$\Q(cd "\E\$BASE\Q/.." && pwd)/logs"\E!  :!' \
   71
+
+# ---------- one operation, one name --------------------------------------------
+# The bug a person writes a week after the rename: put --stopped back "for
+# convenience". Two names for one operation is how a runbook and a terminal
+# end up disagreeing about what just ran.
+mutant "--stopped comes back as a quiet alias for --final" \
+  's!\Q    --final) FINAL=1; shift;;\E!    --final) FINAL=1; shift;;\n    --stopped) FINAL=1; shift;;!' \
+  75
 
 # ---------- the log a person can follow ---------------------------------------
 # Per-CT files, the once-a-minute progress line, and the byte wall that used to

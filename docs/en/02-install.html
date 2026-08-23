@@ -204,6 +204,9 @@ cp inventory/inventory-replica.sample.tsv inventory/inventory-replica.tsv</pre><
     <tr><td class="m">conf/fleet.tsv</td><td>the DR map: ct, home, dr, dst — every column required, no defaults</td></tr>
     <tr><td class="m">inventory/inventory-replica.tsv</td><td>what to copy nightly: ct + dest pool, every row</td></tr>
   </table>
+  <details class="cmd"><summary>TAB completion (optional, once per machine)</summary><div class="code"><pre><span class="c"># ./ketsync repl&lt;TAB&gt; -> replica; flags and --ctid values complete too</span>
+echo 'source /root/ketsync/tools/ketsync-completion.bash' &gt;&gt; /root/.bashrc
+source /root/.bashrc</pre></div></details>
 </section>
 
 <section id="s6">

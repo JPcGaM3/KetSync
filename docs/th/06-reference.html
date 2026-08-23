@@ -325,6 +325,9 @@ ribute</td></tr>
         เก็บเฉพาะเรื่องของ CT ตัวเดียว — เปิดอ่านเหมือน task log ของ vzdump
         ลบเองหลัง 14 วันเท่ากัน (log รวมรายวันยังอยู่ครบเหมือนเดิม)</td><td>อ่านอย่างเดียว</td></tr>
     <tr><td class="m">state/watch.tsv</td><td>เรื่องที่ watch ถือค้างอยู่ — ดูผ่าน <span class="m">watch --list</span></td><td>ระบบเขียนเอง</td></tr>
+    <tr><td class="m">tools/ketsync-completion.bash</td><td>TAB completion: เติมชื่อคำสั่ง, flag ของแต่ละคำสั่ง
+        และค่าจากตารางจริง (--ctid จาก inventory, --dest จาก BKP_DESTS) เปิดครั้งเดียวต่อเครื่อง:
+        <span class="m">echo 'source /root/ketsync/tools/ketsync-completion.bash' &gt;&gt; /root/.bashrc</span></td><td>ลงครั้งเดียว</td></tr>
   </table>
   <p>ไฟล์ <code class="inl">.sample</code> คือตัวอย่างที่ git track — ก๊อปแล้วตัดคำว่า sample ออกถึงใช้จริง
      ตัวจริงของแต่ละไซต์ไม่ถูก track และไม่ถูก git pull ทับ</p>

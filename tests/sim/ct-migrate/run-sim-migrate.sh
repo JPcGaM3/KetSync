@@ -547,19 +547,19 @@ if scenario "12: LANES splits the tool-wide bandwidth ceiling"; then
   done_scenario
 fi
 
-if scenario "13: --stopped refuses a CT that is still running"; then
-  run_engine --ctid 251 --stopped
+if scenario "13: --final refuses a CT that is still running"; then
+  run_engine --ctid 251 --final
   rc_is 1; clean
-  has "--stopped needs CT 251"; has "does not touch CT lifecycle"
+  has "--final needs CT 251"; has "does not touch CT lifecycle"
   untraced "rsync"
   done_scenario
 fi
 
-if scenario "14: --stopped final delta mounts, syncs, and always unmounts"; then
+if scenario "14: --final delta mounts, syncs, and always unmounts"; then
   run_engine --ctid 251                                  # normal sync first
   echo stopped > "$SIMROOT/nodes/10.100.1.11/ct/251.status"
   echo 0 > "$SIMROOT/rsync.n"
-  run_engine --ctid 251 --stopped
+  run_engine --ctid 251 --final
   rc_is 0; clean
   has "FINAL delta from a STOPPED CT"
   traced "SRCMOUNT 10.100.1.11 251"
@@ -568,14 +568,15 @@ if scenario "14: --stopped final delta mounts, syncs, and always unmounts"; then
   done_scenario
 fi
 
-if scenario "14b: --stopped with no image yet takes the FIRST full copy instead of refusing"; then
+if scenario "14b: --final with no image yet takes the FIRST full copy instead of refusing"; then
   # The dead end the fleet hit 2026-08-23: CT 253 was already stopped on the
-  # old node, presync refused ("not running"), --stopped refused ("no image
-  # yet"), and the two refusals pointed at each other. A CT that is down has
+  # old node, presync refused ("not running"), the final flag (then called
+  # --stopped) refused ("no image yet"), and the two refusals pointed at each
+  # other. A CT that is down has
   # no other path in - and a full copy of a stopped CT is the most consistent
   # read there is.
   echo stopped > "$SIMROOT/nodes/10.100.1.11/ct/251.status"
-  run_engine --ctid 251 --stopped
+  run_engine --ctid 251 --final
   rc_is 0; clean
   has "FIRST full copy from a STOPPED CT"
   has "application-consistent"
@@ -591,11 +592,11 @@ if scenario "14b: --stopped with no image yet takes the FIRST full copy instead 
   done_scenario
 fi
 
-if scenario "15: --stopped unmounts the source even when the sync fails"; then
+if scenario "15: --final unmounts the source even when the sync fails"; then
   run_engine --ctid 251
   echo stopped > "$SIMROOT/nodes/10.100.1.11/ct/251.status"
   echo 0 > "$SIMROOT/rsync.n"; echo "23" > "$SIMROOT/rsync.rc"
-  run_engine --ctid 251 --stopped
+  run_engine --ctid 251 --final
   rc_is 1; clean
   traced "SRCUMOUNT 10.100.1.11 251"
   [[ -f "$SIMROOT/nodes/10.100.1.11/ct/251.mounted" ]] && _err "source CT left mounted after a failed sync"
@@ -887,13 +888,13 @@ if scenario "37: a storage id full of JSON-hostile characters still parses"; the
   done_scenario
 fi
 
-if scenario "38: --stopped records the mode it ran in"; then
+if scenario "38: --final records the mode it ran in"; then
   run_engine --ctid 251                                  # presync first, as designed
   echo stopped > "$SIMROOT/nodes/10.100.1.11/ct/251.status"
   echo 0 > "$SIMROOT/rsync.n"
-  run_engine --stopped --ctid 251
+  run_engine --final --ctid 251
   rc_is 0; clean
-  st_is 251 last.mode stopped
+  st_is 251 last.mode final
   st_is 251 last.status ok
   done_scenario
 fi
@@ -1210,14 +1211,14 @@ if scenario "57b: a dry resync mounts read-only and reports a real delta"; then
   done_scenario
 fi
 
-if scenario "57c: --stopped and --dry-run together are refused, not reconciled"; then
-  # --stopped needs `pct mount` on the old node to expose the source. That is a
+if scenario "57c: --final and --dry-run together are refused, not reconciled"; then
+  # --final needs `pct mount` on the old node to expose the source. That is a
   # write on somebody else's machine, and without it there is no source at all -
   # so the delta would be invented on the one run where a wrong number costs a
   # cutover window.
-  run_engine --ctid 251 --stopped --dry-run
+  run_engine --ctid 251 --final --dry-run
   rc_is 2
-  has "--stopped needs 'pct mount' on the old node"
+  has "--final needs 'pct mount' on the old node"
   untraced "rsync"
   done_scenario
 fi
@@ -1418,6 +1419,18 @@ if scenario "74: a cron round says where it is - one progress line, no wall, one
   # into the LAST row's file
   grep -qF "ok=" "${_c3[0]}" 2>/dev/null \
     && _err "the run summary leaked into the last CT's file"
+  done_scenario
+fi
+
+if scenario "75: --stopped is gone - this engine says --final like every other one"; then
+  # The rename is only real if the old name is really refused. An alias kept
+  # "for convenience" is two names for one operation, and the day one of them
+  # drifts is the day a runbook and a terminal disagree about what just ran.
+  run_engine --ctid 251 --stopped
+  rc_is 2
+  has "unknown argument: --stopped"
+  untraced "rsync"
+  untraced "SRCMOUNT"
   done_scenario
 fi
 
