@@ -292,7 +292,12 @@ run_engine(){
     # Overridable so one scenario can run the engine from a VENDORED layout -
     # <repo>/engines/ - and prove it reads ketsync's own tables rather than
     # stale copies sitting beside itself.
-    "${ENGINE_PATH:-$WORK/ct-failback.sh}" "$@" ) > "$SIMROOT/out" 2>&1
+    # exec, and the pid recorded first: the engine BECOMES this subshell, so a
+    # fake that must signal the engine (the Ctrl-C scenarios) reads one file
+    # instead of guessing its way up a process tree that under cron-mode
+    # pipelines holds two processes with the engine's name.
+    echo "$BASHPID" > "$SIMROOT/engine.pid"
+    exec "${ENGINE_PATH:-$WORK/ct-failback.sh}" "$@" ) > "$SIMROOT/out" 2>&1
   RC=$?
   OUT="$(cat "$SIMROOT/out")"
   TRACE="$(cat "$SIMROOT/trace")"
@@ -1312,6 +1317,38 @@ if scenario "73: a conf with one broken line refuses the run instead of running 
   has "did not read cleanly - NOTHING was run"
   has "command not found"
   untraced "rsync"
+  done_scenario
+fi
+
+# =============================================================================
+#  the log a person can actually follow
+# =============================================================================
+if scenario "74: a cron round says where it is - one progress line, no wall, one file per CT"; then
+  # What the operator asked for after tailing a silent hour: which CT is the
+  # round on, how far is it, in units a person reads. The fake bursts three
+  # progress updates; exactly ONE line may land - three is the once-a-minute
+  # limit gone, zero is the filter gone. The raw --stats block that used to
+  # follow every transfer must be gone from the log entirely, and each CT's
+  # lines must land in its own file under logs/ct/ as well as the day log.
+  run_engine --all
+  rc_is 0; clean
+  has "[105] progress: 11.0MiB (4%) in 0s at 12.34MB/s"
+  _pn=$(grep -cF "[105] progress:" <<<"$OUT")
+  [[ "$_pn" == 1 ]] || _err "expected exactly 1 progress line for 105, got $_pn"
+  hasnt "Total file size:"
+  hasnt "Number of created files:"
+  _c5=( "$WORK"/logs/ct/failback-105-*.log ); _c21=( "$WORK"/logs/ct/failback-121-*.log )
+  [[ -e "${_c5[0]}" ]] || _err "no per-CT log for 105 under logs/ct/"
+  [[ -e "${_c21[0]}" ]] || _err "no per-CT log for 121 under logs/ct/"
+  grep -qF "[105] progress: 11.0MiB" "${_c5[0]}" 2>/dev/null \
+    || _err "105's file is missing the progress line the day log has"
+  grep -qF "[121]" "${_c5[0]}" 2>/dev/null && _err "105's file carries 121's lines"
+  grep -qF "Total file size:" "${_c5[0]}" 2>/dev/null \
+    && _err "the byte wall leaked into the per-CT log"
+  # the run summary belongs to the day log alone; a forgotten CT_LOG leaks it
+  # into the LAST CT's file
+  grep -qF "failback finished" "${_c21[0]}" 2>/dev/null \
+    && _err "the run summary leaked into the last CT's file"
   done_scenario
 fi
 

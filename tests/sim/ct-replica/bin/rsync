@@ -7,7 +7,7 @@
 # shellcheck source=tests/sim/replica/lib.sh
 . "$SIMLIB"
 dst="${*: -1}"; src="${*: -2:1}"; src="${src%/}"
-logfile=""; wants_stats=0; deletes=0; dryrun=0; exclfile=""; del_excluded=0
+logfile=""; wants_stats=0; deletes=0; dryrun=0; exclfile=""; del_excluded=0; prog2=0
 for a in "$@"; do
   case "$a" in
     --log-file=*)    logfile="${a#--log-file=}";;
@@ -19,6 +19,7 @@ for a in "$@"; do
     # mutation nothing could notice.
     --delete-excluded) deletes=1; del_excluded=1;;
     -n|--dry-run)    dryrun=1;;
+    --info=progress2) prog2=1;;
   esac
 done
 trace "rsync $src -> $dst"
@@ -52,9 +53,9 @@ fi
 # copy it was only supposed to measure.
 (( dryrun )) || dry_forbids "rsync without -n, $src -> $dst"
 
-# The engine must never put rsync in a pipeline to read its stats: that takes
-# stdout away from --info=progress2 and the operator loses the progress bar. So
-# if it asked for stats it must have asked for a file to put them in.
+# The stats must come from --log-file, never from stdout: in a tty stdout is
+# the human's progress bar, and under cron it is the progress filter's stream -
+# either way a parser reading it gets progress updates mixed into its numbers.
 (( wants_stats && ${#logfile} == 0 )) \
   && violation "rsync --stats without --log-file (stats could only come from stdout)"
 
@@ -118,7 +119,13 @@ if [[ -f "$SIMROOT/rsync.kill" ]]; then
   # a terminal signals the whole foreground process GROUP, and both halves are
   # needed: bash discards a SIGINT it took while a child was running if that
   # child exits normally, and keeps going if only the child was signalled.
-  kill -INT "$PPID" 2>/dev/null
+  # The engine is no longer simply $PPID: under cron the rsync shim runs
+  # inside a pipeline element (rsync | rs_progress), so the parent is a
+  # subshell, not the engine. run_engine records the engine's own pid for
+  # exactly this moment - signalling anything found by walking the process
+  # tree was a guess that lost a race once.
+  _eng="$(cat "$SIMROOT/engine.pid" 2>/dev/null)"
+  kill -INT "${_eng:-$PPID}" 2>/dev/null
   kill -INT $$
   sleep 5                              # unreachable; here so a blocked signal shows
   exit 20
@@ -129,14 +136,27 @@ rc="$(awk -v i="$n" 'NR==1{print $(i+1)}' "$SIMROOT/rsync.rc" 2>/dev/null)"
 [[ -z "$rc" ]] && rc=0
 echo $(( n + 1 )) > "$SIMROOT/rsync.n"
 
+# --info=progress2 writes carriage-return separated updates to stdout. The
+# fake emits three in one burst, because that is the shape the engine's cron
+# filter has to survive: the first must become ONE readable log line and the
+# rest must be swallowed by the once-a-minute limit - three lines in the log
+# would be the limit gone, none would be the filter gone.
+if (( prog2 )); then
+  printf '     11,534,336   4%%   12.34MB/s    0:00:01\r  2,569,208,517  38%%   24.68MB/s    0:00:12\r  6,569,208,517 100%%   30.01MB/s    0:00:59 (xfr#161, to-chk=0/157957)\r'
+  printf '\n'
+fi
+
 # real rsync writes its --stats block with THOUSANDS SEPARATORS, so the fake
 # does too - a parser that forgets to strip commas is caught here instead of on
-# a live CT.
-if [[ -n "$logfile" ]]; then
+# a live CT. The block goes to STDOUT as well as the log file, exactly as real
+# rsync sends it: the raw byte wall in the middle of the day log was a real
+# complaint, and the engine's filter can only be proven to drop it if the fake
+# actually says it.
+emit_stats(){
   read -r f_files f_lit f_sent f_total < <(cat "$SIMROOT/rsync.stats" 2>/dev/null \
     || echo "161 2469606195 2470127483 118111600640")
   commafy(){ sed -e :a -e 's/\(.*[0-9]\)\([0-9]\{3\}\)/\1,\2/;ta' <<<"$1"; }
-  cat >> "$logfile" <<EOF
+  cat <<STATS
 Number of files: 157,957 (reg: 133,163, dir: 18,610)
 Number of created files: 0
 Number of deleted files: 0
@@ -148,7 +168,11 @@ Matched data: 0 bytes
 File list size: 0
 Total bytes sent: $(commafy "$f_sent")
 Total bytes received: 3,271
-EOF
+STATS
+}
+(( wants_stats )) && emit_stats
+if [[ -n "$logfile" ]]; then
+  emit_stats >> "$logfile"
 fi
 
 # move the data, so a scenario can prove WHERE the copy came from. 11 is out of

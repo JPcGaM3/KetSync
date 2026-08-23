@@ -330,6 +330,15 @@ case "$c" in
         (( _skip )) || rm -rf "$BKP/fs$dst"${_p} 2>/dev/null
       done
     fi
+    # --info=progress2, when the engine asks for it: three carriage-return
+    # separated updates in one burst, because that is the shape the engine's
+    # cron filter has to survive - the first must become ONE readable log line,
+    # the rest must be swallowed by the once-a-minute limit, and none of them
+    # may reach the stream the stats are parsed from.
+    if [[ "$c" == *--info=progress2* ]]; then
+      printf '     11,534,336   4%%   12.34MB/s    0:00:01\r  2,569,208,517  38%%   24.68MB/s    0:00:12\r  6,569,208,517 100%%   30.01MB/s    0:00:59 (xfr#161, to-chk=0/157957)\r'
+      printf '\n'
+    fi
     # The engine's remote command ends in `; echo rc=$?` and then reads the
     # stats out of rsync's log file. This fake answers a command string rather
     # than running one, so it prints both.

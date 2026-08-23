@@ -212,7 +212,12 @@ run_engine(){
       # shellcheck disable=SC2163  # exporting the function NAMED by the var, on purpose
       export -f command "${SIM_MISSING}"
     fi
-    "$WORK/ct-migrate.sh" "$@" ) > "$SIMROOT/out" 2>&1
+    # exec, and the pid recorded first: the engine BECOMES this subshell, so a
+    # fake that must signal the engine (the Ctrl-C scenarios) reads one file
+    # instead of guessing its way up a process tree that under cron-mode
+    # pipelines holds two processes with the engine's name.
+    echo "$BASHPID" > "$SIMROOT/engine.pid"
+    exec "$WORK/ct-migrate.sh" "$@" ) > "$SIMROOT/out" 2>&1
   RC=$?
   OUT="$(cat "$SIMROOT/out")"
   TRACE="$(cat "$SIMROOT/trace")"
@@ -1379,6 +1384,40 @@ if scenario "71: repo shape - a file left at the OLD home is refused, not ranked
   [[ -d "$WORK/engines/logs" ]] && _err "the engine still keeps a second log directory under engines/"
   OUT="$("$WORK/engines/ct-migrate.sh" --help 2>&1)"; RC=$?
   rc_is 0
+  done_scenario
+fi
+
+# =============================================================================
+#  the log a person can actually follow
+# =============================================================================
+if scenario "74: a cron round says where it is - one progress line, no wall, one file per CT"; then
+  # What the operator asked for after tailing a silent hour: which CT is the
+  # round on, how far is it, in units a person reads. The fake bursts three
+  # progress updates; exactly ONE line may land - three is the once-a-minute
+  # limit gone, zero is the filter gone. The raw --stats block that used to
+  # follow every transfer must be gone from the log entirely, and each row's
+  # lines must land in its own file under logs/ct/ as well as the lane log.
+  run_engine
+  rc_is 0; clean
+  has "[251] progress: 11.0MiB (4%) in 0s at 12.34MB/s"
+  _pn=$(grep -cF "[251] progress:" <<<"$OUT")
+  [[ "$_pn" == 1 ]] || _err "expected exactly 1 progress line for 251, got $_pn"
+  hasnt "Total file size:"
+  hasnt "Number of created files:"
+  has "[251] stats: files=161"
+  _c1=( "$WORK"/logs/ct/migrate-251-*.log ); _c3=( "$WORK"/logs/ct/migrate-253-*.log )
+  [[ -e "${_c1[0]}" ]] || _err "no per-CT log for 251 under logs/ct/"
+  [[ -e "${_c3[0]}" ]] || _err "no per-CT log for 253 under logs/ct/"
+  grep -qF "[251] progress: 11.0MiB" "${_c1[0]}" 2>/dev/null \
+    || _err "251's file is missing the progress line the lane log has"
+  grep -qF "[253]" "${_c1[0]}" 2>/dev/null && _err "251's file carries 253's lines"
+  grep -qF "[251]" "${_c3[0]}" 2>/dev/null && _err "253's file carries 251's lines"
+  grep -qF "Total file size:" "${_c1[0]}" 2>/dev/null \
+    && _err "the byte wall leaked into the per-CT log"
+  # the run summary belongs to the lane log alone; a forgotten CT_LOG leaks it
+  # into the LAST row's file
+  grep -qF "ok=" "${_c3[0]}" 2>/dev/null \
+    && _err "the run summary leaked into the last CT's file"
   done_scenario
 fi
 

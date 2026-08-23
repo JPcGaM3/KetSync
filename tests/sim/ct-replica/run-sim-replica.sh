@@ -285,7 +285,12 @@ run_engine(){
       # shellcheck disable=SC2163  # exporting the function NAMED by the var, on purpose
       export -f command "${SIM_MISSING}"
     fi
-    "$WORK/ct-replica.sh" "$@" ) > "$SIMROOT/out" 2>&1
+    # exec, and the pid recorded first: the engine BECOMES this subshell, so a
+    # fake that must signal the engine (the Ctrl-C scenarios) reads one file
+    # instead of guessing its way up a process tree that under cron-mode
+    # pipelines holds two processes with the engine's name.
+    echo "$BASHPID" > "$SIMROOT/engine.pid"
+    exec "$WORK/ct-replica.sh" "$@" ) > "$SIMROOT/out" 2>&1
   RC=$?
   OUT="$(cat "$SIMROOT/out")"
   TRACE="$(cat "$SIMROOT/trace")"
@@ -2099,6 +2104,57 @@ if scenario "109: a conf with one broken line refuses the run instead of running
   has "did not read cleanly - NOTHING was run"
   has "command not found"
   untraced "rsync "
+  done_scenario
+fi
+
+# =============================================================================
+#  the log a person can actually follow
+# =============================================================================
+if scenario "114: a cron round says where it is - one progress line, and no byte wall"; then
+  # What the operator asked for after tailing a silent hour: which CT is the
+  # round on, how far is it, in units a person reads. The fake bursts three
+  # progress updates; exactly ONE line may land - three is the once-a-minute
+  # limit gone, zero is the filter gone. And the raw --stats block that used
+  # to follow every transfer must be gone from the log entirely: its numbers
+  # already arrive parsed and humanized on the stats: line.
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "[105] progress: 11.0MiB (4%) in 0s at 12.34MB/s"
+  _pn=$(grep -cF "progress:" <<<"$OUT")
+  [[ "$_pn" == 1 ]] || _err "expected exactly 1 progress line, got $_pn"
+  hasnt "Total file size:"
+  hasnt "Number of created files:"
+  has "[105] stats: files=161"
+  # the same day, said twice: the lane log holds the whole round, and
+  # logs/ct/ holds this one container's copy of it - the file an operator
+  # opens to read CT 105's day the way a vzdump task log reads
+  _cl=( "$WORK"/logs/ct/replica-105-*.log )
+  [[ -e "${_cl[0]}" ]] || _err "no per-CT log under logs/ct/ - the second tee is gone"
+  grep -qF "[105] progress: 11.0MiB" "${_cl[0]}" 2>/dev/null \
+    || _err "the per-CT log is missing the progress line the day log has"
+  grep -qF "[105] OK -> 8105" "${_cl[0]}" 2>/dev/null \
+    || _err "the per-CT log is missing the round's verdict"
+  grep -qF "Total file size:" "${_cl[0]}" 2>/dev/null \
+    && _err "the byte wall leaked into the per-CT log"
+  log_has "[105] progress: 11.0MiB"
+  done_scenario
+fi
+
+if scenario "115: two containers, two files - and neither holds the other's day"; then
+  run_engine
+  rc_is 0; clean
+  _c5=( "$WORK"/logs/ct/replica-105-*.log ); _c6=( "$WORK"/logs/ct/replica-113-*.log )
+  [[ -e "${_c5[0]}" ]] || _err "no per-CT log for 105"
+  [[ -e "${_c6[0]}" ]] || _err "no per-CT log for 113"
+  grep -qF "[113]" "${_c5[0]}" 2>/dev/null && _err "105's file carries 113's lines"
+  grep -qF "[105]" "${_c6[0]}" 2>/dev/null && _err "113's file carries 105's lines"
+  # the run summary belongs to the lane log alone - a per-CT file that ends
+  # with the whole fleet's totals is the lane log all over again. The LAST
+  # container's file is the one a forgotten CT_LOG leaks into.
+  grep -qF "finished:" "${_c5[0]}" 2>/dev/null \
+    && _err "the run summary leaked into a per-CT file"
+  grep -qF "finished:" "${_c6[0]}" 2>/dev/null \
+    && _err "the run summary leaked into the last CT's file"
   done_scenario
 fi
 

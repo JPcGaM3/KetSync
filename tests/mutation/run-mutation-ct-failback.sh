@@ -523,6 +523,45 @@ mutant "the log quietly goes back to a second directory under engines/" \
   's!\Q  LOGDIR="\E\$\Q(cd "\E\$BASE\Q/.." && pwd)/logs"\E!  :!' \
   57
 
+# ---------- the log a person can follow ---------------------------------------
+# Per-CT files, the once-a-minute progress line, and the byte wall that used to
+# follow every transfer. Each mutation is the feature quietly not happening -
+# which is exactly what it looked like before it existed.
+mutant "the second tee is gone - no per-CT file is ever written" \
+  's{\Q_tee(){ if [[ -n "\E\$CT_LOG\Q" ]]; then tee -a "\E\$LOG\Q" "\E\$CT_LOG\Q"; else tee -a "\E\$LOG\Q"; fi; }\E}{_tee(){ tee -a "\$LOG"; }}' \
+  74
+
+mutant "CT_LOG is never set, so every line goes to the day log alone" \
+  's!\Q  CT_LOG="\E\$LOGDIR\Q/ct/failback-\E\$ct\Q-\E\$\Q(date +%F).log"\E!  :!' \
+  74
+
+mutant "CT_LOG survives the loop, and the run summary leaks into the last CT's file" \
+  's!\QCT_LOG=""                      # the summary below belongs to the run, not to a CT\E!:!' \
+  74
+
+mutant "the progress line is never printed - cron rounds go back to silence" \
+  's!\Q        log "[\E\$_ct\Q] progress: \E\$\Q(hsize "\E\$_b\Q") (\E\$\{BASH_REMATCH\Q[2]}%) in \E\$_el\Q at \E\$\{BASH_REMATCH\Q[3]}"\E!        :!' \
+  74
+
+mutant "the once-a-minute limit is gone - every update becomes a log line" \
+  's!\Q        [[ -n "\E\$_last\Q" ]] && (( SECONDS - _last < 60 )) && continue\E!        :!' \
+  74
+
+mutant "the stats byte wall lands in the log again" \
+  's!\Q        :  # the raw --stats block - parsed from the stats file, said once, in units\E!        log "[\$_ct] rsync: \$_l"!' \
+  74
+
+# rc=$? would NOT be this bug: pipefail is on, so $? of the pipeline is still
+# rsync's rc. The bug a person writes is the wrong INDEX - the filter is the
+# last element, its rc is always 0, and every failed sync reads as green.
+mutant "the rc judged is the filter's, not rsync's - every failed sync reads as green" \
+  's!\Q    rc=\E\$\Q{PIPESTATUS[0]}\E!    rc=\${PIPESTATUS[1]}!' \
+  33
+
+mutant "the interrupt is swallowed by the pipeline - Ctrl-C no longer ends the run" \
+  's!\Qtrap '"'"'exit 130'"'"' INT\E!: !' \
+  42
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

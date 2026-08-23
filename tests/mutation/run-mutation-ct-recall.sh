@@ -367,6 +367,34 @@ mutant "the log quietly goes back to a second directory under engines/" \
   's!\Q  LOGDIR="\E\$\Q(cd "\E\$BASE\Q/.." && pwd)/logs"\E!  :!' \
   48
 
+# ---------- the log a person can follow ---------------------------------------
+# Per-CT files and the once-a-minute progress line lifted out of the far side's
+# stream. Each mutation is the feature quietly not happening - which is exactly
+# what it looked like before it existed.
+mutant "the second tee is gone - no per-CT file is ever written" \
+  's{\Q_tee(){ if [[ -n "\E\$CT_LOG\Q" ]]; then tee -a "\E\$LOG\Q" "\E\$CT_LOG\Q"; else tee -a "\E\$LOG\Q"; fi; }\E}{_tee(){ tee -a "\$LOG"; }}' \
+  55
+
+mutant "CT_LOG is never set, so every line goes to the day log alone" \
+  's!\Q  CT_LOG="\E\$LOGDIR\Q/ct/recall-\E\$_ct\Q-\E\$\Q(date +%F).log"\E!  :!' \
+  55
+
+mutant "CT_LOG survives the loop, and the run summary leaks into the last CT's file" \
+  's!\Q  CT_LOG=""                    # the summary below belongs to the run, not to a CT\E!  :!' \
+  55
+
+mutant "the progress line is never printed - the stream is captured in silence again" \
+  's!\Q        log "[\E\$_ct\Q] progress: \E\$\Q(hsize "\E\$_b\Q") (\E\$\{BASH_REMATCH\Q[2]}%) in \E\$_el\Q at \E\$\{BASH_REMATCH\Q[3]}"\E!        :!' \
+  55
+
+mutant "the once-a-minute limit is gone - every update becomes a log line" \
+  's!\Q        [[ -n "\E\$_last\Q" ]] && (( SECONDS - _last < 60 )) && continue\E!        :!' \
+  55
+
+mutant "the filter eats the stream - stats and the rc line never reach the parser" \
+  's!\Q        printf '"'"'%s\n'"'"' "\E\$_l\Q" >>"\E\$_keep\Q"\E!        :!' \
+  55
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

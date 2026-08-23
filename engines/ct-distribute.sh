@@ -292,16 +292,26 @@ if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" ]]; then
   LOGDIR="$(cd "$BASE/.." && pwd)/logs"
 fi
 
-mkdir -p "$LOGDIR" "$BASE/state" 2>/dev/null
+mkdir -p "$LOGDIR" "$LOGDIR/ct" "$BASE/state" 2>/dev/null
 LOG="$LOGDIR/distribute-$(date +%F).log"
 # This engine had no pruning at all, which the other three have had from the
 # start. Only distribute-*.log at depth 1, so nothing else in the shared
-# directory is collateral damage.
+# directory is collateral damage. logs/ct/ is pruned by the same clock and the
+# same prefix - a per-CT file is the same day said again.
 if (( LOG_KEEP_DAYS > 0 )); then
-  find "$LOGDIR" -maxdepth 1 -type f -name 'distribute-*.log' \
+  find "$LOGDIR" "$LOGDIR/ct" -maxdepth 1 -type f -name 'distribute-*.log' \
        -mtime +"$LOG_KEEP_DAYS" -delete 2>/dev/null || true
 fi
-log(){ printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG"; }
+# ---------- one container, one file ----------
+# The day log above is the run's narrative: every container, in order. CT_LOG
+# is ONE container's copy of the same lines - set when its turn starts, cleared
+# when it ends - so "what happened to this one today" is one file to open and
+# one file to tail, the way a vzdump task log reads. Everything that goes
+# through log() and the rules lands in both files while CT_LOG is set, and a
+# container whose turn never printed a line never gets a file.
+CT_LOG=""
+_tee(){ if [[ -n "$CT_LOG" ]]; then tee -a "$LOG" "$CT_LOG"; else tee -a "$LOG"; fi; }
+log(){ printf '%s %s\n' "$(date '+%F %T')" "$*" | _tee; }
 # Three widths of rule, because a daily log holds dozens of rounds and dozens
 # of containers and they are not the same kind of edge. Somebody scrolling at
 # 2am is looking for where THEIR container starts, and a wall of identical
@@ -315,9 +325,9 @@ log(){ printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG"; }
 LOGSEP='##############################################################################'
 LOGSEP2='=============================================================================='
 LOGSEP3='------------------------------------------------------------------------------'
-hr(){  printf '%s\n' "$LOGSEP"  | tee -a "$LOG"; }
-hr2(){ printf '%s\n' "$LOGSEP2" | tee -a "$LOG"; }
-hr3(){ printf '%s\n' "$LOGSEP3" | tee -a "$LOG"; }
+hr(){  printf '%s\n' "$LOGSEP"  | _tee; }
+hr2(){ printf '%s\n' "$LOGSEP2" | _tee; }
+hr3(){ printf '%s\n' "$LOGSEP3" | _tee; }
 
 # The first container opens the block, the rest are separated from the one
 # before. The state lives here rather than at the call site, so a loop that
@@ -331,6 +341,33 @@ hsize(){
   elif (( b >= 1048576    )); then printf '%d.%01dMiB' $(( b/1048576 ))    $(( (b%1048576)*10/1048576 ))
   elif (( b >= 1024       )); then printf '%dKiB' $(( b/1024 ))
   else                             printf '%dB' "$b"; fi
+}
+
+# --- progress, the way a backup task log reads -------------------------------
+# Under cron the far side's rsync stream used to be captured whole and read
+# only after it ended - however many minutes or hours that took, the log
+# answered nothing about which CT the run was on or how far it had got. This
+# filter sits between the ssh and the capture: progress updates become one log
+# line per minute in human units - the first immediately, because "the bytes
+# are moving" is what somebody tailing the log is waiting for - and every
+# other line (the stats block, the rc= line, rsync's own words) goes into the
+# file the caller parses, exactly as the captured stream always did.
+rs_progress(){  # stdin: the far side's rsync stream. $1 = CT, $2 = file for everything else
+  local _ct="$1" _keep="$2"
+  tr '\r' '\n' | {
+    local _start=$SECONDS _last="" _l _b _el
+    while IFS= read -r _l; do
+      if [[ "$_l" =~ ^[[:space:]]*([0-9][0-9,]*)[[:space:]]+([0-9]+)%[[:space:]]+([0-9.]+[A-Za-z]*B/s) ]]; then
+        [[ -n "$_last" ]] && (( SECONDS - _last < 60 )) && continue
+        _last=$SECONDS; _b=${BASH_REMATCH[1]//,/}
+        _el=$(( SECONDS - _start ))
+        if (( _el >= 60 )); then _el="$(( _el / 60 ))m"; else _el="${_el}s"; fi
+        log "[$_ct] progress: $(hsize "$_b") (${BASH_REMATCH[2]}%) in $_el at ${BASH_REMATCH[3]}"
+      else
+        printf '%s\n' "$_l" >>"$_keep"
+      fi
+    done
+  }
 }
 # "20G" / "20480M" / "21474836480" -> bytes. A size this cannot read is refused
 # rather than defaulted: allocating a guessed size is how a rootfs arrives 90%
@@ -1297,9 +1334,15 @@ do_ct(){   # $1 = production ctid
         '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?" | tee "$_rsout"
     out=$(cat "$_rsout"); rm -f "$_rsout"
   else
-    out=$(rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --exclude=/.zfs --bwlimit=${bw}m --stats \
+    # Same live line under cron that a tty gets, one per minute. The whole
+    # stream still reaches the parser below: the filter only lifts the
+    # progress updates out and passes everything else into the file.
+    local _rsout; _rsout=$(mktemp /tmp/ctdist-rsync.XXXXXX)
+    rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --exclude=/.zfs --bwlimit=${bw}m --stats \
+        --info=progress2 --no-inc-recursive \
         -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
-        '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?")
+        '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?" | rs_progress "$ct" "$_rsout"
+    out=$(cat "$_rsout"); rm -f "$_rsout"
   fi
   t1=$(date +%s); RS_SECS=$(( t1 - t0 ))
   rc=$(printf '%s\n' "$out" | sed -n 's/^rc=//p' | head -1)
@@ -1385,6 +1428,9 @@ do_ct(){   # $1 = production ctid
 }
 
 for _ct in "${CTS[@]}"; do
+  # From here every line of this CT's turn is said twice: once into the day
+  # log, once into this CT's own day file under logs/ct/.
+  CT_LOG="$LOGDIR/ct/distribute-$_ct-$(date +%F).log"
   hr_ct
   do_ct "$_ct" || true
   cleanup_ct
@@ -1392,6 +1438,7 @@ for _ct in "${CTS[@]}"; do
   # while the next one runs would make a --all over twenty containers look, to
   # every other machine, like one enormous transaction.
   release_dst_lock
+  CT_LOG=""                    # the summary below belongs to the run, not to a CT
 done
 
 hr2

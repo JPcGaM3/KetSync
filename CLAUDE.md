@@ -145,8 +145,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 470 tp simulator + 16 dispatcher + 125 c2v, 138 ketsync
-    make mutation # 562 known bugs put back. None may survive
+    make test     # both layers: 476 tp simulator + 16 dispatcher + 125 c2v, 138 ketsync
+    make mutation # 599 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -177,7 +177,10 @@ catches none of it, which is why `make lint` passes there and proves nothing.
                          directories for the pre-restructure depth for a year
                          and quietly kept engines/logs/; same-depth as the
                          conf walk-up now, with a scenario per engine on where
-                         the log lands
+                         the log lands. logs/ct/ splits the same day per
+                         container (<engine>-<ctid>-<date>.log), and under
+                         cron every transfer logs one progress: line a minute
+                         instead of dumping rsync's raw --stats block
     conf/                every conf, table and sample in one place: ketsync.conf,
                          ctrep.conf and ctmig.conf (the engines' knobs - moved
                          here from engines/, and an engine finding a copy at

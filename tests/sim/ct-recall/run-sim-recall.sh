@@ -967,6 +967,35 @@ if scenario "54: a conf with one broken line refuses the run instead of running 
   done_scenario
 fi
 
+# =============================================================================
+#  the log a person can actually follow
+# =============================================================================
+if scenario "55: a recall says where it is - one progress line, and one file per CT"; then
+  # The far side's rsync stream used to be captured whole and read only after
+  # it ended. Now the progress updates surface as they pass - exactly ONE line
+  # for a burst of three (the once-a-minute limit), in units a person reads -
+  # and everything else still reaches the parser: the stats line below proves
+  # the numbers got through the same pipe the progress was lifted out of.
+  run_engine --ctid 300
+  rc_is 0; clean
+  has "[300] progress: 11.0MiB (4%) in 0s at 12.34MB/s"
+  _pn=$(grep -cF "[300] progress:" <<<"$OUT")
+  [[ "$_pn" == 1 ]] || _err "expected exactly 1 progress line, got $_pn"
+  has "[300] stats: files=161"
+  hasnt "Total file size:"
+  _cl=( "$WORK"/logs/ct/recall-300-*.log )
+  [[ -e "${_cl[0]}" ]] || _err "no per-CT log under logs/ct/ - the second tee is gone"
+  grep -qF "[300] progress: 11.0MiB" "${_cl[0]}" 2>/dev/null \
+    || _err "the per-CT log is missing the progress line the day log has"
+  grep -qF "[300] OK -> 8300 (rc=0)" "${_cl[0]}" 2>/dev/null \
+    || _err "the per-CT log is missing the recall verdict"
+  # the run summary belongs to the day log alone; a forgotten CT_LOG leaks it
+  # into the last CT's file
+  grep -qF "recall finished" "${_cl[0]}" 2>/dev/null \
+    && _err "the run summary leaked into a per-CT file"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

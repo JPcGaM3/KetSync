@@ -293,7 +293,7 @@ if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" ]]; then
   LOGDIR="$(cd "$BASE/.." && pwd)/logs"
 fi
 
-mkdir -p "$LOGDIR" "$BASE/done" "$BASE/state"
+mkdir -p "$LOGDIR" "$LOGDIR/ct" "$BASE/done" "$BASE/state"
 # migrate-, not ctmig-: the file is named after the verb an operator typed, the
 # way replica-, failback- and distribute- already were. One rule, four engines.
 LOG="$LOGDIR/migrate-$LANE-$(date +%F).log"
@@ -301,9 +301,10 @@ LOG="$LOGDIR/migrate-$LANE-$(date +%F).log"
 # written into. Prune before opening today's, so the run that finally fills the
 # disk is not this one. Only migrate-*.log at depth 1: the other engines and the
 # dispatcher keep their own days in this same directory now, and nothing an
-# operator parked here is collateral damage either.
+# operator parked here is collateral damage either. logs/ct/ is pruned by the
+# same clock and the same prefix - a per-CT file is the same day said again.
 if (( LOG_KEEP_DAYS > 0 )); then
-  find "$LOGDIR" -maxdepth 1 -type f -name 'migrate-*.log' \
+  find "$LOGDIR" "$LOGDIR/ct" -maxdepth 1 -type f -name 'migrate-*.log' \
        -mtime +"$LOG_KEEP_DAYS" -delete 2>/dev/null || true
 fi
 
@@ -318,10 +319,19 @@ fi
 # reason the file exists.
 ST_PREFIX="migrate-"
 ST_MSG=""
+# ---------- one container, one file ----------
+# The day log above is the lane's narrative: every row, every round, in order.
+# CT_LOG is ONE container's copy of the same lines - set when its row starts,
+# cleared when it ends - so "what happened to this migration today" is one
+# file to open and one file to tail, the way a vzdump task log reads.
+# Everything that goes through log() and the rules lands in both files while
+# CT_LOG is set, and a row whose turn never printed a line never gets a file.
+CT_LOG=""
+_tee(){ if [[ -n "$CT_LOG" ]]; then tee -a "$LOG" "$CT_LOG"; else tee -a "$LOG"; fi; }
 log(){
   local m="$*"
   [[ -z "$ST_MSG" && "$m" =~ (ERROR|GUARD\ G[0-9]|WARN|HINT|NOTE): ]] && ST_MSG="$m"
-  echo "$(date '+%F %T') $m" | tee -a "$LOG"
+  echo "$(date '+%F %T') $m" | _tee
 }
 
 # A daily log holds dozens of rounds and dozens of containers. Operations are
@@ -342,9 +352,9 @@ log(){
 LOGSEP='##############################################################################'
 LOGSEP2='=============================================================================='
 LOGSEP3='------------------------------------------------------------------------------'
-hr(){  printf '%s\n' "$LOGSEP"  | tee -a "$LOG"; }
-hr2(){ printf '%s\n' "$LOGSEP2" | tee -a "$LOG"; }
-hr3(){ printf '%s\n' "$LOGSEP3" | tee -a "$LOG"; }
+hr(){  printf '%s\n' "$LOGSEP"  | _tee; }
+hr2(){ printf '%s\n' "$LOGSEP2" | _tee; }
+hr3(){ printf '%s\n' "$LOGSEP3" | _tee; }
 
 # The first container opens the block, the rest are separated from the one
 # before. The state lives here rather than at the call site, so a loop that
@@ -361,6 +371,36 @@ hsize(){
   elif (( b >= 1048576    )); then printf '%d.%01dMiB' $(( b/1048576 ))    $(( (b%1048576)*10/1048576 ))
   elif (( b >= 1024       )); then printf '%dKiB' $(( b/1024 ))
   else                             printf '%dB' "$b"; fi
+}
+
+# --- progress, the way a backup task log reads -------------------------------
+# Under cron the transfer used to run silent for however long it took. The
+# numbers were already parsed and said in one readable line at the end, but the
+# minutes in between were silence: nothing in the log answered "which CT is
+# this run on, and how far". This filter sits on rsync's cron-mode output and
+# turns it into what a vzdump task log does: one progress line per minute in
+# human units - the first update immediately, because "the bytes are moving" is
+# what somebody tailing the log is waiting for - rsync's own words (vanished
+# files, IO errors) kept verbatim, and the raw --stats byte block dropped,
+# because the stats: line already says it in units a person can read.
+rs_progress(){  # stdin: rsync stdout+stderr (cron branch). $1 = the CT the lines belong to
+  local _ct="$1"
+  tr '\r' '\n' | {
+    local _start=$SECONDS _last="" _l _b _el
+    while IFS= read -r _l; do
+      if [[ "$_l" =~ ^[[:space:]]*([0-9][0-9,]*)[[:space:]]+([0-9]+)%[[:space:]]+([0-9.]+[A-Za-z]*B/s) ]]; then
+        [[ -n "$_last" ]] && (( SECONDS - _last < 60 )) && continue
+        _last=$SECONDS; _b=${BASH_REMATCH[1]//,/}
+        _el=$(( SECONDS - _start ))
+        if (( _el >= 60 )); then _el="$(( _el / 60 ))m"; else _el="${_el}s"; fi
+        log "[$_ct] progress: $(hsize "$_b") (${BASH_REMATCH[2]}%) in $_el at ${BASH_REMATCH[3]}"
+      elif [[ -z "$_l" || "$_l" =~ ^(Number\ of|Total\ |Literal\ data|Matched\ data|File\ list|sent\ [0-9,]+\ bytes|total\ size\ is) ]]; then
+        :  # the raw --stats block - parsed from the stats file, said once, in units
+      else
+        log "[$_ct] rsync: $_l"
+      fi
+    done
+  }
 }
 
 # A missing binary must say so in one line, instead of surfacing three steps
@@ -540,10 +580,14 @@ run_rsync(){  # $1=src $2=mnt  -> returns rsync rc; progress bar on tty, quiet u
   local t0=$SECONDS
   if [ -t 1 ]; then
     rsync "${opts[@]}" --info=progress2 --no-inc-recursive "$1" "$2"
+    rc=$?
   else
-    rsync "${opts[@]}" "$1" "$2" >>"$LOG" 2>&1
+    # Same progress under cron that a tty gets, filtered to one line a minute.
+    # PIPESTATUS[0] and not $?: the rc G4/G5 judge must be rsync's, never the
+    # filter's. $new_ctid is the caller's - bash scoping makes it visible here.
+    rsync "${opts[@]}" --info=progress2 --no-inc-recursive "$1" "$2" 2>&1 | rs_progress "$new_ctid"
+    rc=${PIPESTATUS[0]}
   fi
-  rc=$?
   RS_SECS=$(( SECONDS - t0 ))
   RS_FILES=0; RS_LITERAL=0; RS_WIRE=0; RS_TOTAL=0
   if [[ -n "$sf" && -s "$sf" ]]; then
@@ -944,8 +988,18 @@ end_iteration(){
   release_node_lock
   [[ "$ST_STATUS" == running ]] && { ST_STATUS=interrupted; ST_REASON=interrupted; }
   st_flush
+  CT_LOG=""                     # this row's turn is over; the file stays
 }
 trap end_iteration EXIT
+# Ctrl-C must end the RUN, not just the copy. Under cron rsync sits in a
+# pipeline with the progress filter, and when the filter - the last element -
+# exits cleanly, bash treats a SIGINT that killed rsync as handled and carries
+# on to the next CT. This trap makes the interrupt mean what the person who
+# sent it meant: the run stops, the EXIT trap cleans up, and 130 says why.
+# Deferred by bash until the foreground job ends, so nothing is torn down
+# under a live rsync - exactly the old behaviour, now stated instead of
+# inherited from how bash happens to treat a child that died of SIGINT.
+trap 'exit 130' INT
 
 ok=0; skipped=0; frozen=0; failed=0
 matched=0            # rows that survived --storage/--ctid; 0 means the flag is wrong
@@ -987,6 +1041,9 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   # file. ST_CTID being set is what arms st_write/st_flush.
   ST_CTID="$new_ctid"; ST_OLD_CTID="$old_ctid"; ST_OLD_NODE="$old_node"
   ST_NEW_NODE="$new_node"; ST_STORAGE="$storage"
+  # From here every line of this row's turn is said twice: once into the
+  # lane's day log, once into this CT's own day file under logs/ct/.
+  CT_LOG="$LOGDIR/ct/migrate-$new_ctid-$(date +%F).log"
   # The rule goes here, not further down: a guard that refuses this row has
   # to print INSIDE the block that names the row, or the reader is left with
   # a GUARD line and no idea which migration it belonged to.

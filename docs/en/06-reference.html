@@ -238,8 +238,14 @@
     <tr><td class="m">inventory/inventory-migrate.tsv</td><td>the intake work list, used while migrating</td></tr>
     <tr><td class="m">engines/PAUSE · engines/pause/&lt;ctid&gt;</td><td>stop everything (failback windows) · pause one CT</td></tr>
     <tr><td class="m">logs/</td><td>every layer's daily log in ONE directory — dispatcher and all six
-        engines; self-pruned after 14 days. Old files stranded in engines/logs/ can be merged:
-        <span class="m">mv engines/logs/*.log logs/</span></td></tr>
+        engines; self-pruned after 14 days. During a transfer the engines log one
+        <span class="m">progress:</span> line per minute — size, percent, speed — so
+        <span class="m">tail -f</span> answers "which CT, how far". Old files stranded in
+        engines/logs/ can be merged: <span class="m">mv engines/logs/*.log logs/</span></td></tr>
+    <tr><td class="m">logs/ct/</td><td>the same day split per container:
+        <span class="m">&lt;engine&gt;-&lt;ctid&gt;-&lt;date&gt;.log</span> holds ONE container's
+        lines — open it and read CT 252's day the way a vzdump task log reads.
+        Same 14-day pruning; the day log keeps the whole run</td></tr>
     <tr><td class="m">state/watch.tsv</td><td>what watch holds raised</td></tr>
   </table>
   <p><code class="inl">.sample</code> files are the tracked examples; copy and drop the suffix.

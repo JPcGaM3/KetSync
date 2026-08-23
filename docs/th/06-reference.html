@@ -315,8 +315,15 @@ ribute</td></tr>
     <tr><td class="m">engines/PAUSE</td><td>มีไฟล์นี้ = replica หยุดทั้งระบบ ใช้ช่วง failback เท่านั้น</td><td>เฉพาะ DR</td></tr>
     <tr><td class="m">engines/pause/&lt;ctid&gt;</td><td>พักราย CT — ลบไฟล์เมื่อพร้อมกลับมา</td><td>ตามจำเป็น</td></tr>
     <tr><td class="m">logs/</td><td>log รายวันของทุกชั้น — dispatcher และ engine ทุกตัว ที่เดียวจบ
-        ชื่อไฟล์บอกคำสั่งกับวันที่ ลบเองหลัง 14 วัน (ของเก่าที่ค้างใน engines/logs/
-        ย้ายมารวมได้: <span class="m">mv engines/logs/*.log logs/</span>)</td><td>อ่านอย่างเดียว</td></tr>
+        ชื่อไฟล์บอกคำสั่งกับวันที่ ลบเองหลัง 14 วัน ระหว่างก๊อปมีบรรทัด
+        <span class="m">progress:</span> ทุก 1 นาที (ขนาด เปอร์เซ็นต์ ความเร็ว) —
+        <span class="m">tail -f</span> แล้วรู้เลยว่าถึง CT ไหน ไปไกลแค่ไหน
+        (ของเก่าที่ค้างใน engines/logs/ ย้ายมารวมได้:
+        <span class="m">mv engines/logs/*.log logs/</span>)</td><td>อ่านอย่างเดียว</td></tr>
+    <tr><td class="m">logs/ct/</td><td>วันเดียวกันแยกราย CT:
+        <span class="m">&lt;engine&gt;-&lt;ctid&gt;-&lt;วันที่&gt;.log</span>
+        เก็บเฉพาะเรื่องของ CT ตัวเดียว — เปิดอ่านเหมือน task log ของ vzdump
+        ลบเองหลัง 14 วันเท่ากัน (log รวมรายวันยังอยู่ครบเหมือนเดิม)</td><td>อ่านอย่างเดียว</td></tr>
     <tr><td class="m">state/watch.tsv</td><td>เรื่องที่ watch ถือค้างอยู่ — ดูผ่าน <span class="m">watch --list</span></td><td>ระบบเขียนเอง</td></tr>
   </table>
   <p>ไฟล์ <code class="inl">.sample</code> คือตัวอย่างที่ git track — ก๊อปแล้วตัดคำว่า sample ออกถึงใช้จริง

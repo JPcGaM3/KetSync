@@ -12,21 +12,22 @@ for _a in "$@"; do case "$_a" in -*) trace "rsyncopt $_a";; esac; done
 # is not the loop-mounted image. If this fires, a CT landed on the node root fs.
 is_mounted "$dst" || violation "rsync into a NON-MOUNTED destination: $dst"
 
-logfile=""; wants_stats=0; dryrun=0
+logfile=""; wants_stats=0; dryrun=0; prog2=0
 for a in "$@"; do
   case "$a" in
     --log-file=*) logfile="${a#--log-file=}";;
     --stats)      wants_stats=1;;
     -n|--dry-run) dryrun=1;;
+    --info=progress2) prog2=1;;
   esac
 done
 # The one rsync a dry run may make is one that cannot move a byte. Without -n
 # this call carries --delete, so a run that called itself dry would empty and
 # refill the image it was only supposed to measure.
 (( dryrun )) || dry_forbids "rsync without -n, $src -> $dst"
-# The engine must never put rsync in a pipeline to read its stats: that takes
-# stdout away from --info=progress2 and the human loses the progress bar. So if
-# it asked for stats, it must have asked for a --log-file to put them in.
+# The stats must come from --log-file, never from stdout: in a tty stdout is
+# the human's progress bar, and under cron it is the progress filter's stream -
+# either way a parser reading it gets progress updates mixed into its numbers.
 (( wants_stats && ${#logfile} == 0 )) && \
   violation "rsync --stats without --log-file (stats could only come from stdout)"
 
@@ -42,8 +43,14 @@ if [[ -f "$SIMROOT/rsync.kill" ]]; then
   # a child was running if that child then exits normally, and it keeps going if
   # the child dies of SIGINT but the shell itself was never signalled. Only the
   # pair together makes bash run its EXIT trap and die - the real Ctrl-C.
-  kill -INT "$PPID" 2>/dev/null       # ... to the shell
-  kill -INT $$                        # ... and to the transfer
+  # The engine is no longer simply $PPID: under cron the rsync shim runs
+  # inside a pipeline element (rsync | rs_progress), so the parent is a
+  # subshell, not the engine. run_engine records the engine's own pid for
+  # exactly this moment - signalling anything found by walking the process
+  # tree was a guess that lost a race once.
+  _eng="$(cat "$SIMROOT/engine.pid" 2>/dev/null)"
+  kill -INT "${_eng:-$PPID}" 2>/dev/null   # ... to the shell
+  kill -INT $$                             # ... and to the transfer
   sleep 5                             # unreachable; here so a blocked signal shows up
   exit 20
 fi
@@ -63,11 +70,19 @@ echo $(( n + 1 )) > "$SIMROOT/rsync.n"
 # whatever the size of the container. This fake had it the other way round for
 # months, which is exactly why the engine reading the wrong line stayed green:
 # a fake that is wrong in the same direction as the engine tests nothing.
-if [[ -n "$logfile" ]]; then
+# --info=progress2 writes carriage-return separated updates to stdout. Three in
+# one burst, because that is the shape the engine's cron filter has to survive:
+# the first must become ONE readable log line and the rest must be swallowed by
+# the once-a-minute limit.
+if (( prog2 )); then
+  printf '     11,534,336   4%%   12.34MB/s    0:00:01\r  2,569,208,517  38%%   24.68MB/s    0:00:12\r  6,569,208,517 100%%   30.01MB/s    0:00:59 (xfr#161, to-chk=0/157957)\r'
+  printf '\n'
+fi
+emit_stats(){
   read -r f_files f_lit f_sent f_total < <(cat "$SIMROOT/rsync.stats" 2>/dev/null \
     || echo "161 2469606195 2470127483 118111600640")
   commafy(){ echo "$1" | sed -e :a -e 's/\(.*[0-9]\)\([0-9]\{3\}\)/\1,\2/;ta'; }
-  cat >> "$logfile" <<EOF
+  cat <<EOF
 Number of files: 157,957 (reg: 133,163, dir: 18,610)
 Number of created files: 0
 Number of deleted files: 0
@@ -82,5 +97,12 @@ File list transfer time: 0.000 seconds
 Total bytes sent: 3,271
 Total bytes received: $(commafy "$f_sent")
 EOF
+}
+# The block goes to STDOUT as well as the log file, exactly as real rsync sends
+# it: the raw byte wall in the middle of the day log was a real complaint, and
+# the engine's filter can only be proven to drop it if the fake actually says it.
+(( wants_stats )) && emit_stats
+if [[ -n "$logfile" ]]; then
+  emit_stats >> "$logfile"
 fi
 exit "$rc"
