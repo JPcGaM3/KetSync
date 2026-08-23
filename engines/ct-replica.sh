@@ -49,8 +49,8 @@
 #                            different things
 #    PAUSE            create this file to stop all syncing (used during a
 #                     failback, when the copy holds the newer data)
-#    ../../logs/      daily log per lane in ketsync's one tree, auto-pruned
-#                     after LOG_KEEP_DAYS
+#    ../logs/         daily log per lane in ketsync's ONE log directory,
+#                     auto-pruned after LOG_KEEP_DAYS
 #    state/           machine-readable status, one pair of files per CT:
 #                       <src_ctid>.json        snapshot, replaced atomically
 #                       <src_ctid>.runs.jsonl  append-only history, 1 JSON/run
@@ -475,8 +475,15 @@ LANE="${LANE//[^A-Za-z0-9._-]/_}"
 # night should be one directory to read and one tarball to send, and every file
 # in it is named after the verb an operator typed.
 LOGDIR="$BASE/logs"
-if [[ -f "$BASE/../../ketsync" && -f "$BASE/../../lib/common.sh" ]]; then
-  LOGDIR="$(cd "$BASE/../.." && pwd)/logs"
+# ../bin/ketsync, ONE level up - the same walk-up the conf and the work list
+# use, and it did not always match them: this check counted directories for
+# the layout the restructure replaced, when the engines lived two levels deep
+# under engines/tp/. At the new depth it never found the dispatcher, so every
+# engine quietly kept a second log directory under engines/logs/ while the
+# README promised one directory to read - and the promise only broke the day
+# somebody went looking for a lane's log in the place it said.
+if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" ]]; then
+  LOGDIR="$(cd "$BASE/.." && pwd)/logs"
 fi
 
 mkdir -p "$LOGDIR" "$BASE/state" "$MNT_BASE"

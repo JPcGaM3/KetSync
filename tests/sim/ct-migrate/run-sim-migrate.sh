@@ -1370,6 +1370,13 @@ if scenario "71: repo shape - a file left at the OLD home is refused, not ranked
   has "is the OLD home"
   has "conf/ctmig.conf"
   rm "$WORK/engines/ctmig.conf"
+  # a run that gets past the conf (the missing work list is a LOGGED refusal)
+  # proves where the log lands: the repo's ONE logs/, not engines/logs/
+  OUT="$("$WORK/engines/ct-migrate.sh" --all 2>&1)"; RC=$?
+  rc_is 2
+  _lg=( "$WORK"/logs/migrate-*.log )
+  [[ -e "${_lg[0]}" ]] || _err "no log under the repo root logs/ - the walk-up missed"
+  [[ -d "$WORK/engines/logs" ]] && _err "the engine still keeps a second log directory under engines/"
   OUT="$("$WORK/engines/ct-migrate.sh" --help 2>&1)"; RC=$?
   rc_is 0
   done_scenario

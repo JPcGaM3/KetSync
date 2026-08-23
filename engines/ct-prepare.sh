@@ -367,8 +367,15 @@ fi
 
 # ---------- where the log goes ----------
 LOGDIR="$BASE/logs"
-if [[ -f "$BASE/../../ketsync" && -f "$BASE/../../lib/common.sh" ]]; then
-  LOGDIR="$(cd "$BASE/../.." && pwd)/logs"
+# ../bin/ketsync, ONE level up - the same walk-up the conf and the work list
+# use, and it did not always match them: this check counted directories for
+# the layout the restructure replaced, when the engines lived two levels deep
+# under engines/tp/. At the new depth it never found the dispatcher, so every
+# engine quietly kept a second log directory under engines/logs/ while the
+# README promised one directory to read - and the promise only broke the day
+# somebody went looking for a lane's log in the place it said.
+if [[ -f "$BASE/../bin/ketsync" && -f "$BASE/../lib/common.sh" ]]; then
+  LOGDIR="$(cd "$BASE/.." && pwd)/logs"
 fi
 mkdir -p "$LOGDIR" "$BASE/state" 2>/dev/null
 LOG="$LOGDIR/prepare-$(date +%F).log"

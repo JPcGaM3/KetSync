@@ -877,6 +877,10 @@ if scenario "48: vendored under a ketsync, its nodes.map wins over the copy besi
   ENGINE_PATH="$REPO/engines/ct-recall.sh" run_engine --ctid 300 --list
   clean
   hasnt "10.100.9.99"
+  # the vendored run's log lands in the repo's ONE logs/, not engines/logs/
+  _lg=( "$REPO"/logs/recall-*.log )
+  [[ -e "${_lg[0]}" ]] || _err "no log under the repo root logs/ - the walk-up missed"
+  [[ -d "$REPO/engines/logs" ]] && _err "the engine still keeps a second log directory under engines/"
   done_scenario
 fi
 

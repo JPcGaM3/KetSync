@@ -1115,6 +1115,10 @@ if scenario "35: vendored under a ketsync, its tables win over the copies beside
   rc_is 0; clean
   has "CT 9300 on pve01 ($T1)"
   hasnt "pve02"
+  # the vendored run's log lands in the repo's ONE logs/, not engines/logs/
+  _lg=( "$REPO"/logs/distribute-*.log )
+  [[ -e "${_lg[0]}" ]] || _err "no log under the repo root logs/ - the walk-up missed"
+  [[ -d "$REPO/engines/logs" ]] && _err "the engine still keeps a second log directory under engines/"
   done_scenario
 fi
 

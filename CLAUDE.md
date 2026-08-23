@@ -145,8 +145,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 466 tp simulator + 16 dispatcher + 125 c2v, 138 ketsync
-    make mutation # 556 known bugs put back. None may survive
+    make test     # both layers: 470 tp simulator + 16 dispatcher + 125 c2v, 138 ketsync
+    make mutation # 562 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -170,8 +170,14 @@ catches none of it, which is why `make lint` passes there and proves nothing.
                          out - because the sequencing IS this layer's job
     engines/             the six engines and their dispatcher `tp`. Every
                          guard that touches customer data lives here. Their
-                         runtime (state/, logs/, done/, PAUSE) sits beside
-                         them, gitignored
+                         runtime (state/, done/, PAUSE) sits beside them,
+                         gitignored - but their LOGS do not: every engine
+                         writes into the repo root logs/, one directory for a
+                         bad night. The walk-up that does it counted
+                         directories for the pre-restructure depth for a year
+                         and quietly kept engines/logs/; same-depth as the
+                         conf walk-up now, with a scenario per engine on where
+                         the log lands
     conf/                every conf, table and sample in one place: ketsync.conf,
                          ctrep.conf and ctmig.conf (the engines' knobs - moved
                          here from engines/, and an engine finding a copy at

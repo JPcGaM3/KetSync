@@ -1573,6 +1573,12 @@ if scenario "79: repo shape - a file left at the OLD home is refused, not ranked
   # every run on a real fleet with a message about a file that is right there.
   OUT="$("$WORK/engines/ct-replica.sh" --all 2>&1)"; RC=$?
   hasnt "the exclude list is missing"
+  # and that run's log landed in the ROOT logs/, not in a second directory
+  # under engines/ - the walk-up counted directories for the pre-restructure
+  # depth for a year, and "one directory to read" was only true of half the logs
+  _lg=( "$WORK"/logs/replica-*.log )
+  [[ -e "${_lg[0]}" ]] || _err "no log under the repo root logs/ - the walk-up missed"
+  [[ -d "$WORK/engines/logs" ]] && _err "the engine still keeps a second log directory under engines/"
   OUT="$("$WORK/engines/ct-replica.sh" --help 2>&1)"; RC=$?
   rc_is 0
   done_scenario

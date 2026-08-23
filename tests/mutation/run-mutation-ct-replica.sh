@@ -410,7 +410,7 @@ mutant "the container list never opens or closes, only the run does" \
 # sit there. Every simulator sandbox takes the guarded path, which is what
 # makes both of these observable.
 mutant "the log is written two directories up whether ketsync is there or not" \
-  's{\Qif [[ -f "\E\$BASE\Q/../../ketsync" && -f "\E\$BASE\Q/../../lib/common.sh" ]]; then\E}{if true; then}' \
+  's!\Qif [[ -f "\E\$BASE\Q/../bin/ketsync" && -f "\E\$BASE\Q/../lib/common.sh" ]]; then\E\n\Q  LOGDIR="\E\$\Q(cd "\E\$BASE\Q/.." && pwd)/logs"\E!if true; then\n  LOGDIR="\$(cd "\$BASE/.." \&\& pwd)/logs"!' \
   1
 
 mutant "the fallback log directory is not the engine's own" \
@@ -694,6 +694,14 @@ mutant "a backup that wins the race is written under anyway" \
 mutant "our own leftover lock is blamed on vzdump, forever" \
   's{\Q      if [[ "\E\$_plock\Q" == disk ]]; then\E}{      if false; then}' \
   112
+
+# ---------- one log directory, really -----------------------------------------
+# The walk-up that puts the log in the repo root is one line; making it a no-op
+# is the bug as it lived for a year - every engine keeping a second log
+# directory under engines/ while the README promised one directory to read.
+mutant "the log quietly goes back to a second directory under engines/" \
+  's!\Q  LOGDIR="\E\$\Q(cd "\E\$BASE\Q/.." && pwd)/logs"\E!  :!' \
+  79
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

@@ -534,6 +534,14 @@ mutant "a conf that half-reads runs on defaults, the way it used to" \
   's{\Q  if [[ -s "\E\$_conferr\Q" ]]; then\E}{  if false; then}' \
   65
 
+# ---------- one log directory, really -----------------------------------------
+# The walk-up that puts the log in the repo root is one line; making it a no-op
+# is the bug as it lived for a year - every engine keeping a second log
+# directory under engines/ while the README promised one directory to read.
+mutant "the log quietly goes back to a second directory under engines/" \
+  's!\Q  LOGDIR="\E\$\Q(cd "\E\$BASE\Q/.." && pwd)/logs"\E!  :!' \
+  66
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

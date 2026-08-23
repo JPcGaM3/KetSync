@@ -1104,6 +1104,10 @@ if scenario "57: vendored under a ketsync, its nodes.map wins over the copy besi
   ENGINE_PATH="$REPO/engines/ct-failback.sh" run_engine --list
   clean
   hasnt "10.100.9.99"
+  # the vendored run's log lands in the repo's ONE logs/, not engines/logs/
+  _lg=( "$REPO"/logs/failback-*.log )
+  [[ -e "${_lg[0]}" ]] || _err "no log under the repo root logs/ - the walk-up missed"
+  [[ -d "$REPO/engines/logs" ]] && _err "the engine still keeps a second log directory under engines/"
   done_scenario
 fi
 

@@ -1376,6 +1376,25 @@ if scenario "65: a conf with one broken line refuses the run instead of running 
   done_scenario
 fi
 
+if scenario "66: vendored under a ketsync, the log lands in the ROOT logs directory"; then
+  # The walk-up counted directories for the pre-restructure depth for a year,
+  # so every engine kept a second log directory under engines/ while the
+  # README promised one. The run below is refused (no fleet table at the new
+  # home) - and a refusal is exactly the log line somebody will go looking
+  # for, which is why WHERE it lands is worth its own scenario.
+  mkdir -p "$WORK/bin" "$WORK/lib" "$WORK/engines" "$WORK/conf" "$WORK/inventory"
+  : > "$WORK/bin/ketsync"; : > "$WORK/lib/common.sh"
+  mv "$WORK/ctrep.conf" "$WORK/conf/ctrep.conf"
+  ln -s "$ENGINE" "$WORK/engines/ct-prepare.sh"
+  # called directly rather than through run_engine, so the fake ssh has to be
+  # handed over by hand - the sandbox has no real one, and the engine checks
+  OUT="$(ssh(){ "$SIMBIN/ssh" "$@"; }; export -f ssh; "$WORK/engines/ct-prepare.sh" --list 2>&1)"; RC=$?
+  _lg=( "$WORK"/logs/prepare-*.log )
+  [[ -e "${_lg[0]}" ]] || _err "no log under the repo root logs/ - the walk-up missed"
+  [[ -d "$WORK/engines/logs" ]] && _err "the engine still keeps a second log directory under engines/"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

@@ -328,7 +328,7 @@ mutant "a filter that matches nothing exits 0, which under cron reads as healthy
   3
 
 mutant "the log is written two directories up whether ketsync is there or not" \
-  's{\Qif [[ -f "\E\$BASE\Q/../../ketsync" && -f "\E\$BASE\Q/../../lib/common.sh" ]]; then\E}{if true; then}' \
+  's!\Qif [[ -f "\E\$BASE\Q/../bin/ketsync" && -f "\E\$BASE\Q/../lib/common.sh" ]]; then\E\n\Q  LOGDIR="\E\$\Q(cd "\E\$BASE\Q/.." && pwd)/logs"\E!if true; then\n  LOGDIR="\$(cd "\$BASE/.." \&\& pwd)/logs"!' \
   1
 
 mutant "the engine reads the node map beside itself instead of ketsync's own" \
@@ -358,6 +358,14 @@ mutant "the round is spent failing to delete the copy's own snapshot directory" 
 mutant "a conf that half-reads runs on defaults, the way it used to" \
   's{\Q  if [[ -s "\E\$_conferr\Q" ]]; then\E}{  if false; then}' \
   54
+
+# ---------- one log directory, really -----------------------------------------
+# The walk-up that puts the log in the repo root is one line; making it a no-op
+# is the bug as it lived for a year - every engine keeping a second log
+# directory under engines/ while the README promised one directory to read.
+mutant "the log quietly goes back to a second directory under engines/" \
+  's!\Q  LOGDIR="\E\$\Q(cd "\E\$BASE\Q/.." && pwd)/logs"\E!  :!' \
+  48
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

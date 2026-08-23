@@ -237,7 +237,10 @@
     <tr><td class="m">inventory/inventory-replica.tsv</td><td>the nightly work list (replica + failback)</td></tr>
     <tr><td class="m">inventory/inventory-migrate.tsv</td><td>the intake work list, used while migrating</td></tr>
     <tr><td class="m">engines/PAUSE · engines/pause/&lt;ctid&gt;</td><td>stop everything (failback windows) · pause one CT</td></tr>
-    <tr><td class="m">logs/ · state/watch.tsv</td><td>daily logs, self-pruned · what watch holds raised</td></tr>
+    <tr><td class="m">logs/</td><td>every layer's daily log in ONE directory — dispatcher and all six
+        engines; self-pruned after 14 days. Old files stranded in engines/logs/ can be merged:
+        <span class="m">mv engines/logs/*.log logs/</span></td></tr>
+    <tr><td class="m">state/watch.tsv</td><td>what watch holds raised</td></tr>
   </table>
   <p><code class="inl">.sample</code> files are the tracked examples; copy and drop the suffix.
      The real ones are per-site and never overwritten by git.</p>

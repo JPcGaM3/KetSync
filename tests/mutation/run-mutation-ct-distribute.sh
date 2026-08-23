@@ -262,7 +262,7 @@ mutant "the container list never opens or closes, only the run does" \
 # this engine - once for ketsync's tables, once for the log tree - and an
 # anchor that matches the wrong one silently tests nothing.
 mutant "the log is written two directories up whether ketsync is there or not" \
-  's{\QLOGDIR="\E\$BASE\Q/logs"\E\n\Qif [[ -f "\E\$BASE\Q/../../ketsync" && -f "\E\$BASE\Q/../../lib/common.sh" ]]; then\E}{LOGDIR="\$BASE/logs"\nif true; then}' \
+  's!\Qif [[ -f "\E\$BASE\Q/../bin/ketsync" && -f "\E\$BASE\Q/../lib/common.sh" ]]; then\E\n\Q  LOGDIR="\E\$\Q(cd "\E\$BASE\Q/.." && pwd)/logs"\E!if true; then\n  LOGDIR="\$(cd "\$BASE/.." \&\& pwd)/logs"!' \
   1
 
 mutant "the fallback log directory is not the engine's own" \
@@ -503,6 +503,14 @@ mutant "every retained day is dragged onto the compute node with the rootfs" \
 mutant "a conf that half-reads runs on defaults, the way it used to" \
   's{\Q  if [[ -s "\E\$_conferr\Q" ]]; then\E}{  if false; then}' \
   47
+
+# ---------- one log directory, really -----------------------------------------
+# The walk-up that puts the log in the repo root is one line; making it a no-op
+# is the bug as it lived for a year - every engine keeping a second log
+# directory under engines/ while the README promised one directory to read.
+mutant "the log quietly goes back to a second directory under engines/" \
+  's!\Q  LOGDIR="\E\$\Q(cd "\E\$BASE\Q/.." && pwd)/logs"\E!  :!' \
+  35
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
