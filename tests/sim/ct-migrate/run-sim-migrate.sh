@@ -563,6 +563,29 @@ if scenario "14: --stopped final delta mounts, syncs, and always unmounts"; then
   done_scenario
 fi
 
+if scenario "14b: --stopped with no image yet takes the FIRST full copy instead of refusing"; then
+  # The dead end the fleet hit 2026-08-23: CT 253 was already stopped on the
+  # old node, presync refused ("not running"), --stopped refused ("no image
+  # yet"), and the two refusals pointed at each other. A CT that is down has
+  # no other path in - and a full copy of a stopped CT is the most consistent
+  # read there is.
+  echo stopped > "$SIMROOT/nodes/10.100.1.11/ct/251.status"
+  run_engine --ctid 251 --stopped
+  rc_is 0; clean
+  has "FIRST full copy from a STOPPED CT"
+  has "application-consistent"
+  hasnt "no image yet ("
+  # sized from the mounted filesystem, not the quota fallback: .used is 10GiB
+  # in this world, so the x185% line must appear, not "cannot read usage"
+  has "size: quota=20G used=10G x185%"
+  hasnt "cannot read usage"
+  traced "SRCMOUNT 10.100.1.11 251"
+  traced "SRCUMOUNT 10.100.1.11 251"
+  cfg_exists 10.100.1.31 251
+  cfg_has 10.100.1.31 251 "onboot: 0"
+  done_scenario
+fi
+
 if scenario "15: --stopped unmounts the source even when the sync fails"; then
   run_engine --ctid 251
   echo stopped > "$SIMROOT/nodes/10.100.1.11/ct/251.status"

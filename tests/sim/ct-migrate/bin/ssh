@@ -45,9 +45,29 @@ case "$c" in
     exit 0;;
   "pct exec "*df*)
     id=$(awk '{print $3}' <<<"$c"); u=$(cat "$N/ct/$id.used" 2>/dev/null || echo 0)
+    # pct exec runs a command INSIDE the container; a stopped container has no
+    # inside. The fake answered anyway for its whole life - the same kindness
+    # that hid the pvesm --format bug - and it made a sizing mutation
+    # unkillable: swap the stopped-CT df for pct exec and the numbers came out
+    # identical.
+    [[ "$(cat "$N/ct/$id.status" 2>/dev/null)" == running ]] \
+      || { echo "CT $id not running" >&2; exit 1; }
     [[ "$u" == 0 ]] && exit 1
     echo "Filesystem 1B-blocks Used Available Capacity Mounted on"
     echo "/dev/loop0 999 $u 999 50% /"; exit 0;;
+  "df -B1 -P /var/lib/lxc/"*)
+    # sizing for a STOPPED source: the engine asks df about the pct-mounted
+    # rootfs. Real df never fails on that path - unmounted, it reports the
+    # HOST's root filesystem - so the fake answers the host number (0 here),
+    # which the engine's own usedb>0 check turns into the quota fallback.
+    id="${c#df -B1 -P /var/lib/lxc/}"; id="${id%%/*}"
+    echo "Filesystem 1B-blocks Used Available Capacity Mounted on"
+    if [[ -f "$N/ct/$id.mounted" ]]; then
+      echo "/dev/loop1 999 $(cat "$N/ct/$id.used" 2>/dev/null || echo 0) 999 50% /var/lib/lxc/$id/rootfs"
+    else
+      echo "/dev/sda1 999 0 999 50% /"
+    fi
+    exit 0;;
   "pct mount "*)
     id=$(awk '{print $3}' <<<"$c")
     [[ "$(cat "$N/ct/$id.status" 2>/dev/null)" == stopped ]] || { echo "CT is running" >&2; exit 1; }

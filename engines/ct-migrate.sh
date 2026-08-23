@@ -22,7 +22,11 @@
 #    ct-migrate.sh   --storage tank-ssd-nas   only rows on that storage (one lane)
 #    ct-migrate.sh   --ctid 251               only that new_ctid
 #    ct-migrate.sh   --ctid 251 --stopped     FINAL delta sync, old CT must be
-#                                            stopped; reads it via `pct mount`
+#                                            stopped; reads it via `pct mount`.
+#                                            With no image yet it takes the
+#                                            FIRST full copy instead of a
+#                                            delta - the one path in for a CT
+#                                            that is already down
 #                                            because /proc/<pid>/root is gone
 #    ct-migrate.sh   --dry-run                every guard, every number, no
 #                                            write. Not valid with --stopped.
@@ -1084,17 +1088,28 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
       log "[$new_ctid] ERROR:   stop it yourself first - this tool does not touch CT lifecycle"
       st_fail not_stopped; continue
     fi
-    if [[ ! -f "$IMG" ]]; then
-      log "[$new_ctid] ERROR: no image yet ($IMG) - --stopped only does the FINAL delta; run ct-migrate.sh without --stopped first"
-      st_fail no_image; continue
-    fi
     if ! ssh $SSHOPT "root@$old_node" "pct mount $old_ctid" </dev/null >>"$LOG" 2>&1; then
       log "[$new_ctid] ERROR: pct mount $old_ctid failed on $old_node - skip"
       st_fail pct_mount; continue
     fi
     SRC_MOUNT_NODE="$old_node"; SRC_MOUNT_CT="$old_ctid"
     SRC="root@$old_node:/var/lib/lxc/$old_ctid/rootfs/"
-    log "[$new_ctid] FINAL delta from a STOPPED CT (pct mount) <= $old_node:$old_ctid"
+    # With no image yet this is the FIRST copy, not a delta - and that is a
+    # legitimate ask, not a misuse. --stopped used to refuse it and send the
+    # operator to presync, which refuses a stopped container right back: a CT
+    # that is already down - decommissioned, or shut down for exactly this
+    # move - had no path into the fleet at all, and the two refusals pointed
+    # at each other. The alloc/mkfs/grow machinery below has never cared where
+    # the source bytes come from, so nothing else changes; a full copy from a
+    # stopped CT is also the most consistent read this engine can ever get,
+    # because the application closed its own files.
+    if [[ ! -f "$IMG" ]]; then
+      log "[$new_ctid] FIRST full copy from a STOPPED CT (pct mount) <= $old_node:$old_ctid"
+      log "[$new_ctid]   no image yet, so this is the whole rootfs, not a delta - and it is"
+      log "[$new_ctid]   application-consistent: the CT was down before anything was read"
+    else
+      log "[$new_ctid] FINAL delta from a STOPPED CT (pct mount) <= $old_node:$old_ctid"
+    fi
   else
     ctpid=$(ssh $SSHOPT "root@$old_node" "lxc-info -n $old_ctid -p -H" </dev/null 2>/dev/null || true)
     if [[ -z "${ctpid:-}" || "$ctpid" == 0 ]]; then
@@ -1112,8 +1127,18 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
     oldsize=$(printf '%s\n' "$oldcfg" | awk -F'size=' '/^rootfs:/{print $2}' | awk -F, '{print $1}')
     [[ -z "$oldsize" ]] && { log "[$new_ctid] WARN: cannot read rootfs size, defaulting 8G"; oldsize=8G; }
     quota_gib=$(to_gib "$oldsize")
-    usedb=$(ssh $SSHOPT "root@$old_node" "pct exec $old_ctid -- df -B1 -P /" </dev/null 2>/dev/null \
-            | awk 'NR==2{print $3}')
+    # A running CT answers from inside itself; a stopped one cannot run pct
+    # exec at all, but by this point --stopped has already pct-mounted it, so
+    # its own filesystem answers from the outside. Without this branch every
+    # first copy from a stopped CT fell back to quota+headroom - 40G allocated
+    # for 1G of data, silently, per container.
+    if (( STOPPED )); then
+      usedb=$(ssh $SSHOPT "root@$old_node" "df -B1 -P /var/lib/lxc/$old_ctid/rootfs" </dev/null 2>/dev/null \
+              | awk 'NR==2{print $3}')
+    else
+      usedb=$(ssh $SSHOPT "root@$old_node" "pct exec $old_ctid -- df -B1 -P /" </dev/null 2>/dev/null \
+              | awk 'NR==2{print $3}')
+    fi
     if [[ "$usedb" =~ ^[0-9]+$ && "$usedb" -gt 0 ]]; then
       used_gib=$(( (usedb + 1073741823) / 1073741824 ))
       need_gib=$(( (used_gib * USAGE_FACTOR_PCT + 99) / 100 ))

@@ -145,8 +145,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 461 tp simulator + 16 dispatcher + 125 c2v, 138 ketsync
-    make mutation # 550 known bugs put back. None may survive
+    make test     # both layers: 462 tp simulator + 16 dispatcher + 125 c2v, 138 ketsync
+    make mutation # 552 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

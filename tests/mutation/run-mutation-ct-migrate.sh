@@ -406,6 +406,16 @@ mutant "the no-row error goes back to two bare columns and no hint about --ctid"
   's{\Q  if [[ -n "\E\$ONLY_CTID\Q" ]]; then\E\n\Q    log "ERROR:   --ctid matches the NEW id (column 3 of the row), not the old one."\E}{  if false; then\n    log "ERROR:   --ctid matches the NEW id (column 3 of the row), not the old one."}' \
   48
 
+
+# ---------- --stopped takes the first copy too --------------------------------
+mutant "the first-copy path grows the old refusal back, and a down CT is stranded" \
+  's{\Q    if [[ ! -f "\E\$IMG\Q" ]]; then\E\n\Q      log "[\E\$new_ctid\Q] FIRST full copy from a STOPPED CT (pct mount) <= \E\$old_node\Q:\E\$old_ctid\Q"\E}{    if [[ ! -f "\$IMG" ]]; then\n      log "[\$new_ctid] ERROR: no image yet - refused"; st_fail no_image; continue\n      log "x"}' \
+  14b
+
+mutant "a stopped CT is sized by pct exec, which cannot answer, so quota+headroom always wins" \
+  's{\Q"df -B1 -P /var/lib/lxc/\E\$old_ctid\Q/rootfs"\E}{"pct exec \$old_ctid -- df -B1 -P /"}' \
+  14b
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi
