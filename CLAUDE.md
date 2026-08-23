@@ -54,6 +54,15 @@ destination pool - both were removed rather than tuned, because the row that
 FORGOT a value looks exactly like the row that meant it, and what lands
 somewhere nobody chose is a customer's only copy.
 
+**4a. A conf that does not read cleanly, whole, refuses the run.** `.` returns
+the LAST line's status, so a conf with one broken line splashes an error, keeps
+going, and every value that line was setting silently stays at the engine
+default - the fallback rule again, in disguise. ctmig.conf did exactly this on
+the fleet (2026-08-23): a hand edit left line 1 as `230# ...`, and every
+migrate ran at bw=500m against a ceiling set to 230. Every engine and
+lib/common.sh now capture the shell's own complaint while sourcing and refuse
+with it; the sourcing block is the same in all seven places on purpose.
+
 **5. Everything a human types is an IP.** PVE forces node *names* on us because
 it stores configs under `/etc/pve/nodes/<name>/` — but nobody types one.
 `nodes.tsv` is an address and a role. Names are discovered from the cluster via
@@ -136,8 +145,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 455 tp simulator + 16 dispatcher + 125 c2v, 137 ketsync
-    make mutation # 541 known bugs put back. None may survive
+    make test     # both layers: 461 tp simulator + 16 dispatcher + 125 c2v, 138 ketsync
+    make mutation # 550 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.

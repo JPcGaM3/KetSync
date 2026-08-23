@@ -478,6 +478,10 @@ if scenario "6: G5 rc=23 is a failure -> no config"; then
   run_engine --ctid 251
   rc_is 1; clean
   has "GUARD G5"; has "do NOT start this CT"
+  # and the line above the guard must not argue with it: an interrupted run
+  # used to print "rootfs synced (rsync rc=255)" one line before the refusal
+  hasnt "rootfs synced"
+  has "rsync did NOT finish (rc=23)"
   cfg_absent 10.100.1.31 251
   done_scenario
 fi
@@ -1007,7 +1011,29 @@ if scenario "48: a --storage or --ctid that matches nothing is loud, not a quiet
   run_engine --ctid 2511
   rc_is 1
   has "--ctid 2511"
+  # the mistake this error kept failing to prevent: the id in the operator's
+  # head is the OLD one. Say which id --ctid means, and show the mapping.
+  has "--ctid matches the NEW id"
+  has "251 -> 251  (tank-hdd-nas)"
+  has "253 -> 253  (tank-ssd-nas)"
   untraced "rsync"
+  done_scenario
+fi
+
+if scenario "48b: a conf with one broken line refuses the run instead of running on defaults"; then
+  # The real ctmig.conf on the fleet, 2026-08-23: line 1 read `230# ...` after
+  # a hand edit, the shell said `230#: command not found`, the source returned
+  # the LAST line's status - success - and the run carried on at bw=500m, the
+  # engine default, against a ceiling the operator had set to 230 for a reason.
+  sed -i '1s/.*/230# generation: 7/' "$WORK/ctmig.conf"
+  run_engine --ctid 251
+  rc_is 2
+  has "did not read cleanly - NOTHING was run"
+  has "command not found"
+  has "silently stays at the engine"
+  has "a setting nobody chose"
+  untraced "rsync"
+  cfg_absent 10.100.1.31 251
   done_scenario
 fi
 

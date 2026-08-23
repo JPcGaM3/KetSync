@@ -62,7 +62,23 @@ KS_CONF="$KS_BASE/conf/ketsync.conf"
 KS_NODES="$KS_BASE/conf/nodes.tsv"
 KS_INV="$KS_BASE/conf/fleet.tsv"
 KS_NODEMAP="$KS_BASE/conf/nodes.map"     # generated, never edited by hand
-[[ -f "$KS_CONF" ]] && . "$KS_CONF"
+# Sourced with the same care as the engines give their confs, and it did not
+# used to be: one broken line in ketsync.conf splashed an error and ran on
+# whatever defaults were left - and this file holds KS_ROLE, where "the
+# default" means a master quietly demoting itself to slave.
+if [[ -f "$KS_CONF" ]]; then
+  _kconferr="$(mktemp "${TMPDIR:-/tmp}/ks-conf.XXXXXX")"
+  # shellcheck source=/dev/null
+  . "$KS_CONF" 2>"$_kconferr" || echo "(the shell stopped reading at that point)" >>"$_kconferr"
+  if [[ -s "$_kconferr" ]]; then
+    echo "ERROR: $KS_CONF did not read cleanly - NOTHING was run" >&2
+    sed 's/^/ERROR:   /' "$_kconferr" >&2
+    echo "ERROR:   every value a broken line was setting silently stays at its default," >&2
+    echo "ERROR:   and one of these values is KS_ROLE. Fix that line and run again." >&2
+    rm -f "$_kconferr"; exit 2
+  fi
+  rm -f "$_kconferr"
+fi
 
 # ---------- nodes.tsv --------------------------------------------------------
 # An IP and a role. That is the whole table.

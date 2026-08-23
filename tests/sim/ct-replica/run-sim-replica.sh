@@ -2007,6 +2007,20 @@ if scenario "104: R8 now names the one command that fixes it"; then
   done_scenario
 fi
 
+if scenario "109: a conf with one broken line refuses the run instead of running on defaults"; then
+  # ctmig.conf met this on the fleet 2026-08-23: a hand edit left line 1 as
+  # `230# ...`, the shell said "command not found", the dot returned the LAST
+  # line's status - success - and the run carried on with defaults nobody chose.
+  # One rule for every engine that sources a conf: half a conf must not run.
+  sed -i '1s/.*/230# generation: 7/' "$WORK/ctrep.conf"
+  run_engine --ctid 105
+  rc_is 2
+  has "did not read cleanly - NOTHING was run"
+  has "command not found"
+  untraced "rsync "
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

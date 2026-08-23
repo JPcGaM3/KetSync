@@ -427,6 +427,19 @@ if scenario "16: a table with no generation line stops the whole run"; then
   done_scenario
 fi
 
+if scenario "17: a ketsync.conf with one broken line refuses the run"; then
+  # The engines got this rule on 2026-08-23 after ctmig.conf ran on defaults;
+  # this file is worse to half-read than any of theirs, because among the
+  # values a broken line silently leaves at default is KS_ROLE.
+  sed -i '1s/.*/230# generation: 7/' "$MASTER/conf/ketsync.conf"
+  run_ks sync --diff
+  rc_is 2
+  has "did not read cleanly - NOTHING was run"
+  has "command not found"
+  has "KS_ROLE"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

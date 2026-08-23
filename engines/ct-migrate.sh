@@ -194,8 +194,24 @@ fi
 
 # ---------- config ----------
 if [[ -f "$CONF" ]]; then
+  # `.` returns the LAST line's status, so a conf with one broken line splashes
+  # an error onto the terminal, keeps going, and every value that line was
+  # setting silently stays at the engine default - a bandwidth ceiling nobody
+  # chose, running against a live fleet. That is the fallback rule again, in
+  # disguise: half a conf must not run. The shell's own complaint is kept and
+  # shown, because "failed to read" without the line sent somebody to look at
+  # file permissions when the problem was a typo on line 1.
+  _conferr="$(mktemp "${TMPDIR:-/tmp}/ctmig-conf.XXXXXX")"
   # shellcheck source=/dev/null
-  . "$CONF" || { echo "failed to read $CONF" >&2; exit 1; }
+  . "$CONF" 2>"$_conferr" || echo "(the shell stopped reading at that point)" >>"$_conferr"
+  if [[ -s "$_conferr" ]]; then
+    echo "ERROR: $CONF did not read cleanly - NOTHING was run" >&2
+    sed 's/^/ERROR:   /' "$_conferr" >&2
+    echo "ERROR:   every value a broken line was setting silently stays at the engine" >&2
+    echo "ERROR:   default, which is a setting nobody chose. Fix that line and run again." >&2
+    rm -f "$_conferr"; exit 2
+  fi
+  rm -f "$_conferr"
 fi
 for _v in BW_TOTAL_MB LANES BW_MIN_MB USAGE_FACTOR_PCT HEADROOM_PCT \
           GROW_PCT GROW_MAX_RETRY POOL_RESERVE_GIB RUNS_KEEP LOG_KEEP_DAYS; do
@@ -1227,7 +1243,14 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
     log "[$new_ctid] ERROR:   2) grow the image yourself: truncate -s <SIZE>G $IMG ; e2fsck -fp $IMG ; resize2fs $IMG"
     log "[$new_ctid] ERROR:   3) run ct-migrate.sh again"
   fi
-  log "[$new_ctid] rootfs synced (rsync rc=$rc)"
+  # "synced" was said here unconditionally, rc included - so a run somebody
+  # interrupted printed "rootfs synced (rsync rc=255)" one line above the
+  # guard that refused it, and the two lines argued with each other.
+  if [[ $rc -eq 0 || $rc -eq 24 ]]; then
+    log "[$new_ctid] rootfs synced (rsync rc=$rc)"
+  else
+    log "[$new_ctid] rsync did NOT finish (rc=$rc) - the image holds a partial copy"
+  fi
   # changed= is the convergence metric: it should fall round over round, and
   # when it stops falling the CT is ready to cut over. It was only ever
   # written to state/<ctid>.json, where nobody watching a migration looks.
@@ -1334,8 +1357,20 @@ log "lane '$LANE' finished: ok=$ok skipped=$skipped frozen=$frozen failed=$faile
 # fine for weeks while nothing at all is being migrated. Say it and fail.
 if (( matched == 0 )) && [[ -n "$LANE_STORAGE$ONLY_CTID" ]]; then
   log "ERROR: no row in $INV matched${LANE_STORAGE:+ --storage $LANE_STORAGE}${ONLY_CTID:+ --ctid $ONLY_CTID}"
-  log "ERROR:   nothing was migrated. check the spelling against the inventory:"
-  log "ERROR:   awk '\$1!~/^#/ && NF>=5 {print \$3, \$5}' $INV"
+  # The mistake this message kept failing to prevent: --ctid matches the NEW
+  # id, because that is the name every log line here carries - but the id an
+  # operator has in their head is the OLD one, the container they can see on
+  # the old node. Typing it got this error, which then printed two bare
+  # columns and no hint about which of them --ctid meant.
+  if [[ -n "$ONLY_CTID" ]]; then
+    log "ERROR:   --ctid matches the NEW id (column 3 of the row), not the old one."
+    log "ERROR:   these are the rows, as old_ctid -> new_ctid (storage):"
+    awk '$1!~/^#/ && NF>=5 {print "ERROR:     " $2 " -> " $3 "  (" $5 ")"}' "$INV" \
+      | while IFS= read -r _l; do log "$_l"; done
+  else
+    log "ERROR:   nothing was migrated. check the spelling against the inventory:"
+    log "ERROR:   awk '\$1!~/^#/ && NF>=5 {print \$3, \$5}' $INV"
+  fi
   exit 1
 fi
 

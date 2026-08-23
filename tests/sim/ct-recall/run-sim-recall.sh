@@ -949,6 +949,20 @@ if scenario "50: the copy's own .zfs survives the round it is not part of"; then
   done_scenario
 fi
 
+if scenario "54: a conf with one broken line refuses the run instead of running on defaults"; then
+  # ctmig.conf met this on the fleet 2026-08-23: a hand edit left line 1 as
+  # `230# ...`, the shell said "command not found", the dot returned the LAST
+  # line's status - success - and the run carried on with defaults nobody chose.
+  # One rule for every engine that sources a conf: half a conf must not run.
+  sed -i '1s/.*/230# generation: 7/' "$WORK/ctrep.conf"
+  run_engine --ctid 300
+  rc_is 2
+  has "did not read cleanly - NOTHING was run"
+  has "command not found"
+  untraced "rsync"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

@@ -386,6 +386,26 @@ mutant "an intake source's own snapshot directory is copied into the new image" 
   's!\Q    \E\x27\Q--exclude=/.zfs\E\x27\n!!' \
   1
 
+# ---------- the conf must read cleanly, whole ---------------------------------
+# The dot returns the LAST line's status, so this is the bug as it was written:
+# a broken line splashes an error, the source "succeeds", and every value that
+# line was setting silently runs at the engine default. ctmig.conf did exactly
+# this on the fleet - bw=500m against a ceiling set to 230 - and nothing but
+# the splash said so.
+mutant "a conf that half-reads runs on defaults, the way it used to" \
+  's{\Q  if [[ -s "\E\$_conferr\Q" ]]; then\E}{  if false; then}' \
+  48b
+
+
+# ---------- the two lines an operator reads first -----------------------------
+mutant "a failed rsync is reported as 'rootfs synced' one line above the refusal" \
+  's{\Q  if [[ \E\$rc\Q -eq 0 || \E\$rc\Q -eq 24 ]]; then\E\n\Q    log "[\E\$new_ctid\Q] rootfs synced (rsync rc=\E\$rc\Q)"\E}{  if true; then\n    log "[\$new_ctid] rootfs synced (rsync rc=\$rc)"}' \
+  6
+
+mutant "the no-row error goes back to two bare columns and no hint about --ctid" \
+  's{\Q  if [[ -n "\E\$ONLY_CTID\Q" ]]; then\E\n\Q    log "ERROR:   --ctid matches the NEW id (column 3 of the row), not the old one."\E}{  if false; then\n    log "ERROR:   --ctid matches the NEW id (column 3 of the row), not the old one."}' \
+  48
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

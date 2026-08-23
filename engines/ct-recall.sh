@@ -222,8 +222,24 @@ if (( ! LIST )) && (( ! ALL )) && [[ ! "$ONLY_CTID" =~ ^[0-9]+$ ]]; then
 fi
 
 if [[ -f "$CONF" ]]; then
+  # `.` returns the LAST line's status, so a conf with one broken line splashes
+  # an error onto the terminal, keeps going, and every value that line was
+  # setting silently stays at the engine default - a bandwidth ceiling nobody
+  # chose, running against a live fleet. That is the fallback rule again, in
+  # disguise: half a conf must not run. The shell's own complaint is kept and
+  # shown, because "failed to read" without the line sent somebody to look at
+  # file permissions when the problem was a typo on line 1.
+  _conferr="$(mktemp "${TMPDIR:-/tmp}/ctrecall-conf.XXXXXX")"
   # shellcheck source=/dev/null
-  . "$CONF" || { echo "failed to read $CONF" >&2; exit 2; }
+  . "$CONF" 2>"$_conferr" || echo "(the shell stopped reading at that point)" >>"$_conferr"
+  if [[ -s "$_conferr" ]]; then
+    echo "ERROR: $CONF did not read cleanly - NOTHING was run" >&2
+    sed 's/^/ERROR:   /' "$_conferr" >&2
+    echo "ERROR:   every value a broken line was setting silently stays at the engine" >&2
+    echo "ERROR:   default, which is a setting nobody chose. Fix that line and run again." >&2
+    rm -f "$_conferr"; exit 2
+  fi
+  rm -f "$_conferr"
 fi
 for _v in OFFSET DR_OFFSET BW_TOTAL_MB LANES BW_MIN_MB LOG_KEEP_DAYS; do
   [[ "${!_v}" =~ ^[0-9]+$ ]] || { echo "$CONF: $_v must be a plain integer, got '${!_v}'" >&2; exit 2; }

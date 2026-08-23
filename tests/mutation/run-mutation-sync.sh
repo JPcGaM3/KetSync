@@ -38,11 +38,15 @@ command -v perl >/dev/null || { echo "perl is required for the mutation suite"; 
 # lets the simulator run an otherwise untouched ketsync against a broken
 # cmd_sync, the same way tp's suites hand their simulators a broken engine.
 # $1 = name, $2 = perl s{}{} program, rest = scenarios that MUST fail on it
+# MUT_FILE picks which file of the tree the NEXT mutation edits; cleared after.
+# cmd_sync.sh is the default and almost always right - common.sh is here for
+# the conf-sourcing guard, which lives where every verb passes through it.
+MUT_FILE=""
 mutant(){
   local name="$1" prog="$2"; shift 2
-  local m ok=1 s tree
+  local m ok=1 s tree src="${MUT_FILE:-$SRC}"; MUT_FILE=""
   tree="$(mktemp -d /tmp/kssync-mutant.XXXXXX)"
-  m="$tree/lib/cmd_sync.sh"
+  m="$tree/lib/$(basename "$src")"
   echo "  [$name]"
   mkdir -p "$tree/lib" "$tree/engines"
   cp "$ROOT/ketsync" "$tree/ketsync"; chmod +x "$tree/ketsync"
@@ -53,15 +57,15 @@ mutant(){
   # all. That would report as a kill and prove the opposite of one. Half a file
   # is the same failure one step less obvious, which is why the size check is
   # separate rather than folded into the emptiness one.
-  if ! perl -0777 -pe "$prog" "$SRC" > "$m" 2>/dev/null; then
+  if ! perl -0777 -pe "$prog" "$src" > "$m" 2>/dev/null; then
     echo "      x perl refused the mutation program - fix the mutation, not the command"
     rm -rf "$tree"; FAIL=$((FAIL+1)); FAILED_NAMES+=("$name"); return
   fi
-  if [[ ! -s "$m" ]] || (( $(wc -c <"$m") < $(( $(wc -c <"$SRC") / 2 )) )); then
+  if [[ ! -s "$m" ]] || (( $(wc -c <"$m") < $(( $(wc -c <"$src") / 2 )) )); then
     echo "      x the mutant is empty or half the file is gone - that is corruption, not a mutation"
     rm -rf "$tree"; FAIL=$((FAIL+1)); FAILED_NAMES+=("$name"); return
   fi
-  if cmp -s "$m" "$SRC"; then
+  if cmp -s "$m" "$src"; then
     echo "      x the mutation matched nothing - its anchor has moved"
     rm -rf "$tree"; FAIL=$((FAIL+1)); FAILED_NAMES+=("$name"); return
   fi
@@ -211,6 +215,16 @@ mutant "--bump accepts a path that is not a synced file at all" \
 mutant "every line of the diff body gets a timestamp again" \
   's{\Q          | while IFS= read -r _l; do say "    \E\$_l\Q"; done\E}{          | while IFS= read -r _l; do log "    \$_l"; done}' \
   9b
+
+
+# ---------- the conf must read cleanly, whole ---------------------------------
+# The engines got this rule after ctmig.conf half-read on the fleet and ran at
+# a bandwidth nobody chose. Here the stakes are KS_ROLE: the bug as it was
+# written leaves a broken line's values at their defaults and carries on.
+MUT_FILE="$ROOT/lib/common.sh"
+mutant "a ketsync.conf that half-reads runs on defaults, KS_ROLE included" \
+  's{\Q  if [[ -s "\E\$_kconferr\Q" ]]; then\E}{  if false; then}' \
+  17
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

@@ -524,6 +524,16 @@ mutant "the record is read from the container's own node, which is what is missi
   's{\Q(rec_read "\E\$\Q{BKP_SSH#*@}" "\E\$ct\Q")\E}{(rec_read "\$pip" "\$ct")}' \
   63
 
+# ---------- the conf must read cleanly, whole ---------------------------------
+# The dot returns the LAST line's status, so this is the bug as it was written:
+# a broken line splashes an error, the source "succeeds", and every value that
+# line was setting silently runs at the engine default. ctmig.conf did exactly
+# this on the fleet - bw=500m against a ceiling set to 230 - and nothing but
+# the splash said so.
+mutant "a conf that half-reads runs on defaults, the way it used to" \
+  's{\Q  if [[ -s "\E\$_conferr\Q" ]]; then\E}{  if false; then}' \
+  65
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi
