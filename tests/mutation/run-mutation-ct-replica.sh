@@ -747,6 +747,41 @@ mutant "the interrupt is swallowed by the pipeline - Ctrl-C no longer ends the r
   's!\Qtrap '"'"'exit 130'"'"' INT\E!: !' \
   45
 
+# ---------- R16: intake owns the image -----------------------------------------
+# Each mutation is a way the guard quietly stops asking one of its three
+# questions - which is exactly what the engine looked like the week before the
+# guard existed, when a migrate cron and a replica cron were pointed at the
+# same raw image for the first time.
+mutant "R16 never looks - an image mid-intake is copied, torn, behind a green tick" \
+  's!\Q  _migst="\E\$BASE\Q/state/migrate-\E\$CT\Q.json"\E!  _migst=/nonexistent!' \
+  116 117 118
+
+prog=$(cat <<'PERL'
+s{\Q    if grep -q '"status":"running"' "\E\$_migst\Q" 2>/dev/null; then\E}{    if false; then}
+PERL
+)
+mutant "a round running right now is not seen" "$prog" 116
+
+mutant "a round that finished after the snapshot is not seen" \
+  's{\Q    if [[ "\E\$_mige\Q" =~ ^[0-9]+\E\$\Q ]] && (( _mige >= \E\$\Q{PREP_EPOCH[\E\$POOLPATH\Q]:-0} )); then\E}{    if false; then}' \
+  117
+
+prog=$(cat <<'PERL'
+s{\Q    if ! grep -q '"status":"ok"' <<<"\E\$_miglast\Q"; then\E}{    if false; then}
+PERL
+)
+mutant "a failed or interrupted round is copied as if it had finished" "$prog" 118
+
+prog=$(cat <<'PERL'
+s{\Q| grep -m1 -v '"status":"skipped"')\E}{| grep -m1 -v 'no-such-status')}
+PERL
+)
+mutant "a skipped record hides the round that actually moved the bytes" "$prog" 118
+
+mutant "the snapshot instant is never recorded, so every intake CT skips forever" \
+  's{\QPREP_EPOCH[\E\$p\Q]=\E\$\Q(date +%s)\E}{:}g' \
+  117
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

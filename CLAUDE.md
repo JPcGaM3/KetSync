@@ -152,8 +152,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 478 tp simulator + 16 dispatcher + 125 c2v, 150 ketsync
-    make mutation # 609 known bugs put back. None may survive
+    make test     # both layers: 481 tp simulator + 16 dispatcher + 125 c2v, 150 ketsync
+    make mutation # 615 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -275,7 +275,7 @@ anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
     ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     66 mutations
-    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    104 mutations
+    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    110 mutations
     ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    72 mutations
     ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  81 mutations
     ct-recall.sh     tests/mutation/run-mutation-ct-recall.sh      56 mutations
@@ -472,7 +472,7 @@ and a dry run may mount only `ro`.
         node, BEFORE the transfer; and a net line with no bridge= refuses
         the row instead of being silently dropped
 
-`ct-replica.sh` — R1..R15:
+`ct-replica.sh` — R1..R16:
 
     R1   point-in-time source: snapshot + clone, read the images from the clone
     R2   never rsync into a copy that is RUNNING (DR was promoted)
@@ -546,6 +546,18 @@ and a dry run may mount only `ro`.
          to a filesystem that never existed. Any lock counts, not just backup:
          every one of them means a tool that is not this one owns the guest.
          A skip, not a failure - it clears itself when the job ends
+    R16  an image ct-migrate is still bringing in is left alone. Both engines
+         run on the storage node against the same raw image, so during an
+         intake (a presync cron plus a replica cron on the same CT) R1's
+         snapshot can land mid-round and the clone holds half of one round
+         and half of another - which the copy, and then the PBS backup of the
+         copy, would preserve behind a green checkmark. Three local reads of
+         migrate's own state file: running now, finished after the snapshot,
+         or last real round (skipped records do not count) not ok - each is a
+         skip that clears itself. Deliberately conservative: a round that
+         STARTED after the snapshot is provably safe (copy-on-write already
+         split them) and is skipped anyway, because one stale round is
+         cheaper than a second clock comparison at 2am
 
 Two things ct-replica does that are not guards, and belong here anyway:
 

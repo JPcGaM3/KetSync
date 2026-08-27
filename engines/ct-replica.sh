@@ -71,7 +71,7 @@
 #  A filter that matches no row exits NON-ZERO: under cron, exit 0 with no work
 #  done looks exactly like a healthy night.
 # -----------------------------------------------------------------------------
-#  THE GUARDS (R1..R15) — same contract as ct-migrate's G1..G7: each exists
+#  THE GUARDS (R1..R16) — same contract as ct-migrate's G1..G7: each exists
 #  because of a real incident on this fleet; keep them and keep their ORDER.
 #
 #   R1  point-in-time source, never a moving one. A ZFS-backed storage is
@@ -190,6 +190,16 @@
 #       recall are driven from the backup node, because the machine that
 #       normally drives replication is the machine that died. An unanswered
 #       destination is refused, not treated as free.
+#
+#   R16 an image ct-migrate is still bringing in is not copied. Intake and
+#       replication run on this same machine against this same raw image, and
+#       R1's snapshot can land in the middle of a migrate round - the clone
+#       then holds half of one round and half of another, and the copy (and
+#       the PBS backup of the copy) would archive that torn state behind a
+#       green checkmark. The guard reads migrate's own state file: a round
+#       running now, a round that finished after the snapshot, or a last real
+#       round that did not end ok, all skip - and every skip clears itself on
+#       the next round.
 # =============================================================================
 set -uo pipefail
 
@@ -569,7 +579,7 @@ fi
 # outcome this repo refuses everywhere else, and putting the check that names
 # the missing tool AFTER the lock meant it could never fire.
 _missing=()
-for _c in pvesm zfs ssh rsync flock mount umount mountpoint findmnt df mktemp; do
+for _c in pvesm zfs ssh rsync flock mount umount mountpoint findmnt df mktemp tac; do
   command -v "$_c" >/dev/null 2>&1 || _missing+=("$_c")
 done
 if (( ${#_missing[@]} )); then
@@ -899,6 +909,10 @@ st_ok(){   ST_STATUS=ok;      ST_REASON="";   ok=$(( ok + 1 )); }
 
 # ---------- R1: per-storage point-in-time prep (lazy, cached) ----------
 declare -A PREP_STATE=() PREP_ROOT=() PREP_WHY=() DOWN_COUNT=() DOWN_SID=()
+# The INSTANT each storage's read-source was fixed, for R16: on ZFS the
+# moment the snapshot was taken, on the live-fallback path the moment the
+# reads were about to begin. R16 compares intake activity against it.
+declare -A PREP_EPOCH=()
 declare -a CLONES=() SNAPS=()
 prep_pool(){   # $1 = pool path (dir that contains images/)   $2 = storage id
   local p="$1" sid="$2" fsroot fstype fssrc ds pool snap clone cm rel
@@ -927,7 +941,7 @@ prep_pool(){   # $1 = pool path (dir that contains images/)   $2 = storage id
       # only supposed to look at. So it does not take one - which means it
       # cannot read the images either, and cannot say how much would move. It
       # says that outright rather than printing a zero somebody would believe.
-      PREP_STATE[$p]=ok; PREP_ROOT[$p]="$p"
+      PREP_STATE[$p]=ok; PREP_ROOT[$p]="$p"; PREP_EPOCH[$p]=$(date +%s)
       log "R1: DRY: would snapshot $ds@$snap and clone it to $clone"
       log "R1: DRY:   not taken, so nothing is read from '$sid' and there is no transfer estimate"
       return 0
@@ -940,6 +954,7 @@ prep_pool(){   # $1 = pool path (dir that contains images/)   $2 = storage id
       return 1
     fi
     SNAPS+=("$ds@$snap"); CLONES+=("$clone")
+    PREP_EPOCH[$p]=$(date +%s)         # the instant the source stopped moving
     cm=$(zfs get -H -o value mountpoint "$clone" 2>/dev/null)
     if [[ -z "$cm" || "$cm" == "none" ]] || ! mountpoint -q "$cm"; then
       PREP_STATE[$p]=fail; PREP_WHY[$p]="the clone of $ds would not mount"
@@ -958,7 +973,7 @@ prep_pool(){   # $1 = pool path (dir that contains images/)   $2 = storage id
       return 1
     fi
     log "WARN R1: '$sid' is on $fstype - syncing from LIVE images (no point-in-time; LIVE_FALLBACK=1)"
-    PREP_ROOT[$p]="$p"
+    PREP_ROOT[$p]="$p"; PREP_EPOCH[$p]=$(date +%s)
   fi
   PREP_STATE[$p]=ok
   return 0
@@ -1607,6 +1622,60 @@ for CT in "${CTS[@]}"; do
   if [[ ! -f "$RAW" ]]; then
     log "[$CT] ERROR: raw image not found in snapshot ($RAW) - skip"
     st_fail image_missing; continue
+  fi
+
+  # --- R16: intake owns this image right now - leave the copy alone ----------
+  # ct-migrate runs on THIS machine and writes into THIS raw image while a
+  # container is being brought in (a presync every half hour; a first full
+  # copy for hours). R1 makes the danger a question about ONE instant: if a
+  # migrate round was in flight when the lane's snapshot was taken, the clone
+  # holds half of one round and half of another, and syncing it puts that torn
+  # state into the copy - where the next PBS backup archives it, permanently,
+  # behind a green checkmark. Three reads of migrate's own state, all local:
+  #
+  #   running now            the snapshot may have landed inside the round
+  #   finished after the     same doubt, stated after the fact - the round was
+  #   snapshot               in flight when the instant was picked
+  #   last real round did    a failed or interrupted round leaves the image
+  #   not end ok             half-written UNTIL THE NEXT ROUND REPAIRS IT, so
+  #                          the image is not a state anybody finished with.
+  #                          "Real" skips the skipped records - a round that
+  #                          moved nothing hides nothing
+  #
+  # Every skip clears itself: intake rounds leave gaps and the next replica
+  # round reads a fresh snapshot. The rule deliberately also skips one safe
+  # shape - a round that STARTED after the snapshot cannot reach the clone,
+  # copy-on-write already split them - because one stale round is cheaper
+  # than a second clock comparison somebody has to reason about at 2am. No
+  # migrate state at all means this CT was never intake's: the guard is
+  # silent, which is every container that did not come through migrate.
+  _migst="$BASE/state/migrate-$CT.json"
+  if [[ -f "$_migst" ]]; then
+    if grep -q '"status":"running"' "$_migst" 2>/dev/null; then
+      log "[$CT] GUARD R16: ct-migrate is mid-round on this image right now - skip"
+      log "[$CT] GUARD R16:   the copy keeps its last complete state; the next round catches up"
+      st_skip r16_intake_running; continue
+    fi
+    _mige=$(sed -n 's/.*"epoch":\([0-9][0-9]*\).*/\1/p' "$_migst" 2>/dev/null | head -1)
+    if [[ "$_mige" =~ ^[0-9]+$ ]] && (( _mige >= ${PREP_EPOCH[$POOLPATH]:-0} )); then
+      log "[$CT] GUARD R16: ct-migrate finished a round AFTER this lane's snapshot was taken"
+      log "[$CT] GUARD R16:   the snapshot may hold half of that round - skip; the next round"
+      log "[$CT] GUARD R16:   reads a fresh one"
+      st_skip r16_intake_overlap; continue
+    fi
+    _miglast=$(tac "$BASE/state/migrate-$CT.runs.jsonl" 2>/dev/null \
+               | grep -m1 -v '"status":"skipped"')
+    if [[ -z "$_miglast" ]]; then
+      log "[$CT] GUARD R16: intake state exists but its history is unreadable - skip"
+      log "[$CT] GUARD R16:   nothing can say whether the image holds a finished round"
+      st_skip r16_intake_torn; continue
+    fi
+    if ! grep -q '"status":"ok"' <<<"$_miglast"; then
+      log "[$CT] GUARD R16: the last intake round that moved bytes did not finish ok"
+      log "[$CT] GUARD R16:   the image holds a half-written round until ct-migrate repairs it;"
+      log "[$CT] GUARD R16:   copying it now would put that torn state into copy $TGT"
+      st_skip r16_intake_torn; continue
+    fi
   fi
 
   # --- take the target, or leave it to the lane that already has it ---

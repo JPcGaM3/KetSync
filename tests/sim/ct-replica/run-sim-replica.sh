@@ -2158,6 +2158,92 @@ if scenario "115: two containers, two files - and neither holds the other's day"
   done_scenario
 fi
 
+# =============================================================================
+#  R16: intake owns the image
+# =============================================================================
+# The helpers write what ct-migrate itself would have written: the state
+# snapshot with "last" carrying status+epoch, and the run history one line per
+# round. The guard reads BOTH, so both are faked faithfully - a scenario that
+# planted only the snapshot would pass a guard that never opens the history.
+mig_state(){ # $1=ctid $2=status $3=epoch
+  mkdir -p "$WORK/state"
+  printf '{"new_ctid":"%s","last":{"ts":"x","epoch":%s,"lane":"all","mode":"presync","status":"%s","reason":"","rc":0}}\n' \
+    "$1" "$3" "$2" > "$WORK/state/migrate-$1.json"
+}
+mig_hist(){ # $1=ctid, rest = status words appended one line each
+  local _c="$1"; shift
+  mkdir -p "$WORK/state"
+  : > "$WORK/state/migrate-$_c.runs.jsonl"
+  local _s
+  for _s in "$@"; do
+    printf '{"ts":"x","epoch":1,"status":"%s","reason":"","rc":0}\n' "$_s" \
+      >> "$WORK/state/migrate-$_c.runs.jsonl"
+  done
+}
+
+if scenario "116: a CT ct-migrate is writing RIGHT NOW is skipped, and its copy untouched"; then
+  # The shape a live intake has: cron presync every half hour on the same
+  # machine, into the same raw image replica reads. The snapshot may have
+  # landed inside the round, so nothing may reach the copy.
+  mig_state 105 running "$(date +%s)"
+  mig_hist  105 ok
+  run_engine
+  rc_is 0; clean
+  has "[105] GUARD R16: ct-migrate is mid-round on this image right now - skip"
+  st_is 105 last.status skipped
+  st_is 105 last.reason r16_intake_running
+  hasnt "[105] SYNC ->"
+  # the OTHER container is not intake's and copies as every night
+  has "[113] OK -> 8113"
+  done_scenario
+fi
+
+if scenario "117: a round that finished AFTER the snapshot skips; before it, copies"; then
+  # finished in the future = after this run's snapshot instant, whenever the
+  # engine takes it. The doubt is the same as 116, stated after the fact.
+  mig_state 105 ok "$(( $(date +%s) + 1000 ))"
+  mig_hist  105 ok
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "GUARD R16: ct-migrate finished a round AFTER this lane's snapshot was taken"
+  st_is 105 last.reason r16_intake_overlap
+  hasnt "[105] SYNC ->"
+  # and a round that finished well BEFORE the snapshot holds nothing back
+  mig_state 105 ok "$(( $(date +%s) - 1000 ))"
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "[105] OK -> 8105"
+  done_scenario
+fi
+
+if scenario "118: a failed or interrupted intake round marks the image torn until repaired"; then
+  # An interrupted migrate leaves the image half-written UNTIL THE NEXT ROUND
+  # REPAIRS IT - the state file says so, and the copy must not inherit it.
+  # The newest history line being a skip must not hide the verdict either:
+  # a skipped round moved nothing, so the round before it is the one that
+  # says what the image holds.
+  mig_state 105 interrupted "$(( $(date +%s) - 1000 ))"
+  mig_hist  105 ok interrupted skipped
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "GUARD R16: the last intake round that moved bytes did not finish ok"
+  st_is 105 last.reason r16_intake_torn
+  hasnt "[105] SYNC ->"
+  # the round after the repair: history ends ok (then a harmless skip), copies
+  mig_state 105 ok "$(( $(date +%s) - 1000 ))"
+  mig_hist  105 interrupted ok skipped
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "[105] OK -> 8105"
+  # and a history that cannot answer at all holds the copy back too
+  mig_state 105 ok "$(( $(date +%s) - 1000 ))"
+  rm -f "$WORK/state/migrate-105.runs.jsonl"
+  run_engine --ctid 105
+  has "GUARD R16: intake state exists but its history is unreadable - skip"
+  st_is 105 last.reason r16_intake_torn
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi
