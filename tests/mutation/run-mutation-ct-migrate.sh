@@ -340,7 +340,7 @@ mutant "an upgrade over the old inventory.tsv gets no hint about the rename" \
 # shape across three engines back into three, and the failure is an exit 2 in
 # the middle of a cron line that has worked for months.
 mutant "--all is refused again, so one command shape stops working" \
-  's{\Q    --all)     shift;;\E}{}' \
+  's{\Q    --all)     ALL=1; shift;;\E}{}' \
   63b
 
 
@@ -470,6 +470,22 @@ mutant "the rc judged is the filter's, not rsync's - every failed sync reads as 
 mutant "the interrupt is swallowed by the pipeline - Ctrl-C no longer ends the run" \
   's!\Qtrap '"'"'exit 130'"'"' INT\E!: !' \
   47
+
+# ---------- the whole-window final ---------------------------------------------
+# --all --final is real (an announced maintenance window moves every container
+# at once), and each mutation here is one of the two ways it goes wrong: the
+# scope rule quietly stops asking, or one unready row takes the window hostage.
+mutant "a bare --final quietly becomes the fleet" \
+  's{\Qif (( FINAL )) && [[ -z "\E\$ONLY_CTID\Q" ]] && (( ! ALL )); then\E}{if false; then}' \
+  76b
+
+mutant "--all --final is refused again - the window is back to one command per row" \
+  's{\Q && [[ -z "\E\$ONLY_CTID\Q" ]] && (( ! ALL )); then\E}{ && [[ -z "\$ONLY_CTID" ]]; then}' \
+  76
+
+mutant "one row that is not stopped takes the whole window hostage" \
+  's{\Q      st_fail not_stopped; continue\E}{      st_fail not_stopped; break}' \
+  76
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

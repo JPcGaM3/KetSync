@@ -1434,6 +1434,41 @@ if scenario "75: --stopped is gone - this engine says --final like every other o
   done_scenario
 fi
 
+if scenario "76: --all --final takes the whole window, and one unready row does not stop it"; then
+  # The announced-maintenance shape: downtime is declared for the window, so
+  # every row takes its final delta in one command. The row whose CT is still
+  # running (somebody missed it) is SKIPPED AND NAMED - the rest keep moving -
+  # and the run exits non-zero so the straggler cannot read as done. The
+  # unready row comes FIRST in the inventory on purpose: proving the batch
+  # continues past it is the whole scenario.
+  inventory \
+    "10.100.1.12	253	253	10.100.1.32	tank-ssd-nas" \
+    "10.100.1.11	251	251	10.100.1.31	tank-hdd-nas"
+  run_engine --ctid 251                                # presync: 251 has an image
+  echo stopped > "$SIMROOT/nodes/10.100.1.11/ct/251.status"
+  echo 0 > "$SIMROOT/rsync.n"
+  run_engine --all --final
+  rc_is 1; clean
+  has "--final needs CT 253"                           # still running - named
+  has "FINAL delta from a STOPPED CT"                  # 251 moved anyway
+  has "ok=1 skipped=0 frozen=0 failed=1"
+  st_is 251 last.mode final
+  st_is 251 last.status ok
+  st_is 253 last.reason not_stopped
+  done_scenario
+fi
+
+if scenario "76b: --final with no scope is refused - one container or --all, said out loud"; then
+  # A --final that lost its --ctid to a copy-paste must not quietly become
+  # the fleet: the two meanings differ by a whole window's downtime.
+  run_engine --final
+  rc_is 2
+  has "--final needs its scope said out loud"
+  untraced "rsync"
+  untraced "SRCMOUNT"
+  done_scenario
+fi
+
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi
 exit 0

@@ -159,7 +159,10 @@ migrate: an old standalone node -> a raw image on the storage node
   --ctid <id>            one container, by its NEW id (column 3)
   --storage <id>         one lane - rows whose storage column matches
   --final                the last delta. The old CT must be STOPPED; also
-                         takes the FIRST full copy when no image exists yet
+                         takes the FIRST full copy when no image exists yet.
+                         Scope is said out loud: --ctid for one container, or
+                         --all for the whole window - unready rows are skipped
+                         and named, and the run exits non-zero
   --dry-run              every guard runs, nothing is written. Not valid
                          with --final (it would need pct mount)
 MENU

@@ -28,6 +28,12 @@
 #                                            delta - the one path in for a CT
 #                                            that is already down
 #                                            because /proc/<pid>/root is gone
+#    ct-migrate.sh   --all --final            the announced-window shape: every
+#                                            row, final delta each. A row whose
+#                                            CT is still running is SKIPPED and
+#                                            named, the rest keep moving, and
+#                                            the run exits non-zero so the
+#                                            stragglers cannot read as done
 #    ct-migrate.sh   --dry-run                every guard, every number, no
 #                                            write. Not valid with --final.
 #
@@ -154,7 +160,7 @@ SSH_CIPHERS=aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr
 # -------------------------------------------------------------------
 
 # ---------- args ----------
-LANE_STORAGE=""; ONLY_CTID=""; FINAL=0; DRY=0
+LANE_STORAGE=""; ONLY_CTID=""; ALL=0; FINAL=0; DRY=0
 # A value-taking flag whose value was lost to a copy-paste used to hang here
 # forever: `shift 2` fails when only one argument is left, the old `|| true`
 # swallowed that failure, and $# never reached zero. Under cron that is a
@@ -169,11 +175,11 @@ while (( $# )); do
     --ctid)    [[ $# -ge 2 ]] || { echo "--ctid needs a value" >&2; exit 2; }
                ONLY_CTID="$2";    shift 2;;
     # Accepted everywhere so one command shape works across all three engines.
-    # Here it is what happens anyway, which is the point: an operator should not
-    # have to remember that this engine defaults to the whole inventory and
-    # ct-failback.sh insists on being told. Refusing a flag that means exactly
-    # what the tool already does teaches nothing and costs a run.
-    --all)     shift;;
+    # For a presync it is what happens anyway. For --final it is LOAD-BEARING:
+    # the whole-fleet final is real (an announced maintenance window moves
+    # every container at once), and it must be asked for out loud - a --final
+    # that fell off its --ctid must not quietly become the fleet.
+    --all)     ALL=1; shift;;
     # --final, the same word recall and failback use for the same operation:
     # the LAST delta, taken from a source a human has already stopped. This
     # engine spent its first months calling it --stopped - one verb out of
@@ -189,8 +195,14 @@ while (( $# )); do
     *) echo "unknown argument: $1" >&2; exit 2;;
   esac
 done
-if (( FINAL )) && [[ -z "$ONLY_CTID" ]]; then
-  echo "--final is a single-CT operation: pass --ctid <new_ctid> too" >&2; exit 2
+# --final without a scope is refused, not defaulted to the fleet. --ctid picks
+# one container; --all is the announced-window shape - every row, final delta
+# each, unready rows skipped and named, non-zero at the end. What is NOT
+# accepted is a bare --final: it is one lost argument away from either meaning,
+# and the two differ by a whole fleet's downtime.
+if (( FINAL )) && [[ -z "$ONLY_CTID" ]] && (( ! ALL )); then
+  echo "--final needs its scope said out loud: --ctid <new_ctid> for one container, or --all for every row" >&2
+  exit 2
 fi
 # --final exposes the source with `pct mount` on the old node, which is a
 # write on somebody else's machine, and without it there is no source to
