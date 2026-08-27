@@ -782,6 +782,19 @@ mutant "the snapshot instant is never recorded, so every intake CT skips forever
   's{\QPREP_EPOCH[\E\$p\Q]=\E\$\Q(date +%s)\E}{:}g' \
   117
 
+# ---------- R17: the intake image lock on the live path -----------------------
+mutant "R17 is never asked - a live read proceeds into an image intake owns" \
+  's{\Q  if (( \E\$\Q{PREP_LIVE[\E\$POOLPATH\Q]:-0} )); then\E}{  if false; then}' \
+  119 120
+
+mutant "the busy answer is thrown away - flock -n says no and the read happens anyway" \
+  's{\Q  if flock -n 7; then INTAKE_LOCK="\E\$\Q1"; return 0; fi\E}{  if true; then INTAKE_LOCK="\$1"; return 0; fi}' \
+  119
+
+mutant "the live lane's lock leaks onto ZFS - a held image stops clone reads too" \
+  's{\Q  if (( \E\$\Q{PREP_LIVE[\E\$POOLPATH\Q]:-0} )); then\E}{  if true; then}' \
+  121
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

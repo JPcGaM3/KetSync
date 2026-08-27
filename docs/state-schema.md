@@ -202,6 +202,10 @@ Pre-transfer, no data moved:
                       somebody else's rootfs into ours
     storage_inactive  the storage exists on the target but is not active
     node_busy         another lane holds the source node lock (see above)
+    g9_image_busy     G9: another engine holds the intake image lock -
+                      ct-replica reading the image live, or ct-failback
+                      writing it back. Same shape as node_busy: a non-event
+                      that the next cron round retries by itself
     ssh_old_node      the old node is unreachable
     ct_not_found      no such CT on the old node
     not_stopped       --final was used on a CT that is still running

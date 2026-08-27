@@ -1469,6 +1469,28 @@ if scenario "76b: --final with no scope is refused - one container or --all, sai
   done_scenario
 fi
 
+if scenario "77: G9 an image another engine holds is skipped whole - no alloc, no mount, no rsync"; then
+  # The sim shell plays ct-replica reading CT 251's image live (or a failback
+  # writing it): same lock file, same flock, held across the run. The row
+  # must give way this round and the OTHER row must still migrate - one busy
+  # image does not cost the lane its night. The reverse direction - migrate
+  # holding while these bytes land - is the rsync fake's standing G9 probe,
+  # which polices every other scenario in this file on the way through.
+  exec 7>"$WORK/.ct-intake-251.lock"; flock 7
+  run_engine
+  exec 7>&-
+  rc_is 0; clean
+  has "GUARD G9: another engine holds this image right now (replica or failback) - skip"
+  st_is 251 last.reason g9_image_busy
+  # nothing of 251's row ran: the image was never created, mounted or written
+  untraced "ctmig-251"
+  cfg_absent 10.100.1.31 251
+  # and 253 still moved
+  cfg_exists 10.100.1.32 253
+  has "ok=1 skipped=1 frozen=0 failed=0"
+  done_scenario
+fi
+
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi
 exit 0

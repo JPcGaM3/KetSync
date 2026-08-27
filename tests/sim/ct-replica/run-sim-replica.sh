@@ -2244,6 +2244,58 @@ if scenario "118: a failed or interrupted intake round marks the image torn unti
   done_scenario
 fi
 
+if scenario "119: R17 an image another engine holds is not read live - skip, loudly"; then
+  # The shape R17 exists for: a LIVE_FALLBACK lane, and ct-migrate (or a
+  # failback) holding the image for the length of its transfer. The sim shell
+  # plays the other engine: same lock file, same flock, held across the run.
+  retype_fs "$SIMROOT/pool/tank-ssd" xfs /dev/sdc1 tank-ssd
+  conf_set LIVE_FALLBACK 1
+  exec 7>"$WORK/.ct-intake-113.lock"; flock 7
+  run_engine --ctid 113
+  exec 7>&-
+  rc_is 0; clean
+  has "GUARD R17: another engine holds this image right now (intake or failback) - skip"
+  st_is 113 last.reason r17_image_busy
+  # nothing of the read happened: no mount of the live image, no transfer,
+  # no copy config invented for data that never moved
+  untraced "mount -o loop,ro,noload"
+  untraced "rsync"
+  cfg_absent 8113
+  has "ok=0 skipped=1 failed=0"
+  done_scenario
+fi
+
+if scenario "120: R17 a live read HOLDS the image lock for the whole transfer, then lets go"; then
+  # The rsync fake probes the flock mid-transfer (armed by intake.check): a
+  # live read running while the lock is free is a violation, not a pass.
+  retype_fs "$SIMROOT/pool/tank-ssd" xfs /dev/sdc1 tank-ssd
+  conf_set LIVE_FALLBACK 1
+  printf '%s\n' "$WORK/.ct-intake-113.lock" > "$SIMROOT/intake.check"
+  run_engine --ctid 113
+  rc_is 0; clean
+  has "WARN R1: 'tank-ssd-nas' is on xfs - syncing from LIVE images (no point-in-time; LIVE_FALLBACK=1)"
+  cfg_exists 8113
+  has "ok=1 skipped=0 failed=0"
+  # and the lock is not still held by a dead run: the fd went down with the
+  # engine, which is the crash-safety the kernel flock was chosen for
+  flock -n "$WORK/.ct-intake-113.lock" true 2>/dev/null \
+    || _err "the intake lock is still held after the run ended"
+  done_scenario
+fi
+
+if scenario "121: R17 belongs to the live lane alone - a ZFS round ignores the lock"; then
+  # Zero behaviour change on ZFS lanes is part of the design: the clone is
+  # this engine's alone, so a held intake lock must not hold replication back.
+  exec 7>"$WORK/.ct-intake-113.lock"; flock 7
+  run_engine --ctid 113
+  exec 7>&-
+  rc_is 0; clean
+  hasnt "GUARD R17"
+  has "[113] OK -> 8113"
+  has "ok=1 skipped=0 failed=0"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

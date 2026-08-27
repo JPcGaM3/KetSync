@@ -152,8 +152,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 483 tp simulator + 16 dispatcher + 125 c2v, 150 ketsync
-    make mutation # 618 known bugs put back. None may survive
+    make test     # both layers: 488 tp simulator + 16 dispatcher + 125 c2v, 150 ketsync
+    make mutation # 625 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -274,9 +274,9 @@ must be mirrored in its mutation file in the same change. Never "fix" a broken
 anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
-    ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     69 mutations
-    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    110 mutations
-    ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    72 mutations
+    ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     71 mutations
+    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    113 mutations
+    ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    74 mutations
     ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  81 mutations
     ct-recall.sh     tests/mutation/run-mutation-ct-recall.sh      56 mutations
     ct-prepare.sh    tests/mutation/run-mutation-ct-prepare.sh     82 mutations
@@ -471,8 +471,16 @@ and a dry run may mount only `ro`.
         node and reach no wire - R9's question asked per target, cached per
         node, BEFORE the transfer; and a net line with no bridge= refuses
         the row instead of being silently dropped
+    G9  the raw image is held under one kernel flock while this engine can
+        write it - .ct-intake-<ct>.lock, keyed on the production id, taken
+        BEFORE the allocation (a half-mkfs'd file already looks like an
+        image) and dropped at end of row. ct-replica holds the same lock for
+        a LIVE read (R17) and ct-failback for a write-back (B9); busy is a
+        loud skip, never a wait, and a crash releases a flock by itself. It
+        is ONE lock and three engines disagreeing about it would be worse
+        than none - R14's argument, restated for one machine
 
-`ct-replica.sh` — R1..R16:
+`ct-replica.sh` — R1..R17:
 
     R1   point-in-time source: snapshot + clone, read the images from the clone
     R2   never rsync into a copy that is RUNNING (DR was promoted)
@@ -558,6 +566,16 @@ and a dry run may mount only `ro`.
          STARTED after the snapshot is provably safe (copy-on-write already
          split them) and is skipped anyway, because one stale round is
          cheaper than a second clock comparison at 2am
+    R17  a LIVE read holds the intake image lock, or does not read at all.
+         R16 settles intake-vs-replica where R1 pins the read to a snapshot
+         instant; LIVE_FALLBACK has no instant - the read lasts as long as
+         the rsync does, and migrate can start writing anywhere inside it.
+         So the live path takes .ct-intake-<ct>.lock (G9/B9, same file, same
+         key: the production id) for the whole read, and busy skips the CT
+         loudly for that round. ZFS lanes never take it - the clone is this
+         engine's alone, and serialising replica against migrate on every
+         lane would buy nothing. The lock is a kernel flock: a crash
+         releases it by itself, so there is nothing stale to clean up
 
 Two things ct-replica does that are not guards, and belong here anyway:
 
@@ -591,7 +609,7 @@ Two things ct-replica does that are not guards, and belong here anyway:
          that reads as a storage fault. A size that cannot be read is refused,
          never assumed roomy
 
-`ct-failback.sh` — B1..B6:
+`ct-failback.sh` — B1..B9:
 
     B1  the production CT must be STOPPED, and unreachable counts as not stopped
     B2  presync needs the copy RUNNING (R2 shields it), OR stopped with its
@@ -631,6 +649,13 @@ Two things ct-replica does that are not guards, and belong here anyway:
         copy id, so even on one machine those two never excluded each other -
         and this engine READS a copy that ct-replica writes. R14, same code,
         same file
+    B9  the production image is held under the intake image lock while this
+        engine writes the copy back into it - .ct-intake-<ct>.lock, the same
+        kernel flock migrate holds while filling the image (G9) and replica
+        holds while reading it live (R17), keyed on the production id all
+        three agree on. Taken before the safety snapshot and the rw mount,
+        dropped at end of the CT's turn; busy is a loud skip and the batch
+        goes on - one busy image does not stop a disaster recovery
 
 `ct-distribute.sh` — D1..D8:
 

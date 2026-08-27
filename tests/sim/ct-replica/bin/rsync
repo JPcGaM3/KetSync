@@ -30,6 +30,18 @@ trace "rsync $src -> $dst"
 # in the tree and nothing would have said so on the day it stopped being.
 for _a in "$@"; do case "$_a" in -*) trace "rsyncopt $_a";; esac; done
 
+# R17: a scenario that reads a LIVE image (LIVE_FALLBACK) names the intake
+# lock file in $SIMROOT/intake.check, and this transfer must then be running
+# WITH that lock held - a live read under a free lock is exactly the torn-copy
+# shape R17 exists to prevent. Conditional, unlike migrate's standing probe,
+# because on a ZFS lane the source is the clone and no lock is owed at all.
+if [[ -f "$SIMROOT/intake.check" ]]; then
+  _ilk="$(cat "$SIMROOT/intake.check")"
+  if flock -n "$_ilk" true 2>/dev/null; then
+    violation "a LIVE image read ran while the intake lock (R17) was free"
+  fi
+fi
+
 # --- the exclude list ---------------------------------------------------------
 # Recorded by CONTENT, not by filename: what a scenario cares about is which
 # patterns reached rsync, and the file is in a temp sandbox whose path nothing

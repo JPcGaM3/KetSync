@@ -71,7 +71,7 @@
 #  A filter that matches no row exits NON-ZERO: under cron, exit 0 with no work
 #  done looks exactly like a healthy night.
 # -----------------------------------------------------------------------------
-#  THE GUARDS (R1..R16) — same contract as ct-migrate's G1..G7: each exists
+#  THE GUARDS (R1..R17) — same contract as ct-migrate's G1..G7: each exists
 #  because of a real incident on this fleet; keep them and keep their ORDER.
 #
 #   R1  point-in-time source, never a moving one. A ZFS-backed storage is
@@ -200,6 +200,16 @@
 #       running now, a round that finished after the snapshot, or a last real
 #       round that did not end ok, all skip - and every skip clears itself on
 #       the next round.
+#
+#   R17 a LIVE read holds the image lock, or does not read at all. R16 settles
+#       intake-vs-replica for ZFS lanes, where R1 pins the read to one instant;
+#       LIVE_FALLBACK has no instant - the read takes as long as the rsync
+#       takes, and ct-migrate can start writing anywhere inside it. So the
+#       three engines that touch one raw image share a kernel flock, keyed on
+#       the production id: migrate holds .ct-intake-<ct>.lock for the whole of
+#       its write window, this engine holds it for the whole of a live read,
+#       and busy means skip this CT this round, loudly. ZFS lanes never take
+#       it - the clone is theirs alone, and R16 already answers for it.
 # =============================================================================
 set -uo pipefail
 
@@ -913,6 +923,11 @@ declare -A PREP_STATE=() PREP_ROOT=() PREP_WHY=() DOWN_COUNT=() DOWN_SID=()
 # moment the snapshot was taken, on the live-fallback path the moment the
 # reads were about to begin. R16 compares intake activity against it.
 declare -A PREP_EPOCH=()
+# Which storages are being read LIVE (LIVE_FALLBACK on a snapshotless fs).
+# Only those lanes take the intake lock (R17): a ZFS clone is this engine's
+# alone, and taking a lock nobody contends for would serialise replica against
+# migrate on every lane for no protection gained.
+declare -A PREP_LIVE=()
 declare -a CLONES=() SNAPS=()
 prep_pool(){   # $1 = pool path (dir that contains images/)   $2 = storage id
   local p="$1" sid="$2" fsroot fstype fssrc ds pool snap clone cm rel
@@ -974,6 +989,7 @@ prep_pool(){   # $1 = pool path (dir that contains images/)   $2 = storage id
     fi
     log "WARN R1: '$sid' is on $fstype - syncing from LIVE images (no point-in-time; LIVE_FALLBACK=1)"
     PREP_ROOT[$p]="$p"; PREP_EPOCH[$p]=$(date +%s)
+    PREP_LIVE[$p]=1                    # arms R17 for every CT on this storage
   fi
   PREP_STATE[$p]=ok
   return 0
@@ -1349,6 +1365,28 @@ release_tgt_lock(){  # closing the fd is what drops the flock
   TGT_LOCK=""
 }
 
+# --- R17: the intake image lock, shared with ct-migrate and ct-failback ------
+# One raw image, three engines on this machine that can hold it open: migrate
+# writes it for hours during an intake, failback writes it back after a DR,
+# and on a LIVE_FALLBACK lane this engine reads it for as long as the rsync
+# runs. R16 protects the ZFS path by pinning the read to a snapshot instant;
+# a live read has no instant to pin, so the writer and the reader take turns
+# instead, through a kernel flock keyed on the number all three agree on -
+# the production id. fd 7 on purpose: 8 is the target lock, 9 the lane lock.
+# A crash releases a flock by itself, so there is nothing stale to clean up.
+INTAKE_LOCK=""
+take_intake_lock(){   # $1 = production ctid -> 0 when this run owns the image
+  exec 7>"$BASE/.ct-intake-$1.lock" 2>/dev/null || return 1
+  if flock -n 7; then INTAKE_LOCK="$1"; return 0; fi
+  exec 7>&-
+  return 1
+}
+release_intake_lock(){
+  [[ -n "$INTAKE_LOCK" ]] || return 0
+  exec 7>&-
+  INTAKE_LOCK=""
+}
+
 # --- R14: the lock that lives on the machine holding the copy ----------------
 # R7 and R10 are local flocks. They serialise runs on THIS machine and nothing
 # else - and the copy is not on this machine. More than one machine writes into
@@ -1447,6 +1485,7 @@ end_iteration(){
   # the one whose leftover survives a reboot.
   release_cfg_lock
   release_dst_lock
+  release_intake_lock
   [[ "$ST_STATUS" == running ]] && { ST_STATUS=interrupted; ST_REASON=interrupted; }
   st_flush
   CT_LOG=""                     # this container's turn is over; the file stays
@@ -1675,6 +1714,22 @@ for CT in "${CTS[@]}"; do
       log "[$CT] GUARD R16:   the image holds a half-written round until ct-migrate repairs it;"
       log "[$CT] GUARD R16:   copying it now would put that torn state into copy $TGT"
       st_skip r16_intake_torn; continue
+    fi
+  fi
+
+  # --- R17: a LIVE read takes the image lock, and busy means not this round --
+  # Only on a LIVE_FALLBACK storage: the RAW path above is then the production
+  # image itself, the same file ct-migrate writes into and ct-failback writes
+  # back into, and R16's instant-based answer cannot cover a read that lasts
+  # as long as the rsync does. Held from here to end_iteration, so the whole
+  # of the read happens inside it. On ZFS lanes RAW is the clone and this
+  # block does not run at all - which is what keeps their behaviour identical
+  # to yesterday's.
+  if (( ${PREP_LIVE[$POOLPATH]:-0} )); then
+    if ! take_intake_lock "$CT"; then
+      log "[$CT] GUARD R17: another engine holds this image right now (intake or failback) - skip"
+      log "[$CT] GUARD R17:   a live read under their write is a torn copy; the next round reads it whole"
+      st_skip r17_image_busy; continue
     fi
   fi
 

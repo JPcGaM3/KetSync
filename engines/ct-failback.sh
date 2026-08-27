@@ -66,7 +66,7 @@
 #  A filter that matches no row exits NON-ZERO: under cron, exit 0 with no work
 #  done looks exactly like a healthy night.
 # -----------------------------------------------------------------------------
-#  THE GUARDS (B1..B8). Failback is the one direction where a mistake destroys
+#  THE GUARDS (B1..B9). Failback is the one direction where a mistake destroys
 #  PRODUCTION data rather than a copy, so these refuse rather than warn.
 #
 #   B1  the production CT must be STOPPED on its own node. Its rootfs is a raw
@@ -127,6 +127,13 @@
 #       says nothing at all, and during an outage recall runs from the backup
 #       node while this runs here. An unanswered destination is refused, not
 #       treated as free.
+#
+#   B9  the production image is shared with ct-migrate and ct-replica on THIS
+#       machine, and a kernel flock keyed on the production id makes the three
+#       take turns: migrate holds it while filling the image during an intake,
+#       replica holds it while reading the image live on a snapshotless
+#       storage, and this engine holds it while writing the copy back in.
+#       Busy is a loud skip - the next run picks the CT up.
 # =============================================================================
 set -uo pipefail
 
@@ -624,6 +631,27 @@ take_ct_lock(){   # keep two invocations off the same CT, same idea as R10
 }
 release_ct_lock(){ [[ -n "$CT_LOCK" ]] || return 0; exec 8>&-; CT_LOCK=""; }
 
+# --- B9: the intake image lock, shared with ct-migrate and ct-replica --------
+# This engine writes INTO the production image - the same raw file ct-migrate
+# fills during an intake and ct-replica reads live when the storage has no
+# snapshots. All three run on this machine, so they take turns through one
+# kernel flock keyed on the production id. Held from before the image is
+# mounted to the end of this CT's turn; busy is a loud skip, never a wait.
+# fd 7 on purpose: 8 is the per-CT lock above. A crash releases a flock by
+# itself, so there is nothing stale to clean up.
+INTAKE_LOCK=""
+take_intake_lock(){   # $1 = production ctid -> 0 when this run owns the image
+  exec 7>"$BASE/.ct-intake-$1.lock" 2>/dev/null || return 1
+  if flock -n 7; then INTAKE_LOCK="$1"; return 0; fi
+  exec 7>&-
+  return 1
+}
+release_intake_lock(){
+  [[ -n "$INTAKE_LOCK" ]] || return 0
+  exec 7>&-
+  INTAKE_LOCK=""
+}
+
 # --- B8: the lock that lives on the machine holding the copy -----------------
 # The lock above is a local flock on THIS machine, keyed on the production id.
 # ct-replica takes one on the same machine keyed on the COPY id, so today those
@@ -865,6 +893,19 @@ failback_one(){
     return 1
   fi
 
+  # --- B9: own the image before the snapshot is taken and the mount goes rw --
+  # ct-migrate filling this image mid-intake, or ct-replica reading it live,
+  # holds the same lock. Writing under either tears what they are holding, and
+  # a snapshot taken now would preserve a state nobody finished. Skip, loudly;
+  # the batch goes on and the next run picks this CT up.
+  if ! take_intake_lock "$ct"; then
+    log "[$ct] GUARD B9: another engine holds this image right now (intake or replica) - skip"
+    log "[$ct] GUARD B9:   writing the copy back under their round tears both sides; run again"
+    log "[$ct] GUARD B9:   when their transfer is done"
+    st_write "$ct" skipped b9_image_busy -1
+    return 2
+  fi
+
   # --- safety net, only before the first write of the final round ---
   if (( FINAL )) && (( ! DRY )); then
     ds=$(findmnt -no SOURCE -T "$CT_IMG" 2>/dev/null | head -1)
@@ -1002,7 +1043,7 @@ RS=(-aHAX --numeric-ids --delete --inplace "--bwlimit=$BWLIMIT" --timeout=300
 
 ok=0; skipped=0; failed=0; matched=0; FAILED_IDS=(); DONE_IDS=()
 for ct in "${CTS[@]}"; do
-  cleanup_ct; release_ct_lock; release_dst_lock
+  cleanup_ct; release_ct_lock; release_dst_lock; release_intake_lock
   # From here every line of this CT's turn is said twice: once into the day
   # log, once into this CT's own day file under logs/ct/.
   CT_LOG="$LOGDIR/ct/failback-$ct-$(date +%F).log"
@@ -1071,7 +1112,7 @@ for ct in "${CTS[@]}"; do
     *) failed=$(( failed + 1 )); FAILED_IDS+=("$ct");;
   esac
 done
-cleanup_ct; release_ct_lock
+cleanup_ct; release_ct_lock; release_intake_lock
 CT_LOG=""                      # the summary below belongs to the run, not to a CT
 
 hr2

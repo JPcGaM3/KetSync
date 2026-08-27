@@ -32,6 +32,20 @@ for _a in "$@"; do case "$_a" in -*) trace "rsyncopt $_a";; esac; done
 # dry would empty and rewrite the customer's rootfs.
 (( dryrun )) || dry_forbids "rsync without -n, $src -> $dst"
 
+# B9: while these bytes can land in the production image, the intake lock must
+# be HELD. ct-migrate fills this same image during an intake and ct-replica
+# reads it live on a snapshotless storage; the flock is what makes the three
+# take turns. Probed on every transfer rather than asserted per scenario: a
+# write-back that runs while the lock is free is a violation even when every
+# byte of it lands correctly.
+case "$dst" in
+  */failback-*)
+    _ict="${dst##*/failback-}"; _ict="${_ict%%/*}"
+    if flock -n "$SIMROOT/work/.ct-intake-$_ict.lock" true 2>/dev/null; then
+      violation "write-back into CT $_ict's image while the intake lock (B9) is free"
+    fi;;
+esac
+
 # The stats must come from --log-file, never from stdout: in a tty stdout is
 # the human's progress bar, and under cron it is the progress filter's stream -
 # either way a parser reading it gets progress updates mixed into its numbers.

@@ -188,6 +188,9 @@ ribute</td></tr>
     <tr><td class="m">G6</td><td>config ที่มีอยู่แล้วไม่ถูกเขียนทับ แค่รายงาน</td></tr>
     <tr><td class="m">G7</td><td>เลขปลายทางต้องว่างจริงทั้ง cluster</td></tr>
     <tr><td class="m">G8</td><td>net จากต้นทางถูกวางบน vmbr99 ของเครื่องปลายทาง — bridge นั้นต้องมีจริงและไม่มีทางออก เช็กก่อนก๊อป และ net ที่ไม่มี bridge= = ปฏิเสธ ไม่ตัดทิ้งเงียบๆ (go-live = สลับ bridge กลับ)</td></tr>
+    <tr><td class="m">G9</td><td>ถือ <span class="m">.ct-intake-&lt;ct&gt;.lock</span> ตั้งแต่ก่อนสร้าง image จนจบแถว
+        — replica ที่อ่าน image สด (R17) กับ failback ที่เขียนกลับ (B9) ใช้ lock ตัวเดียวกัน
+        ติด = ข้ามแถวนั้นรอบนั้น cron รอบหน้าเก็บเอง</td></tr>
   </table>
   <h3>replica — R</h3>
   <table>
@@ -217,6 +220,12 @@ ribute</td></tr>
         เหมือนของดี guard อ่าน state ของ migrate เอง (ในเครื่อง ไม่มี ssh): กำลังรันอยู่ / รอบล่าสุดจบ
         <b>หลัง</b> snapshot / รอบจริงล่าสุดจบไม่ ok — เจออันไหนก็ข้าม CT นั้นรอบนั้น
         หายเองรอบถัดไป ผลคือ 8xxx ถือเฉพาะสภาพที่ migrate ทำจบสนิทแล้วเท่านั้น</td></tr>
+    <tr><td class="m">R17</td><td>อ่าน image สด (LIVE_FALLBACK บน storage ที่ไม่มี snapshot เช่น xfs)
+        = ต้องถือ lock ของ image ก่อน — <span class="m">.ct-intake-&lt;ct&gt;.lock</span> เป็น
+        flock ของ kernel ตัวเดียวที่ migrate ถือตอนเขียน image (G9) และ failback ถือตอนเขียนกลับ (B9)
+        คีย์ด้วยเลข CT ตัวจริงที่ทั้งสามฝั่งใช้ตรงกัน ติด = ข้าม CT นั้นรอบนั้นแบบบอกดังๆ
+        แล้วรอบถัดไปค่อยอ่านใหม่ ฝั่ง ZFS ไม่แตะ lock นี้เลยเพราะอ่านจาก clone ของตัวเอง
+        และถ้าโปรเซสตายกลางทาง kernel ปล่อย flock ให้เอง ไม่มีล็อกค้างให้ตามเช็ด</td></tr>
   </table>
   <p>สองอย่างที่ replica ทำเพิ่ม ไม่ใช่ guard แต่อยู่ตรงนี้ให้หาง่าย:</p>
   <table>
@@ -237,6 +246,9 @@ ribute</td></tr>
     <tr><td class="m">B6</td><td>เนื้อที่หมด = ขยาย image แทนที่จะทิ้งงานกลางทาง</td></tr>
     <tr><td class="m">B7</td><td>--final ต้อง snapshot กันพลาดได้ก่อน ไม่งั้นปฏิเสธ (--no-snapshot คือทางผ่านที่ต้องพิมพ์เอง)</td></tr>
     <tr><td class="m">B8</td><td>R14 ฝั่ง failback</td></tr>
+    <tr><td class="m">B9</td><td>ก่อน mount image เขียนกลับ ต้องถือ
+        <span class="m">.ct-intake-&lt;ct&gt;.lock</span> ตัวเดียวกับ G9/R17 —
+        ติด = ข้าม CT นั้นแบบบอกดังๆ แล้วตัวอื่นใน batch ไปต่อ</td></tr>
   </table>
   <h3>distribute — D</h3>
   <table>

@@ -487,6 +487,18 @@ mutant "one row that is not stopped takes the whole window hostage" \
   's{\Q      st_fail not_stopped; continue\E}{      st_fail not_stopped; break}' \
   76
 
+# ---------- G9: the intake image lock ------------------------------------------
+# Scenario 1 dies on both of these through the rsync fake's standing probe: a
+# transfer into the image while the lock is free is a violation, so removing
+# the take breaks every scenario that moves bytes, not just the busy one.
+mutant "G9 is never taken - the writer no longer announces itself to the readers" \
+  's{\Q  if ! take_intake_lock "\E\$\Qnew_ctid"; then\E}{  if false; then}' \
+  77 1
+
+mutant "the busy answer is thrown away - flock -n says no and the write happens anyway" \
+  's{\Q  if flock -n 7; then INTAKE_LOCK="\E\$\Q1"; return 0; fi\E}{  if true; then INTAKE_LOCK="\$1"; return 0; fi}' \
+  77 1
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

@@ -562,6 +562,19 @@ mutant "the interrupt is swallowed by the pipeline - Ctrl-C no longer ends the r
   's!\Qtrap '"'"'exit 130'"'"' INT\E!: !' \
   42
 
+# ---------- B9: the intake image lock ------------------------------------------
+# Scenario 1 dies on both of these through the rsync fake's standing probe: a
+# write-back into the production image while the lock is free is a violation,
+# so removing the take breaks every scenario that moves bytes, not just the
+# busy one.
+mutant "B9 is never taken - the write-back no longer announces itself" \
+  's{\Q  if ! take_intake_lock "\E\$\Qct"; then\E}{  if false; then}' \
+  75 1
+
+mutant "the busy answer is thrown away - flock -n says no and the write-back happens anyway" \
+  's{\Q  if flock -n 7; then INTAKE_LOCK="\E\$\Q1"; return 0; fi\E}{  if true; then INTAKE_LOCK="\$1"; return 0; fi}' \
+  75 1
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

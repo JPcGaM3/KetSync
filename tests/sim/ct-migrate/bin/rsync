@@ -12,6 +12,20 @@ for _a in "$@"; do case "$_a" in -*) trace "rsyncopt $_a";; esac; done
 # is not the loop-mounted image. If this fires, a CT landed on the node root fs.
 is_mounted "$dst" || violation "rsync into a NON-MOUNTED destination: $dst"
 
+# G9: while these bytes can land in the image, the intake lock must be HELD.
+# ct-replica reads this same image LIVE on a snapshotless storage and
+# ct-failback writes it back after a DR; the flock is the only thing between
+# their round and this one. Probed here, on every transfer, rather than
+# asserted per scenario: an rsync that runs while the lock is free is a
+# violation even when every byte of it lands correctly.
+case "$dst" in
+  */ctmig-*)
+    _ict="${dst##*/ctmig-}"; _ict="${_ict%%/*}"
+    if flock -n "$SIMROOT/work/.ct-intake-$_ict.lock" true 2>/dev/null; then
+      violation "rsync into CT $_ict's image while the intake lock (G9) is free"
+    fi;;
+esac
+
 logfile=""; wants_stats=0; dryrun=0; prog2=0
 for a in "$@"; do
   case "$a" in

@@ -969,6 +969,29 @@ release_node_lock(){  # closing the fd is what drops the flock
   NODE_LOCK=""
 }
 
+# --- G9: the intake image lock, shared with ct-replica and ct-failback -------
+# This engine writes the raw image for hours at a time, on the same machine
+# where ct-replica reads it (LIVE, when the storage has no snapshots) and
+# ct-failback writes it back after a DR. The three take turns through one
+# kernel flock keyed on the number they all agree on - the production id,
+# which is this row's new_ctid. Held from before the image is first touched
+# (allocation included: a half-mkfs'd file already looks like an image) to
+# end_iteration; busy means another engine owns the image RIGHT NOW, and the
+# row skips loudly rather than writing under a reader. fd 7 on purpose: 8 is
+# the node lock, 9 the lane lock. A crash releases a flock by itself.
+INTAKE_LOCK=""
+take_intake_lock(){   # $1 = production ctid (new_ctid) -> 0 when we own it
+  exec 7>"$BASE/.ct-intake-$1.lock" 2>/dev/null || return 1
+  if flock -n 7; then INTAKE_LOCK="$1"; return 0; fi
+  exec 7>&-
+  return 1
+}
+release_intake_lock(){
+  [[ -n "$INTAKE_LOCK" ]] || return 0
+  exec 7>&-
+  INTAKE_LOCK=""
+}
+
 # --final mounts the source CT on the old node; it must come back down on
 # EVERY exit path, including the ones that `continue` out of the loop.
 SRC_MOUNT_NODE=""; SRC_MOUNT_CT=""
@@ -1004,6 +1027,7 @@ end_iteration(){
   cleanup_mnt
   cleanup_src
   release_node_lock
+  release_intake_lock
   [[ "$ST_STATUS" == running ]] && { ST_STATUS=interrupted; ST_REASON=interrupted; }
   st_flush
   CT_LOG=""                     # this row's turn is over; the file stays
@@ -1199,6 +1223,17 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
       st_fail not_running; continue
     fi
     SRC="root@$old_node:/proc/$ctpid/root/"
+  fi
+
+  # --- G9: own the image before anything can touch it -------------------------
+  # ct-replica reading this image live, or ct-failback writing it back, holds
+  # the same lock. Busy is a skip, not a wait: a lane that sat here would sit
+  # on the node lock and its bandwidth share too, and the next cron run picks
+  # the row up exactly as it does for node_busy.
+  if ! take_intake_lock "$new_ctid"; then
+    log "[$new_ctid] GUARD G9: another engine holds this image right now (replica or failback) - skip"
+    log "[$new_ctid] GUARD G9:   writing under their read tears their copy; this round waits its turn"
+    st_skip g9_image_busy; continue
   fi
 
   # --- alloc + mkfs once. Sizing only matters when there is no image yet, so

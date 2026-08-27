@@ -1352,6 +1352,34 @@ if scenario "74: a cron round says where it is - one progress line, no wall, one
   done_scenario
 fi
 
+if scenario "75: B9 an image another engine holds is not written back into - skip, batch goes on"; then
+  # The sim shell plays ct-migrate mid-intake on CT 113's image (or a replica
+  # reading it live): same lock file, same flock, held across the run. The
+  # write-back must give way this round while the other two CTs still come
+  # home - one busy image does not stop a disaster recovery. The reverse
+  # direction - this engine holding while its bytes land - is the rsync
+  # fake's standing B9 probe, which polices every other scenario here.
+  exec 7>"$WORK/.ct-intake-113.lock"; flock 7
+  run_engine --all
+  exec 7>&-
+  # non-zero on purpose: this engine treats ANY skipped CT as a run that needs
+  # eyes - during a failback "one did not come home" is never a healthy night
+  rc_is 1; clean
+  has "GUARD B9: another engine holds this image right now (intake or replica) - skip"
+  has "=== failback finished: ok=2 skipped=1 failed=0 ==="
+  # 113's image was never mounted, never written: the pre-run content is
+  # still there and the DR generation never arrived
+  untraced "failback-113"
+  image_has 113 "stale.log"
+  image_hasnt 113 "generation 7"
+  grep -q '"status":"skipped","reason":"b9_image_busy"' "$WORK/state/failback-113.json" 2>/dev/null \
+    || _err "state/failback-113.json does not record the b9_image_busy skip"
+  # and the two that were free still made it
+  image_has 105 "generation 7"
+  image_has 121 "generation 7"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

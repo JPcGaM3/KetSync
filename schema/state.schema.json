@@ -59,8 +59,8 @@
         "epoch": { "type": "integer", "description": "the same instant as seconds since epoch, for sorting" },
         "lane":  { "type": "string", "description": "'all' for a full run, otherwise the storage id from --storage" },
         "mode": {
-          "type": "string", "enum": ["presync", "stopped"],
-          "description": "'stopped' means --stopped: the final delta off a CT that is not running"
+          "type": "string", "enum": ["presync", "final", "stopped"],
+          "description": "'final' means --final: the final delta off a CT that is not running. 'stopped' is the same mode under its old name - snapshots written before the rename still carry it until their next round rewrites them"
         },
         "status": {
           "type": "string",
@@ -73,7 +73,7 @@
           "enum": [
             "", "interrupted",
             "storage_unknown", "g1_pool", "g2_running", "g7_ctid_taken",
-            "storage_inactive", "node_busy", "ssh_old_node", "ct_not_found",
+            "storage_inactive", "node_busy", "g9_image_busy", "ssh_old_node", "ct_not_found",
             "not_stopped", "no_image", "pct_mount", "not_running", "pool_space",
             "alloc_failed", "mkfs_failed", "loop_mount", "g3_umount",
             "g4_enospc", "g5_rsync", "cfg_write"

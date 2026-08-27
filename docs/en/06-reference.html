@@ -170,11 +170,14 @@
   <div class="eyebrow"><span class="num">3</span><h2>Every guard, one line</h2></div>
   <p>Full reasoning lives in <code class="inl">CLAUDE.md</code> and <code class="inl">../decisions.md</code>.</p>
   <table>
-    <tr><td class="m">G1-G8</td><td>migrate: pool off the root fs and mounted; never onto a running CT;
+    <tr><td class="m">G1-G9</td><td>migrate: pool off the root fs and mounted; never onto a running CT;
         unmount before resize; grow on ENOSPC; config only after a good sync, never overwritten;
         target id free cluster-wide; the source's net lines land on the island bridge, verified
-        uplink-free on the NEW node before any transfer (go-live is a bridge swap)</td></tr>
-    <tr><td class="m">R1-R16</td><td>replica: snapshot+clone source; never into a running copy;
+        uplink-free on the NEW node before any transfer (go-live is a bridge swap); the raw image
+        is held under <span class="m">.ct-intake-&lt;ct&gt;.lock</span> from before allocation to
+        end of row — the same kernel flock replica takes for a live read (R17) and failback for a
+        write-back (B9); busy skips the row loudly and the next cron round picks it up (G9)</td></tr>
+    <tr><td class="m">R1-R17</td><td>replica: snapshot+clone source; never into a running copy;
         dest mounted; target id free everywhere; config written then read back; ro,noload mounts;
         per-lane and per-copy locks; copy config must match the row; the mock bridge has no uplink;
         a stopped copy off production bridges; a dead source storage is one fact; a live 9xxx
@@ -184,10 +187,16 @@
         for that guest instead of archiving a half-rewritten rootfs (R15, both directions);
         an image ct-migrate is still bringing in is left alone — a round running now, one that
         finished after the lane's snapshot, or a last real round that did not end ok all skip,
-        so the copy (and its PBS backup) only ever holds states the intake finished with (R16)</td></tr>
-    <tr><td class="m">B0-B8</td><td>failback: production stopped (unreachable is not stopped);
+        so the copy (and its PBS backup) only ever holds states the intake finished with (R16);
+        a LIVE read (LIVE_FALLBACK on a snapshotless storage) holds
+        <span class="m">.ct-intake-&lt;ct&gt;.lock</span> for the whole transfer — the flock
+        migrate holds while writing the image (G9) — and skips the CT loudly when it is busy;
+        ZFS lanes read their own clone and never touch it (R17)</td></tr>
+    <tr><td class="m">B0-B9</td><td>failback: production stopped (unreachable is not stopped);
         B2 lifecycle; image on a real mount and already existing; unmount before resize; grow on
-        ENOSPC; --final refuses without its safety snapshot (B7); R14 again (B8)</td></tr>
+        ENOSPC; --final refuses without its safety snapshot (B7); R14 again (B8); the intake
+        image lock is held before the rw mount, and busy skips that CT while the batch goes
+        on (B9)</td></tr>
     <tr><td class="m">D1-D8</td><td>distribute: production cannot answer and cannot boot itself —
         one exception, every veth verified on the dead-end bridge from the kernel; source copy
         exists and is stopped; 9xxx free everywhere; dest active, off the root fs, space checked
