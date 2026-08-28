@@ -121,6 +121,7 @@
     <a href="#r2">storage ตาย</a>
     <a href="#r3">storage กลับมา</a>
     <a href="#r4">เพิ่ม CT</a>
+    <a href="#r5">เครื่องดับกลางก๊อป</a>
     <a href="#files">แก้ไฟล์ไหน</a>
     <a href="#mail">เมล</a>
     <a href="#oops">พังบ่อย</a>
@@ -265,8 +266,45 @@ ssh root@10.100.1.32 pct shutdown 9110
 ./ketsync doctor</pre></div></details>
 </section>
 
+<section id="r5">
+  <div class="eyebrow"><span class="num">7</span><h2>สถานการณ์ 5 — เครื่อง storage ดับกลางรอบก๊อป</h2></div>
+  <p>ไฟดับหรือเครื่องรีบูตขณะ replica กำลังเขียนสำเนาอยู่พอดี ตัวข้อมูล<b>ไม่หายถาวร</b> —
+     รอบเขียวรอบแรกหลังเครื่องกลับมาจะซ่อมสำเนาที่ค้างครึ่งให้ครบเอง
+     แต่ lock กันชน 2 ตัวที่ระบบฝากไว้บนเครื่อง backup จะ<b>ค้างไว้โดยตั้งใจ</b>
+     (ระบบไม่มีวันเดาเองว่าเครื่องตายจริงหรือแค่เน็ตขาด) CT ตัวนั้นเลยถูก skip ทุกรอบ
+     จนกว่าจะมีคนปลด — 2 คำสั่ง <b>พิมพ์ที่เครื่อง storage</b></p>
+  <div class="note"><p>ทุกคำสั่งข้างล่าง<b>รันซ้ำได้ และรันเปล่าก็ได้</b>:
+     ถ้ามี lock ค้างมันปลดให้ ถ้าไม่มีมันก็เงียบไปเฉยๆ เหมือนไม่ได้ทำอะไร
+     ไม่แน่ใจว่าโดนตัวไหนก็ไล่ทำทั้งชุดได้เลย ไม่มีทางพัง</p></div>
+  <ol class="steps">
+    <li>ดูก่อนว่า CT ไหนโดน — ตัวที่ถูก skip จะบอกชื่อ lock ใน log เอง
+      <details class="cmd"><summary>grep GUARD · ./ketsync status</summary><div class="code"><pre>grep -h 'GUARD R14\|GUARD R15' logs/replica-*-$(date +%F).log | tail
+./ketsync status</pre></div></details></li>
+    <li><b>ขั้นเดียวที่ต้องคิด:</b> ยืนยันว่าตอนนี้ไม่มี replica หรือ failback รันอยู่จริง
+      <details class="cmd"><summary>pgrep -af 'ct-replica|ct-failback'</summary><div class="code"><pre>pgrep -af 'ct-replica|ct-failback' || echo idle</pre></div></details>
+      <p>ถ้ามีตัวรันอยู่ = lock นั้นของจริง ไม่ได้ค้าง — ปล่อยให้รอบนั้นจบก่อนแล้วไม่ต้องทำอะไรเลย</p></li>
+    <li>ปลด lock ตัวที่ 1 — ไฟล์บนเครื่อง backup (<span class="m">rm -f</span> = ไม่มีไฟล์ก็เงียบ ไม่ error)
+      <details class="cmd"><summary>ssh root@10.100.1.9 rm -f /run/ketsync-ct-8130.lock</summary><div class="code"><pre><span class="c"># the COPY id, not the production id (CT 130 -> copy 8130)</span>
+ssh root@10.100.1.9 'rm -f /run/ketsync-ct-8130.lock'</pre></div></details></li>
+    <li>ปลด lock ตัวที่ 2 — ใน config ของสำเนา แต่<b>ดูก่อนปลดหนึ่งครั้ง</b>:
+      ถ้าขึ้น <span class="m">lock: backup</span> คือ PBS กำลัง backup ตัวนั้นอยู่จริง ห้ามปลด รอ job จบแล้วมันหายเอง
+      ถ้าขึ้น <span class="m">lock: disk</span> หรือไม่ขึ้นอะไรเลย ปลดได้ (ตัวที่ไม่ได้ lock สั่ง unlock ก็ไม่ทำอะไร)
+      <details class="cmd"><summary>pct config → pct unlock</summary><div class="code"><pre>ssh root@10.100.1.9 'pct config 8130 | grep ^lock || echo no-lock'
+ssh root@10.100.1.9 'pct unlock 8130'</pre></div></details></li>
+    <li>จบแล้ว — รอ cron รอบถัดไป หรือสั่งเองเลยก็ได้ รอบนี้จะเทียบใหม่ทั้งก้อนและซ่อมส่วนที่ค้างให้ครบ
+      <details class="cmd"><summary>./ketsync replica --ctid 130</summary><div class="code"><pre>./ketsync replica --ctid 130</pre></div></details></li>
+  </ol>
+  <div class="warn"><p><b>ถ้าเครื่อง storage ตายถาวร</b> (ไม่ใช่แค่ดับแล้วฟื้น): ไม่ต้องปลดอะไรทั้งนั้น
+     ข้ามไป<a href="#r2">สถานการณ์ 2</a> ได้เลย — แต่ก่อน distribute ให้ถอยสำเนาที่ค้างครึ่ง
+     กลับไป snapshot รายวันตัวล่าสุดก่อน จะได้ไม่แจก rootfs ครึ่งๆ ออกไป
+     (สำเนาแต่ละตัวเป็น dataset แยกของใครของมัน rollback ไม่กระทบ CT อื่น)</p>
+  <details class="cmd"><summary>zfs rollback @ketsync-&lt;last day&gt;</summary><div class="code"><pre><span class="c"># on the backup node: list the days this copy has, then roll back to the newest</span>
+zfs list -t snapshot -o name -s creation replica-hdd/ct/subvol-8130-disk-0 | tail -3
+zfs rollback replica-hdd/ct/subvol-8130-disk-0@ketsync-2026-08-27</pre></div></details></div>
+</section>
+
 <section id="files">
-  <div class="eyebrow"><span class="num">7</span><h2>ไฟล์ไหน แก้ตอนไหน</h2></div>
+  <div class="eyebrow"><span class="num">8</span><h2>ไฟล์ไหน แก้ตอนไหน</h2></div>
   <p>แก้ที่เครื่อง storage (master) เสมอ แล้ว <code class="inl">./ketsync sync</code> — ห้ามแก้ตรงเครื่องอื่น</p>
   <table>
     <tr><th>ไฟล์</th><th>ใช้ตอน</th><th>ช่อง</th></tr>
@@ -281,7 +319,7 @@ ssh root@10.100.1.32 pct shutdown 9110
 </section>
 
 <section id="mail">
-  <div class="eyebrow"><span class="num">8</span><h2>เมลที่จะได้</h2></div>
+  <div class="eyebrow"><span class="num">9</span><h2>เมลที่จะได้</h2></div>
   <p>ส่งเฉพาะตอน<b>เปลี่ยน</b> — ปัญหาเกิดส่งครั้งหนึ่ง ปัญหาหายส่งอีกครั้ง ระหว่างนั้นเงียบ</p>
   <table>
     <tr><th>หัวเมล</th><th>แปลว่า</th></tr>
@@ -293,7 +331,7 @@ ssh root@10.100.1.32 pct shutdown 9110
 </section>
 
 <section id="oops">
-  <div class="eyebrow"><span class="num">9</span><h2>พังบ่อยๆ</h2></div>
+  <div class="eyebrow"><span class="num">10</span><h2>พังบ่อยๆ</h2></div>
   <table>
     <tr><th>อาการ</th><th>ทำอะไร</th></tr>
     <tr><td>cron ไม่รันเลย เงียบสนิท</td><td>ไฟล์ใน <span class="m">/etc/cron.d/</span> ต้องมีช่อง <span class="m">root</span> เป็นช่องที่ 6 — <span class="m">doctor</span> จับให้</td></tr>
@@ -302,6 +340,8 @@ ssh root@10.100.1.32 pct shutdown 9110
     <tr><td>สั่งอะไรก็ขึ้น <span class="m">refused</span></td><td>อ่านบรรทัดถัดไป มันบอกเสมอว่าขาดอะไรและต้องพิมพ์อะไร</td></tr>
     <tr><td>replica ไม่เดินหลังภัยพิบัติ</td><td>ยังมีไฟล์ <span class="m">engines/PAUSE</span> ค้าง — จบงานให้ครบด้วย <span class="m">recover --all --destroy</span></td></tr>
     <tr><td>CT ตัวหนึ่งขึ้น <span class="m">GUARD R15</span> ทุกรอบ</td><td>PBS กำลัง backup สำเนาตัวนั้นอยู่ ไม่ต้องทำอะไร หายเองเมื่องานจบ</td></tr>
+    <tr><td>CT เดิมถูก skip ทุกรอบ ขึ้น <span class="m">GUARD R14</span> หรือ <span class="m">R15: lock: disk</span> หลังไฟดับ/รีบูต</td><td>lock ค้างจากรอบที่ตายกลางทาง — ไป<a href="#r5">สถานการณ์ 5</a> ปลด 2 คำสั่ง</td></tr>
+    <tr><td>replica ขึ้น <span class="m">GUARD R16</span> ทุกรอบ</td><td>รอบ migrate ล่าสุดของตัวนั้นจบไม่สวย (interrupted/failed) — สั่ง <span class="m">./ketsync migrate --ctid &lt;id&gt;</span> ให้จบ ok หนึ่งรอบ แล้ว replica เดินต่อเอง</td></tr>
     <tr><td>แก้ pool ในใบงานแล้วขึ้น <span class="m">GUARD R8</span></td><td><span class="m">./ketsync replica --ctid &lt;id&gt; --move-dest</span> — ก๊อป ตรวจ แล้วค่อยลบของเก่า</td></tr>
     <tr><td>ท้ายรอบขึ้น <span class="m">NO SNAPSHOT</span></td><td>สำเนาไม่เป็นไร ที่ขาดคือจุดย้อนกลับของวันนั้น — ไปดูเนื้อที่ว่างของ pool นั้น</td></tr>
     <tr><td>ไม่แน่ใจว่าตอนนี้ระบบเป็นยังไง</td><td><span class="m">./ketsync doctor</span> แล้วอ่านจากบนลงล่าง</td></tr>

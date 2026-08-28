@@ -121,6 +121,7 @@
     <a href="#r2">storage died</a>
     <a href="#r3">storage back</a>
     <a href="#r4">new CT</a>
+    <a href="#r5">died mid-copy</a>
     <a href="#files">which file</a>
     <a href="#mail">mail</a>
     <a href="#oops">common trips</a>
@@ -267,8 +268,48 @@ ssh root@10.100.1.32 pct start 9110</pre></div></details></li>
 ./ketsync doctor</pre></div></details>
 </section>
 
+<section id="r5">
+  <div class="eyebrow"><span class="num">7</span><h2>Situation 5 — the storage node died mid-copy</h2></div>
+  <p>A power cut or a reboot while replica was writing a copy. The data is <b>not lost</b> —
+     the first green round after the machine returns repairs the half-written copy by itself.
+     But the two guard locks the run left on the backup node stay behind <b>on purpose</b>
+     (nothing here ever guesses that a machine is really dead rather than unreachable), so
+     that CT is skipped every round until a person clears them — two commands,
+     <b>typed on the storage node</b>.</p>
+  <div class="note"><p>Every command below is <b>safe to repeat and safe to run for nothing</b>:
+     if a lock is stuck it clears it, if there is none it does nothing at all.
+     Not sure which CT was hit? Running the whole set costs nothing.</p></div>
+  <ol class="steps">
+    <li>See which CT is held back — the skip names its lock in the log
+      <details class="cmd"><summary>grep GUARD · ./ketsync status</summary><div class="code"><pre>grep -h 'GUARD R14\|GUARD R15' logs/replica-*-$(date +%F).log | tail
+./ketsync status</pre></div></details></li>
+    <li><b>The one step that needs thought:</b> confirm no replica or failback is really running right now
+      <details class="cmd"><summary>pgrep -af 'ct-replica|ct-failback'</summary><div class="code"><pre>pgrep -af 'ct-replica|ct-failback' || echo idle</pre></div></details>
+      <p>If one is running, the lock is real, not stale — let that round finish and do nothing.</p></li>
+    <li>Clear lock one — a file on the backup node (<span class="m">rm -f</span> is silent when the file does not exist)
+      <details class="cmd"><summary>ssh root@10.100.1.9 rm -f /run/ketsync-ct-8130.lock</summary><div class="code"><pre><span class="c"># the COPY id, not the production id (CT 130 -> copy 8130)</span>
+ssh root@10.100.1.9 'rm -f /run/ketsync-ct-8130.lock'</pre></div></details></li>
+    <li>Clear lock two — inside the copy's config, but <b>look once before clearing</b>:
+      <span class="m">lock: backup</span> means PBS really is backing that copy up right now — do not clear it,
+      it goes away when the job ends. <span class="m">lock: disk</span>, or no lock at all, is safe to clear
+      (unlocking an unlocked guest does nothing).
+      <details class="cmd"><summary>pct config → pct unlock</summary><div class="code"><pre>ssh root@10.100.1.9 'pct config 8130 | grep ^lock || echo no-lock'
+ssh root@10.100.1.9 'pct unlock 8130'</pre></div></details></li>
+    <li>Done — wait for the next cron round, or run it yourself. That round re-compares the whole
+      tree and repairs whatever the interrupted one left behind
+      <details class="cmd"><summary>./ketsync replica --ctid 130</summary><div class="code"><pre>./ketsync replica --ctid 130</pre></div></details></li>
+  </ol>
+  <div class="warn"><p><b>If the storage node is dead for good</b> (not just a reboot): clear nothing —
+     go straight to <a href="#r2">situation 2</a>. But before distributing, roll the half-written copy
+     back to its newest daily snapshot first, so a torn rootfs never leaves the backup node
+     (each copy is its own dataset, so the rollback touches no other CT).</p>
+  <details class="cmd"><summary>zfs rollback @ketsync-&lt;last day&gt;</summary><div class="code"><pre><span class="c"># on the backup node: list the days this copy has, then roll back to the newest</span>
+zfs list -t snapshot -o name -s creation replica-hdd/ct/subvol-8130-disk-0 | tail -3
+zfs rollback replica-hdd/ct/subvol-8130-disk-0@ketsync-2026-08-27</pre></div></details></div>
+</section>
+
 <section id="files">
-  <div class="eyebrow"><span class="num">7</span><h2>Which file, when</h2></div>
+  <div class="eyebrow"><span class="num">8</span><h2>Which file, when</h2></div>
   <p>Always edit on the storage node (master), then <code>./ketsync sync</code>. Never edit them elsewhere.</p>
   <table>
     <tr><th>file</th><th>used by</th><th>columns</th></tr>
@@ -282,7 +323,7 @@ ssh root@10.100.1.32 pct start 9110</pre></div></details></li>
 </section>
 
 <section id="mail">
-  <div class="eyebrow"><span class="num">8</span><h2>The mail you get</h2></div>
+  <div class="eyebrow"><span class="num">9</span><h2>The mail you get</h2></div>
   <p>Only on <b>change</b>: once when a problem appears, once when it clears, silence in between.</p>
   <table>
     <tr><th>subject</th><th>means</th></tr>
@@ -294,7 +335,7 @@ ssh root@10.100.1.32 pct start 9110</pre></div></details></li>
 </section>
 
 <section id="oops">
-  <div class="eyebrow"><span class="num">9</span><h2>Common trips</h2></div>
+  <div class="eyebrow"><span class="num">10</span><h2>Common trips</h2></div>
   <table>
     <tr><th>symptom</th><th>fix</th></tr>
     <tr><td>cron never runs, total silence</td><td>a file in <span class="m">/etc/cron.d/</span> needs <span class="m">root</span> as the sixth field - doctor catches it</td></tr>
@@ -303,6 +344,8 @@ ssh root@10.100.1.32 pct start 9110</pre></div></details></li>
     <tr><td>everything says <span class="m">refused</span></td><td>read the next line - it always names what is missing and what to type</td></tr>
     <tr><td>replication does not resume after a disaster</td><td><span class="m">engines/PAUSE</span> still exists; finish with <span class="m">recover --all --destroy</span></td></tr>
     <tr><td>one container says <span class="m">GUARD R15</span> every round</td><td>PBS is backing that copy up right now. Nothing to do - it clears when the job ends</td></tr>
+    <tr><td>the same CT is skipped every round with <span class="m">GUARD R14</span> or <span class="m">R15: lock: disk</span> after a power cut or reboot</td><td>locks left by a round that died mid-write — <a href="#r5">situation 5</a>, two commands</td></tr>
+    <tr><td>replica says <span class="m">GUARD R16</span> every round</td><td>that CT's last migrate round did not end ok (interrupted/failed) — run <span class="m">./ketsync migrate --ctid &lt;id&gt;</span> to one green finish and replica resumes by itself</td></tr>
     <tr><td>one container says <span class="m">GUARD R8</span> after you edited its pool</td><td><span class="m">./ketsync replica --ctid &lt;id&gt; --move-dest</span> - copies, verifies, then removes the old</td></tr>
     <tr><td><span class="m">NO SNAPSHOT</span> at the end of a round</td><td>the copy is fine, the day's rollback point is not: check free space on that pool</td></tr>
     <tr><td>not sure what state the fleet is in</td><td><span class="m">./ketsync doctor</span>, read top to bottom</td></tr>
