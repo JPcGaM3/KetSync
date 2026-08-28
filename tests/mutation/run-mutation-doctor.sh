@@ -143,8 +143,13 @@ mutant "a storage still disabled by an evacuate is not mentioned" \
   's{\Q    for f in \E\$\Q(ks_ssh "\E\$bkp\Q" "ls /etc/pve/ketsync/evacuate/\E}{    for f in \$(true "ls /etc/pve/ketsync/evacuate/}' \
   10
 
-mutant "a 9<id> that outlived its disaster is not mentioned" \
-  's{\Q    for f in \E\$\Q(printf \E\x27\Q%s\E\\\Qn\E\x27\Q "\E\$guests\Q" | grep \E\x27\Q^9\E\x27\Q || true); do\E}{    for f in \$(true); do}' \
+# Its predecessor anchored the shape-based loop this section no longer has;
+# the loop-emptied bug now lives in the provenance pair below. What this one
+# guards instead is the prescription: cleanup is driven by the PRODUCTION id,
+# and printing the 9<id> would have the operator clean up a container the
+# command will refuse - or worse, one it will not.
+mutant "cleanup is prescribed with the 9<id> instead of the production id" \
+  's{\Q./ketsync cleanup --ctid \E\$\Q{f#9}"\E}{./ketsync cleanup --ctid \$f"}' \
   10
 
 # ---------- a record whose container is gone ---------------------------------
@@ -247,6 +252,19 @@ mutant "the engine check fires on the dispatcher's own lines too" \
 mutant "the -y check matches any line with ketsync in its PATH, engines included" \
   "s!\\Qgrep -E '(^|[/[:space:]])ketsync[[:space:]]+[a-z]'\\E!grep ketsync!" \
   26
+
+# ---------- provenance, not shape ----------------------------------------------
+# The leftover-placement check must key on ct-distribute's marker inside the
+# config, never on the vmid's leading digit: a customer is allowed to number a
+# container 900, and the shape version condemned it and prescribed
+# `cleanup --ctid 00` - a command about a container that never existed.
+mutant "the leading digit comes back - a customer's CT 900 is condemned as a leftover" \
+  's{\Qgrep -l ct-distribute /etc/pve/nodes/*/lxc/*.conf 2>/dev/null\E}{ls /etc/pve/nodes/*/lxc/9*.conf 2>/dev/null}' \
+  29
+
+mutant "the placed question is never asked - a 9<id> that outlived its DR goes unreported" \
+  's{\Q    for f in \E\$placed\Q; do\E}{    for f in ; do}' \
+  10 29
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

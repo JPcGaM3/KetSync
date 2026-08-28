@@ -69,6 +69,27 @@ case "$c" in
     for f in "${hits[@]}"; do printf '%s\n' "${f#"$R"}"; done
     exit 0;;
 
+  # ---- provenance, asked as content rather than shape --------------------
+  # doctor asks which guest configs CARRY ct-distribute's marker, because a
+  # leading 9 in a vmid is a numbering choice and not a provenance. The fake
+  # answers the way grep -l does: matching paths on stdout, exit 1 when the
+  # files exist and none match, exit 2 when the glob expanded to nothing.
+  "grep -l "*" /etc/pve/nodes/"*)
+    read -r _g _l _pat _glob _rest <<<"$c"
+    R="$(remote_path "$host" "")"
+    shopt -s nullglob
+    # shellcheck disable=SC2206  # the glob is the point
+    hits=( $R$_glob )
+    shopt -u nullglob
+    (( ${#hits[@]} )) || exit 2
+    any=0
+    for f in "${hits[@]}"; do
+      grep -q -- "$_pat" "$f" 2>/dev/null || continue
+      printf '%s\n' "${f#"$R"}"; any=1
+    done
+    (( any )) && exit 0
+    exit 1;;
+
   # ---- the image check ---------------------------------------------------
   # One round trip that reads three things: the rootfs volume out of the guest
   # config, the path out of the storage layer, and the state out of the

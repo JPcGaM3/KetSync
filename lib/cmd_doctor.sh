@@ -200,7 +200,7 @@ cmd_doctor(){
     # restore, and this section used to send somebody to a command that then
     # refuses - which it would do again tomorrow, and the day after, until the
     # one section worth reading after a disaster is the one nobody reads.
-    local guests
+    local guests placed
     guests="$(ks_ssh "$bkp" "ls /etc/pve/nodes/*/lxc/*.conf 2>/dev/null" \
               | sed 's|.*/||; s|\.conf$||')"
     for f in $(ks_ssh "$bkp" "ls /etc/pve/ketsync/isolate/ 2>/dev/null" | sed 's/\.tsv$//'); do
@@ -225,11 +225,18 @@ cmd_doctor(){
       left=1; rc=1
     done
     # A 9<id> that outlived its DR is the one that refuses the next one. It
-    # comes out of the same pmxcfs listing as the check above, and out of no
-    # state file, for the same reason R13 does: it is a fact PVE is holding,
-    # not a note somebody left. One listing also means the two checks cannot
-    # disagree about what the cluster contains.
-    for f in $(printf '%s\n' "$guests" | grep '^9' || true); do
+    # comes out of pmxcfs and out of no state file, for the same reason R13
+    # does: it is a fact PVE is holding, not a note somebody left. But a
+    # leading 9 is not that fact - customers get to number a container 900,
+    # and the day one did, this section condemned it as a leftover and told
+    # the operator to run cleanup against a guest that was never ketsync's.
+    # What makes a 9<id> OURS is the marker ct-distribute writes into its
+    # description - the same provenance C3 demands before recall will move a
+    # byte. PVE re-encodes the description on every rewrite (the colon
+    # becomes %3A), so the match is the bare word, which both shapes contain.
+    placed="$(ks_ssh "$bkp" "grep -l ct-distribute /etc/pve/nodes/*/lxc/*.conf 2>/dev/null" \
+              | sed 's|.*/||; s|\.conf$||')"
+    for f in $placed; do
       say "  CT $f is still placed - a DR container that outlived its disaster"
       say "    it also holds R13, so CT ${f#9} is not being replicated, and makes D3"
       say "    refuse the next placement of it."

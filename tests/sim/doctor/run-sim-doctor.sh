@@ -145,7 +145,13 @@ left_evacuated(){ : > "$(host_dir_local "$BKP")/fs/etc/pve/ketsync/evacuate/$1.t
 cluster_guest(){ # vmid on a node
   mkdir -p "$(host_dir_local "$BKP")/fs/etc/pve/nodes/$2/lxc"
   : > "$(host_dir_local "$BKP")/fs/etc/pve/nodes/$2/lxc/$1.conf"; }
-left_placed(){ cluster_guest "$@"; }   # a 9<id> is one of those, still there
+# A 9<id> ct-distribute really placed: its config carries the provenance
+# marker, in the ENCODED shape a config holds after PVE has rewritten it
+# (the colon is %3A) - because that is the shape a leftover has after weeks
+# up, and the shape the match has to survive.
+left_placed(){ cluster_guest "$@"
+  printf '%s\n' "#ct-distribute%3A temporary DR copy of CT ${1#9}, from 8${1#9} on pbs-r09" \
+    > "$(host_dir_local "$BKP")/fs/etc/pve/nodes/$2/lxc/$1.conf"; }
 
 replica_state(){  # ctid epoch
   printf '{\n  "ctid": %s,\n  "last": {"epoch":%s,"status":"ok"}\n}\n' "$1" "$2" \
@@ -531,6 +537,23 @@ if scenario "28: one record stale and one real, told apart in the same run"; the
   has "CT 120 is still ISOLATED"
   has "./ketsync restore --ctid 120"
   hasnt "./ketsync restore --ctid 110"
+  done_scenario
+fi
+
+if scenario "29: a guest that merely starts with 9 is a customer, not a leftover"; then
+  # CT 900 is somebody's container: no ct-distribute marker, no DR history.
+  # The day doctor matched on the leading digit it condemned exactly this
+  # guest and told the operator to run `cleanup --ctid 00` - a command about
+  # a container that has never existed. Provenance, not shape: the guest
+  # with the marker is reported, its neighbour with the nine is left alone.
+  cluster_guest 900 pve-r32
+  left_placed 9120 pve-r33
+  run_ks
+  rc_is 1
+  has "CT 9120 is still placed"
+  has "./ketsync cleanup --ctid 120"
+  hasnt "CT 900 is still placed"
+  hasnt "cleanup --ctid 00"
   done_scenario
 fi
 
