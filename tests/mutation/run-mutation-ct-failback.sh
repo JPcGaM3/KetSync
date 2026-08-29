@@ -575,6 +575,13 @@ mutant "the busy answer is thrown away - flock -n says no and the write-back hap
   's{\Q  if flock -n 7; then INTAKE_LOCK="\E\$\Q1"; return 0; fi\E}{  if true; then INTAKE_LOCK="\$1"; return 0; fi}' \
   75 1
 
+# ct-migrate shipped exactly this bug: --log-file lines carry rsync's own
+# "date time [pid] " prefix, an anchored label match finds nothing, and every
+# transfer reports files=0 changed=0B while looking perfectly healthy.
+mutant "the stats label is anchored to the line start - every transfer reads as zeros" \
+  's{\Q"s/.*\E\$\Q1: *\E}{"s/^\$1: *}' \
+  2
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

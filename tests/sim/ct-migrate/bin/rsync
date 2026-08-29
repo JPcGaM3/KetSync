@@ -117,6 +117,11 @@ EOF
 # the engine's filter can only be proven to drop it if the fake actually says it.
 (( wants_stats )) && emit_stats
 if [[ -n "$logfile" ]]; then
-  emit_stats >> "$logfile"
+  # Into the log file the way real rsync writes it: every line prefixed
+  # "date time [pid] ". The bare block here kept a suite green while an
+  # engine anchored its label match to the line start and read every fleet
+  # transfer as files=0 changed=0B - the parser has to earn its numbers
+  # against the real shape.
+  emit_stats | sed "s/^/2026\/08\/28 16:51:48 [33790] /" >> "$logfile"
 fi
 exit "$rc"

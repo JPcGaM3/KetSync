@@ -567,7 +567,12 @@ to_gib(){
 #   green: the fake was wrong in the same direction as the engine.
 
 _rs_num(){  # $1=BRE for the label, $2=stats file -> the number, commas stripped
-  sed -n "s/^$1: *\([0-9,][0-9,]*\).*/\1/p" "$2" 2>/dev/null | tr -d ',' | tail -1
+  # No ^ anchor. --log-file lines carry rsync's own "date time [pid] " prefix,
+  # and anchoring the label to the line start read EVERY fleet transfer as
+  # files=0 changed=0B of 0B - while the sim stayed green, because its fake
+  # wrote the stats block bare. The fake says the prefix now, ct-replica and
+  # ct-failback already match this way, and the anchor must not come back.
+  sed -n "s/.*$1: *\([0-9,][0-9,]*\).*/\1/p" "$2" 2>/dev/null | tr -d ',' | tail -1
 }
 
 run_rsync(){  # $1=src $2=mnt  -> returns rsync rc; progress bar on tty, quiet under cron

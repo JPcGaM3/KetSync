@@ -153,7 +153,7 @@ follow-up.
 
     make lint     # both layers: bash -n, shellcheck, the language rule
     make test     # both layers: 488 tp simulator + 16 dispatcher + 125 c2v, 151 ketsync
-    make mutation # 627 known bugs put back. None may survive
+    make mutation # 630 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -274,9 +274,9 @@ must be mirrored in its mutation file in the same change. Never "fix" a broken
 anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
-    ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     71 mutations
-    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    113 mutations
-    ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    74 mutations
+    ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     72 mutations
+    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    114 mutations
+    ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    75 mutations
     ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  81 mutations
     ct-recall.sh     tests/mutation/run-mutation-ct-recall.sh      56 mutations
     ct-prepare.sh    tests/mutation/run-mutation-ct-prepare.sh     82 mutations

@@ -499,6 +499,15 @@ mutant "the busy answer is thrown away - flock -n says no and the write happens 
   's{\Q  if flock -n 7; then INTAKE_LOCK="\E\$\Q1"; return 0; fi\E}{  if true; then INTAKE_LOCK="\$1"; return 0; fi}' \
   77 1
 
+# ---------- the stats parser against the real log shape ------------------------
+# --log-file lines carry rsync's own "date time [pid] " prefix. This exact
+# mutation was LIVE on the fleet: the anchored label match found nothing, every
+# transfer reported files=0 changed=0B of 0B, and the suite stayed green until
+# the fake started writing the prefix real rsync writes.
+mutant "the stats label is anchored to the line start - every transfer reads as zeros" \
+  's{\Q"s/.*\E\$\Q1: *\E}{"s/^\$1: *}' \
+  1 74
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

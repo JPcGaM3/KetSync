@@ -795,6 +795,13 @@ mutant "the live lane's lock leaks onto ZFS - a held image stops clone reads too
   's{\Q  if (( \E\$\Q{PREP_LIVE[\E\$POOLPATH\Q]:-0} )); then\E}{  if true; then}' \
   121
 
+# ct-migrate shipped exactly this bug: --log-file lines carry rsync's own
+# "date time [pid] " prefix, an anchored label match finds nothing, and every
+# transfer reports files=0 changed=0B while looking perfectly healthy.
+mutant "the stats label is anchored to the line start - every transfer reads as zeros" \
+  's{\Q"s/.*\E\$\Q1: *\E}{"s/^\$1: *}' \
+  47 114
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi
