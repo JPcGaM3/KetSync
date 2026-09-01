@@ -1365,6 +1365,45 @@ release_tgt_lock(){  # closing the fd is what drops the flock
   TGT_LOCK=""
 }
 
+# --- the directories the exclude list leaves behind --------------------------
+# rsync cannot skip a directory and create it in the same breath. Its filters
+# are consulted AFTER readdir, so a directory excluded by name is still read -
+# and reading it is exactly what fails on a churning /home/<user>/tmp, which is
+# why ctrep-exclude.conf names the DIRECTORY. The cost of that is real: the
+# directory then never reaches the copy at all, and a copy whose
+# /home/<user>/tmp is missing looks perfect until somebody promotes it, PHP has
+# nowhere to write a session, and every login on that container fails.
+#
+# So one more rsync puts the empty directories there. rsync rather than mkdir
+# over ssh because owner, group, mode and --numeric-ids are already its job and
+# getting them wrong by hand is how a promoted copy refuses its own users. -d
+# with a path that does NOT end in a slash sends the directory and nothing
+# inside it, so the read that fails is never attempted.
+EXDIR_FAILED_IDS=()
+mk_excluded_dirs(){   # $1 = mounted source, $2 = rsync destination
+  local src="$1" dst="$2" pat d
+  local -a args=()
+  [[ -r "$EXCL" ]] || return 0
+  while IFS= read -r pat || [[ -n "$pat" ]]; do
+    [[ -z "$pat" || "$pat" == \#* ]] && continue
+    [[ "$pat" == */ ]] || continue          # only patterns that name a directory
+    pat="${pat#/}"; pat="${pat%/}"
+    [[ -n "$pat" ]] || continue
+    # Expanded on the SOURCE, and the glob the operator wrote is the bound on
+    # what that costs: /home/*/tmp is one readdir of /home and a stat each.
+    # Nothing descends into a match - that is the whole point of being here.
+    while IFS= read -r d; do
+      [[ -n "$d" && -d "$src/$d" ]] && args+=("$src/./$d")
+    done < <(cd "$src" 2>/dev/null && shopt -s nullglob && printf '%s\n' $pat)
+  done < "$EXCL"
+  (( ${#args[@]} )) || return 0
+  if (( DRY )); then
+    log "[$CT] DRY: would create ${#args[@]} excluded director(ies) on the copy"
+    return 0
+  fi
+  rsync -dogpR --numeric-ids -e "ssh $SSH_DATA" "${args[@]}" "$dst/" >>"$LOG" 2>&1
+}
+
 # --- R17: the intake image lock, shared with ct-migrate and ct-failback ------
 # One raw image, three engines on this machine that can hold it open: migrate
 # writes it for hours during an intake, failback writes it back after a DR,
@@ -2071,6 +2110,19 @@ for CT in "${CTS[@]}"; do
     rc=${PIPESTATUS[0]}
   fi
   RS_SECS=$(( SECONDS - t0 )); ST_RC=$rc
+
+  # The empty directories the exclude list skipped, put back on the copy -
+  # HERE, while the source is still mounted and can be read, and only when the
+  # transfer they belong to actually worked. Not a guard and not a failure: the
+  # bytes arrived. A copy that is missing one is named at the end of the run
+  # and the run does not exit 0, the same shape as a copy that could not be
+  # snapshotted. Silence would mean copies that quietly cannot be promoted.
+  if [[ $rc -eq 0 || $rc -eq 24 ]] && ! mk_excluded_dirs "$MNT" "$BKP_SSH:$tmnt"; then
+    log "[$CT] WARN: could not create the excluded directories on copy $TGT"
+    log "[$CT] WARN:   the DATA is fine. What is missing is an empty directory the copy"
+    log "[$CT] WARN:   needs the moment it is promoted - see the end of this run."
+    EXDIR_FAILED_IDS+=("$CT/$TGT")
+  fi
   umount "$MNT" >>"$LOG" 2>&1 && CUR_MNT="" \
     || log "[$CT] WARN: umount $MNT failed - cleanup trap will retry"
 
@@ -2206,6 +2258,14 @@ fi
 # so counting these as failures would be a lie, and exiting 0 would be a
 # different one. A copy with no snapshot has no rollback point and no history -
 # which is only discovered on the day somebody needs one.
+if (( ${#EXDIR_FAILED_IDS[@]} )); then
+  log "MISSING DIRS: ${#EXDIR_FAILED_IDS[@]} copy(ies) are missing a directory the exclude list skipped"
+  log "MISSING DIRS:   ${EXDIR_FAILED_IDS[*]}   (production/copy)"
+  log "MISSING DIRS:   the data is there; what is missing is an EMPTY directory - typically"
+  log "MISSING DIRS:   /home/<user>/tmp - that PHP needs the moment this copy is promoted."
+  log "MISSING DIRS:   the next round retries it; if it keeps failing, check ssh to $BKP_NODE."
+fi
+
 if (( ${#SNAP_FAILED_IDS[@]} )); then
   log "NO SNAPSHOT: ${#SNAP_FAILED_IDS[@]} copy(ies) were replicated but not snapshotted"
   log "NO SNAPSHOT:   ${SNAP_FAILED_IDS[*]}   (production/copy)"
@@ -2228,6 +2288,10 @@ if (( ${#DR_ACTIVE_IDS[@]} )); then
   exit 1
 fi
 if (( ${#SNAP_FAILED_IDS[@]} )); then
+  [[ -n "$HEALTH_URL" ]] && { curl -fsS -m 10 "$HEALTH_URL/fail" >/dev/null 2>&1 || true; }
+  exit 1
+fi
+if (( ${#EXDIR_FAILED_IDS[@]} )); then
   [[ -n "$HEALTH_URL" ]] && { curl -fsS -m 10 "$HEALTH_URL/fail" >/dev/null 2>&1 || true; }
   exit 1
 fi

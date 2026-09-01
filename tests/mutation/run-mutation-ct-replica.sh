@@ -802,6 +802,26 @@ mutant "the stats label is anchored to the line start - every transfer reads as 
   's{\Q"s/.*\E\$\Q1: *\E}{"s/^\$1: *}' \
   47 114
 
+# ---------- the directories the exclude list leaves behind ---------------------
+# Excluding a directory rather than its contents is the only thing that keeps a
+# round green over a churning /home/<user>/tmp, and the price is that the
+# directory never reaches the copy. These three prove the engine pays it back.
+mutant "the skeleton pass is gone - the copy is missing the directories entirely" \
+  's{\Q  if [[ \E\$rc\Q -eq 0 || \E\$rc\Q -eq 24 ]] && ! mk_excluded_dirs "\E\$MNT\Q" "\E\$BKP_SSH\Q:\E\$\Qtmnt"; then\E}{  if false; then}' \
+  122
+
+prog=$(cat <<'PERL'
+s{\Q      [[ -n "\E\$d\Q" && -d "\E\$\Qsrc/\E\$\Qd" ]] && args+=("\E\$\Qsrc/./\E\$\Qd")\E}{      [[ -n "\$d" && -d "\$src/\$d" ]] && args+=("\$src/./\$d/")}
+PERL
+)
+mutant "the directory is sent with a trailing slash, so rsync reads it after all" "$prog" 122
+
+prog=$(cat <<'PERL'
+s{\Q    [[ "\E\$pat\Q" == */ ]] || continue\E}{    :}
+PERL
+)
+mutant "every exclude pattern is treated as a directory, so /tmp/* invents a directory" "$prog" 123
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

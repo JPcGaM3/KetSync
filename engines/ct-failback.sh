@@ -797,6 +797,68 @@ run_back(){   # -> rsync rc; fills RS_*
   return $rc
 }
 
+
+# --- the excluded directories, put back into the restored image --------------
+# ctrep-exclude.conf names /home/<user>/tmp by DIRECTORY (see that file: the
+# readdir itself is what fails on a churning tmp), so the restore above never
+# sends it. For a user who existed before the disaster that is harmless - the
+# production image still has the directory from before. A user CREATED during
+# the DR exists only on the copy, so the image this engine hands back has no
+# /home/<user>/tmp for them at all: PHP has nowhere to write a session and
+# every login for that user fails, on the day the customer is watching
+# hardest. Same cure as ct-replica's: one more rsync of the directory ENTRIES
+# alone. -d with a path that does NOT end in a slash sends the directory and
+# nothing inside it; rsync rather than mkdir because owner, group, mode and
+# --numeric-ids are already its job, and a tmp owned by root is the same
+# broken login with a better-looking ls. The list is expanded on the COPY,
+# over ssh, because during a failback that is where the truth about "which
+# users exist" lives.
+EXDIR_FAILED_IDS=()
+mk_excluded_dirs(){   # $1 = the copy's mount on the backup node, $2 = the mounted image
+  local src="$1" dst="$2" pat d out pats=""
+  local -a args=()
+  [[ -r "$EXCL" ]] || return 0
+  while IFS= read -r pat || [[ -n "$pat" ]]; do
+    [[ -z "$pat" || "$pat" == \#* ]] && continue
+    [[ "$pat" == */ ]] || continue          # only patterns that name a directory
+    pat="${pat#/}"; pat="${pat%/}"
+    [[ -n "$pat" ]] || continue
+    pats+="${pats:+ }$pat"
+  done < "$EXCL"
+  [[ -n "$pats" ]] || return 0
+  # One ssh, all patterns: the glob expands over there, and [ -d ] keeps both
+  # the literal an unmatched glob leaves behind and anything that is not a
+  # directory out of the list. `|| exit 0` on the cd: a copy with nothing to
+  # put back is not an error. The ssh itself failing IS one - "could not ask"
+  # must never read as "nothing there".
+  out=$(ssh $SSH_OPT "$BKP_SSH" "cd '$src' 2>/dev/null || exit 0; for d in $pats; do [ -d \"\$d\" ] && printf '%s\n' \"\$d\"; done; exit 0" </dev/null 2>/dev/null) || return 1
+  while IFS= read -r d; do
+    [[ -n "$d" ]] && args+=("$BKP_SSH:$src/./$d")
+  done <<< "$out"
+  (( ${#args[@]} )) || return 0
+  if (( DRY )); then
+    log "[$ct] DRY: would create ${#args[@]} excluded director(ies) in the image"
+    return 0
+  fi
+  rsync -dogpR --numeric-ids -e "ssh $SSH_DATA" "${args[@]}" "$dst/" >>"$LOG" 2>&1
+}
+
+# Judged where the restore's rc is known and the image is STILL MOUNTED, and
+# only when the bytes actually arrived. Not a guard and not a failure: the
+# image is named at the end of the run and the run does not exit 0 - the same
+# shape ct-replica gives a copy it could not finish. Silence would mean an
+# image that quietly cannot serve its newest users.
+put_back_dirs(){   # $1 = ct, $2 = restore rc, $3 = the mounted image
+  [[ $2 -eq 0 || $2 -eq 24 ]] || return 0
+  if ! mk_excluded_dirs "$CT_SRCMNT" "$3"; then
+    log "[$1] WARN: could not put the excluded directories back into the image"
+    log "[$1] WARN:   the DATA is fine. What is missing is an empty directory PHP needs"
+    log "[$1] WARN:   the moment CT $1 starts - see the end of this run."
+    EXDIR_FAILED_IDS+=("$1")
+  fi
+  return 0
+}
+
 # one CT, end to end. 0 = ok, 1 = failed, 2 = skipped by a guard.
 failback_one(){
   local ct="$1" holder ds snap attempt cur new rc newsize
@@ -962,6 +1024,7 @@ failback_one(){
 
   log "[$ct] RESTORE <= $BKP_SSH:$CT_SRCMNT/  =>  image $CT_IMG (copy $TGT, dest=$DEST)"
   run_back "$MNT"; rc=$?
+  put_back_dirs "$ct" "$rc" "$MNT"
   cleanup_ct
 
   # --- B6: ENOSPC -> grow, bounded, only ever on an unmounted image ---
@@ -978,6 +1041,7 @@ failback_one(){
     mountpoint -q "$MNT" || { log "[$ct] GUARD B5: $MNT not a mountpoint after remount"; break; }
     CUR_MNT="$MNT"
     run_back "$MNT"; rc=$?
+    put_back_dirs "$ct" "$rc" "$MNT"
     cleanup_ct
   done
   if (( attempt )); then
@@ -1119,6 +1183,18 @@ hr2
 log "=== failback finished: ok=$ok skipped=$skipped failed=$failed ==="
 (( failed )) && log "NEEDS ATTENTION -> CT: ${FAILED_IDS[*]}"
 
+# Said the way ct-replica says it, because it is the same debt: the bytes
+# arrived, so counting these as failures would be a lie, and exiting 0 would
+# be a different one.
+if (( ${#EXDIR_FAILED_IDS[@]} )); then
+  log "MISSING DIRS: ${#EXDIR_FAILED_IDS[@]} restored image(s) are missing a directory the exclude list skipped"
+  log "MISSING DIRS:   CT: ${EXDIR_FAILED_IDS[*]}"
+  log "MISSING DIRS:   the data is there; what is missing is an EMPTY directory - typically"
+  log "MISSING DIRS:   /home/<user>/tmp - that PHP needs the moment the CT starts."
+  log "MISSING DIRS:   run this failback again for those CT (data already copied makes it"
+  log "MISSING DIRS:   fast); if it keeps failing, check ssh to $BKP_NODE."
+fi
+
 # A --dest nobody uses matches nothing, does nothing and would exit 0 - which
 # during a failback reads as "all done". Say it instead.
 if (( matched == 0 )) && [[ -n "$ONLY_DEST" ]]; then
@@ -1166,4 +1242,5 @@ elif (( ok )); then
 fi
 
 (( failed || skipped )) && exit 1
+(( ${#EXDIR_FAILED_IDS[@]} )) && exit 1
 exit 0

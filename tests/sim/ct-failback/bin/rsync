@@ -19,6 +19,42 @@ for a in "$@"; do
     --info=progress2) prog2=1;;
   esac
 done
+
+# ---- the skeleton pass: the excluded directories, sent ENTRY-only -----------
+# The mirror of ct-replica's: sources on the BACKUP node, destination the
+# loop-mounted production image. Same contract - every source is anchored /./
+# so -R rebuilds the path relative to the copy's root, and none may end in a
+# slash: a slash sends the directory's CONTENTS, which needs the readdir the
+# exclude exists to avoid. The B9 probe applies to this write like any other.
+if [[ " $* " == *" -dogpR "* ]]; then
+  _skel_dst="${*: -1}"; _skel_dst="${_skel_dst%/}"
+  case "$_skel_dst" in
+    */failback-*)
+      _ict="${_skel_dst##*/failback-}"; _ict="${_ict%%/*}"
+      flock -n "$SIMROOT/work/.ct-intake-$_ict.lock" true 2>/dev/null \
+        && violation "skeleton write into CT $_ict's image while the intake lock (B9) is free";;
+  esac
+  { [[ -n "$(img_at "$_skel_dst")" ]] && is_mounted "$_skel_dst"; } \
+    || violation "skeleton pass into $_skel_dst, which is not a loop-mounted image"
+  for _a in "$@"; do
+    case "$_a" in
+      *:*/./*)
+        _rel="${_a#*/./}"
+        trace "rsyncdir $_rel"
+        [[ "$_a" == */ ]] && violation "the skeleton pass sent '$_a' with a trailing slash - rsync would read the directory, which is the read that fails"
+        _root="${_a#*:}"; _root="${_root%%/./*}"
+        [[ -d "$BKP/fs$_root/${_rel%/}" ]] \
+          || violation "skeleton source $_a does not exist on the backup node"
+        dry_forbids "skeleton mkdir $_rel in the image"
+        mkdir -p "$_skel_dst/${_rel%/}" || exit 1;;
+      */./*)
+        violation "skeleton source '$_a' is not remote - the directories come off the copy on the backup node";;
+    esac
+  done
+  [[ -f "$SIMROOT/rsyncdir.fail" ]] && exit 23
+  exit 0
+fi
+
 trace "rsync $src -> $dst"
 # Every flag, recorded one per line. Without this the fake sees only src and
 # dst, and the whole option set is untestable: stripping -x, --delete,

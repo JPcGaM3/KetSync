@@ -1380,6 +1380,91 @@ if scenario "75: B9 an image another engine holds is not written back into - ski
   done_scenario
 fi
 
+if scenario "76: the excluded directories are put back into the restored image, entry-only"; then
+  # The mirror of replica scenario 122: a user CREATED during the DR exists
+  # only on the copy, so the exclude list's /home/<user>/tmp/ never reaches the
+  # production image at all - and PHP refuses every login for that user the
+  # moment the CT starts. The engine expands the patterns on the COPY over ssh
+  # and sends the directory ENTRIES with one more rsync, inside the mount
+  # window, only after the restore itself worked.
+  exclude '/tmp/*' '/home/*/tmp/'
+  mkdir -p "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web1/tmp" \
+           "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web2/tmp" \
+           "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web1/mail"
+  printf 'sess\n' > "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web2/tmp/sess_x"
+  run_engine --ctid 105
+  rc_is 0; clean
+  has "[105] OK <= 8105"
+  hasnt "MISSING DIRS"
+  # expanded on the backup node - during a failback the copy is where the
+  # truth about "which users exist" lives
+  traced "bkp skeldirs /replica-hdd/ct/subvol-8105-disk-0 :: home/*/tmp"
+  # sent as a directory, never with a trailing slash - a slash makes rsync
+  # read the directory, and reading it is the thing that fails on a real one
+  traced "rsyncdir home/web1/tmp"
+  traced "rsyncdir home/web2/tmp"
+  # while the image was still mounted: after the umount there is nothing to
+  # create into
+  traced_before "rsyncdir home/web1/tmp" "umount $SIMROOT/mnt/failback-105"
+  image_has 105 "generation 7"
+  nothing_mounted
+  done_scenario
+fi
+
+if scenario "77: only a pattern that names a DIRECTORY joins the skeleton pass"; then
+  # /home/*/tmp without the slash is contents-shaped, and a FILE that happens
+  # to match a directory pattern is not a directory: [ -d ] on the copy is
+  # what keeps both out. Inventing a directory the copy never had would put
+  # it into a customer's production image.
+  exclude '/tmp/*' '/home/*/tmp' '/var/spool/cron/' '/opt/nothing/'
+  mkdir -p "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web1/tmp" \
+           "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/var/spool/cron" \
+           "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web9"
+  printf 'a file, not a directory\n' > "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web9/tmp"
+  run_engine --ctid 105
+  rc_is 0; clean
+  traced "rsyncdir var/spool/cron"
+  untraced "rsyncdir home/web1/tmp"
+  untraced "rsyncdir home/web9/tmp"
+  untraced "rsyncdir opt/nothing"
+  done_scenario
+fi
+
+if scenario "78: a skeleton pass that fails names the CT and refuses to exit 0"; then
+  # The bytes arrived, so this is not a failure - but an image whose newest
+  # user has no /home/<user>/tmp must not be reported as a healthy failback
+  # either. Same shape replica gives a copy it could not snapshot.
+  exclude '/home/*/tmp/'
+  mkdir -p "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web1/tmp"
+  : > "$SIMROOT/rsyncdir.fail"
+  run_engine --ctid 105
+  rc_is 1; clean
+  has "[105] WARN: could not put the excluded directories back into the image"
+  has "MISSING DIRS: 1 restored image(s) are missing a directory the exclude list skipped"
+  has "MISSING DIRS:   CT: 105"
+  # the restore itself still counted: this is the skeleton failing, not B-anything
+  has "[105] OK <= 8105"
+  image_has 105 "generation 7"
+  done_scenario
+fi
+
+if scenario "79: an unanswered enumeration is a WARN, never an empty answer"; then
+  # "could not ask the backup node which directories exist" and "there are
+  # none" produce the same empty list, and only one of them is safe to act
+  # on. The ssh failing must surface as the same MISSING DIRS debt, with no
+  # skeleton rsync attempted on a list nobody vouched for.
+  exclude '/home/*/tmp/'
+  mkdir -p "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web1/tmp"
+  : > "$BKP/skeldirs.fail"
+  run_engine --ctid 105
+  rc_is 1; clean
+  has "[105] WARN: could not put the excluded directories back into the image"
+  has "MISSING DIRS:   CT: 105"
+  untraced "rsyncdir"
+  done_scenario
+fi
+
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

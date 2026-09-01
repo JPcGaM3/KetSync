@@ -22,6 +22,26 @@ for a in "$@"; do
     --info=progress2) prog2=1;;
   esac
 done
+# The directory-skeleton pass: `rsync -d <dir-without-slash>` sends the
+# directory and NOTHING inside it, which is how the engine puts back the empty
+# directories ctrep-exclude.conf skipped. It is a different call with different
+# rules - no loop-mount to police, no --delete to fear - so it is answered here
+# and returns before the invariants written for a real transfer.
+if [[ " $* " == *" -dogpR "* ]]; then
+  _skel_dst="${dst#*:}"; _skel_dst="${_skel_dst%/}"
+  for _a in "$@"; do
+    case "$_a" in
+      */./*) _rel="${_a#*/./}"
+             trace "rsyncdir $_rel"
+             [[ "$_a" == */ ]] && violation "the skeleton pass sent '$_a' with a trailing slash - rsync would read the directory, which is the read that fails"
+             dry_forbids "skeleton mkdir $_rel on the backup node"
+             mkdir -p "$BKP/fs$_skel_dst/$_rel" || exit 1;;
+    esac
+  done
+  [[ -f "$SIMROOT/rsyncdir.fail" ]] && exit 23
+  exit 0
+fi
+
 trace "rsync $src -> $dst"
 # Every flag, recorded one per line. Without this the fake sees only src and
 # dst, and the whole option set is untestable: stripping -x, --delete,

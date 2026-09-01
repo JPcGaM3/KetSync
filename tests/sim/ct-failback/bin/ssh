@@ -163,6 +163,25 @@ case "$c" in
     violation "B8: lock command shape the simulator does not model: $c"
     exit 1;;
 
+  # ---- skeleton pass: which excluded directories exist on the copy ----------
+  # The engine expands the exclude list's directory patterns HERE, on the node
+  # that holds the copy, because during a failback the copy is where the truth
+  # about "which users exist" lives. Read-only, so a dry run may make it too.
+  # Emulated rather than pattern-matched: the fake cd's into the copy and lets
+  # the same glob expand, [ -d ] and all, so an unmatched pattern stays out of
+  # the answer exactly the way a real remote shell keeps it out.
+  "cd '"*'[ -d '*)
+    _sd="${c#cd \'}"; _sd="${_sd%%\'*}"
+    _pats="${c#*for d in }"; _pats="${_pats%%;*}"
+    trace "bkp skeldirs $_sd :: $_pats"
+    if [[ -f "$BKP/skeldirs.fail" ]]; then
+      echo "ssh: connect to host $host port 22: Connection timed out" >&2; exit 255
+    fi
+    if cd "$BKP/fs$_sd" 2>/dev/null; then
+      for d in $_pats; do [ -d "$d" ] && printf '%s\n' "$d"; done
+    fi
+    exit 0;;
+
   "cat "*)
     f="${c#cat }"; f="${f%% *}"
     [[ -f "$BKP/fs$f" ]] || exit 1

@@ -2296,6 +2296,59 @@ if scenario "121: R17 belongs to the live lane alone - a ZFS round ignores the l
   done_scenario
 fi
 
+if scenario "122: an excluded DIRECTORY still reaches the copy, empty"; then
+  # The cost of excluding a directory rather than its contents: rsync never
+  # sends it, and a copy whose /home/<user>/tmp is missing refuses every login
+  # the moment it is promoted. The engine puts the empty directories back with
+  # a second rsync, and this is what proves it happened.
+  exclude '/tmp/*' '/home/*/tmp/'
+  mkdir -p "$SIMROOT/mnt/105/home/web1/tmp" "$SIMROOT/mnt/105/home/web2/tmp" \
+           "$SIMROOT/mnt/105/home/web1/mail"
+  run_engine --ctid 105
+  rc_is 0; clean
+  [[ -d "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web1/tmp" ]] \
+    || _err "web1's tmp was not created on the copy"
+  [[ -d "$BKP/fs/replica-hdd/ct/subvol-8105-disk-0/home/web2/tmp" ]] \
+    || _err "web2's tmp was not created on the copy"
+  # sent as a directory, never with a trailing slash - a slash makes rsync read
+  # the directory, and reading it is the thing that fails on a real one
+  traced "rsyncdir home/web1/tmp"
+  # and the MAIN transfer still excluded it: the pattern reached rsync as a
+  # pattern, so the contents were never walked
+  traced "rsyncexclude /home/*/tmp/"
+  done_scenario
+fi
+
+if scenario "123: a directory the exclude list does not name is left to rsync"; then
+  # Only patterns that END IN A SLASH name a directory. /tmp/* is contents, not
+  # a directory, and inventing a directory out of it would put an empty /tmp on
+  # the copy that the source never had.
+  exclude '/tmp/*' '/var/tmp/systemd-private-*'
+  mkdir -p "$SIMROOT/mnt/105/tmp/junk"
+  run_engine --ctid 105
+  rc_is 0; clean
+  untraced "rsyncdir tmp"
+  done_scenario
+fi
+
+if scenario "124: a skeleton pass that fails names the copy and refuses to exit 0"; then
+  # The data arrived, so this is not a failure - but a copy that cannot be
+  # promoted correctly must not be reported as a healthy night either. Same
+  # shape as a copy that could not be snapshotted.
+  exclude '/home/*/tmp/'
+  mkdir -p "$SIMROOT/mnt/105/home/web1/tmp"
+  : > "$SIMROOT/rsyncdir.fail"
+  run_engine --ctid 105
+  rc_is 1; clean
+  has "[105] WARN: could not create the excluded directories on copy 8105"
+  has "MISSING DIRS: 1 copy(ies) are missing a directory the exclude list skipped"
+  has "MISSING DIRS:   105/8105"
+  # the bytes still went, and the config was still written: this is not r5
+  has "[105] OK -> 8105"
+  cfg_exists 8105
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

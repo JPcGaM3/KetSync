@@ -152,8 +152,8 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 488 tp simulator + 16 dispatcher + 125 c2v, 151 ketsync
-    make mutation # 630 known bugs put back. None may survive
+    make test     # both layers: 495 tp simulator + 16 dispatcher + 125 c2v, 151 ketsync
+    make mutation # 637 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -275,8 +275,8 @@ anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
     ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     72 mutations
-    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    114 mutations
-    ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    75 mutations
+    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    117 mutations
+    ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    79 mutations
     ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  81 mutations
     ct-recall.sh     tests/mutation/run-mutation-ct-recall.sh      56 mutations
     ct-prepare.sh    tests/mutation/run-mutation-ct-prepare.sh     82 mutations
@@ -594,6 +594,22 @@ Two things ct-replica does that are not guards, and belong here anyway:
          snapshotted is named at the end of the run and the run does not exit
          0 - the bytes arrived, so it is not a failure, and silence would mean
          a fleet that quietly stopped keeping history
+    excluded dirs  rsync cannot skip a directory and create it in the same
+         breath - its filters are consulted after readdir, so a directory
+         excluded by NAME is still read, and reading it is what fails on a
+         churning /home/<user>/tmp. ctrep-exclude.conf therefore names the
+         DIRECTORY, and the price is that the directory never reaches the copy
+         at all. A copy missing one looks perfect until somebody promotes it,
+         PHP has nowhere to write a session, and every login on that container
+         fails. So after a good transfer, while the source is still mounted, a
+         second rsync sends the empty directories: `-d` with a path that does
+         NOT end in a slash sends the directory and nothing inside it, so the
+         read that fails is never attempted, and rsync rather than mkdir over
+         ssh because owner, group, mode and --numeric-ids are already its job.
+         Not a guard and not a failure - the bytes arrived - so a copy that
+         missed one is named at the end as MISSING DIRS and the run does not
+         exit 0, the same shape as a copy that could not be snapshotted
+
     --move-dest  the answer to R8, and the one command in this engine that
          removes customer data. ORDER IS THE FEATURE: copy (zfs send -R, so
          the days travel too), verify (mounted, and the same logical bytes),
@@ -656,6 +672,22 @@ Two things ct-replica does that are not guards, and belong here anyway:
         three agree on. Taken before the safety snapshot and the rw mount,
         dropped at end of the CT's turn; busy is a loud skip and the batch
         goes on - one busy image does not stop a disaster recovery
+
+One thing ct-failback does that is not a guard, and belongs here anyway:
+
+    excluded dirs  the same debt ct-replica pays, in the other direction: the
+         restore excludes /home/<user>/tmp/ by DIRECTORY, so a user created
+         DURING the DR - who exists only on the copy - comes home to an image
+         with no tmp at all, and PHP refuses every login for that user the
+         moment the CT starts. After a good restore, inside the mount window,
+         the engine expands the exclude list's directory patterns on the COPY
+         over ssh - during a failback that is where the truth about "which
+         users exist" lives - and sends the directory ENTRIES with one more
+         rsync -d, no trailing slash. An unanswered enumeration is a WARN,
+         never an empty answer, and an image that missed one is named at the
+         end as MISSING DIRS and the run does not exit 0, the same shape
+         ct-replica gives a copy it could not finish
+
 
 `ct-distribute.sh` — D1..D8:
 

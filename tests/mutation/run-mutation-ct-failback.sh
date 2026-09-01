@@ -582,6 +582,36 @@ mutant "the stats label is anchored to the line start - every transfer reads as 
   's{\Q"s/.*\E\$\Q1: *\E}{"s/^\$1: *}' \
   2
 
+# ---------- the directories the exclude list leaves behind ---------------------
+# The restore excludes /home/<user>/tmp/ by DIRECTORY (the readdir is what
+# fails on a churning one), so a user created during the DR comes home to an
+# image with no tmp at all. These four prove the engine pays that debt back.
+mutant "the skeleton pass is gone - the image is missing the directories entirely" \
+  's{\Q  if ! mk_excluded_dirs "\E\$CT_SRCMNT\Q" "\E\$3\Q"; then\E}{  if false; then}' \
+  76
+
+prog=$(cat <<'PERL'
+s{\Q    [[ -n "\E\$d\Q" ]] && args+=("\E\$BKP_SSH\Q:\E\$\Qsrc/./\E\$\Qd")\E}{    [[ -n "\$d" ]] && args+=("\$BKP_SSH:\$src/./\$d/")}
+PERL
+)
+mutant "the directory is sent with a trailing slash, so rsync reads it after all" "$prog" 76
+
+prog=$(cat <<'PERL'
+s{\Q    [[ "\E\$pat\Q" == */ ]] || continue\E}{    :}
+PERL
+)
+mutant "every exclude pattern is treated as a directory, so /tmp/* invents a directory" "$prog" 77
+
+# "could not ask" collapsing into "nothing there" is the quiet version of this
+# feature never running at all - the engine must refuse to act on a list the
+# backup node never vouched for.
+prog=$(cat <<'PERL'
+s{\Q</dev/null 2>/dev/null) || return 1\E}{</dev/null 2>/dev/null) || true}
+PERL
+)
+mutant "an unanswered enumeration reads as an empty one - the WARN never fires" "$prog" 79
+
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi
