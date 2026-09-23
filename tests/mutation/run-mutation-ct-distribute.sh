@@ -491,7 +491,7 @@ mutant "a block volume is asked for as subvol, which no lvm understands" \
 # cron. A mutation that changed only the first would leave the branch every
 # simulator actually runs untouched, and pass while proving nothing.
 mutant "every retained day is dragged onto the compute node with the rootfs" \
-  's{\Q--delete --exclude=/.zfs --bwlimit=\E}{--delete --bwlimit=}g' \
+  's{\Q--delete --exclude=/.zfs \E}{--delete }g' \
   46
 
 # ---------- the conf must read cleanly, whole ---------------------------------
@@ -539,6 +539,15 @@ mutant "the once-a-minute limit is gone - every update becomes a log line" \
 mutant "the filter eats the stream - stats and the rc line never reach the parser" \
   's!\Q        printf '"'"'%s\n'"'"' "\E\$_l\Q" >>"\E\$_keep\Q"\E!        :!' \
   48
+
+# ---------- DIST_BW_MB: a DR placement is not throttled to replication's share -
+mutant "distribute is throttled to BW_TOTAL_MB/LANES again" \
+  's{\Q  (( DIST_BW_MB > 0 )) && bwopt="--bwlimit=\E\$\Q{DIST_BW_MB}m"\E}{  bwopt="--bwlimit=\$(( BW_TOTAL_MB / LANES ))m"}' \
+  49
+
+mutant "DIST_BW_MB is ignored - a cap somebody set is never applied" \
+  's{\Q  (( DIST_BW_MB > 0 )) && bwopt=\E}{  (( 0 )) && bwopt=}' \
+  49b
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

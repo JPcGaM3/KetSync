@@ -277,7 +277,7 @@ halves, do not touch the engine — say so instead.
     ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     72 mutations
     ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    117 mutations
     ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    79 mutations
-    ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  81 mutations
+    ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  83 mutations
     ct-recall.sh     tests/mutation/run-mutation-ct-recall.sh      56 mutations
     ct-prepare.sh    tests/mutation/run-mutation-ct-prepare.sh     82 mutations
     tp               tests/mutation/run-mutation-tp.sh              9 mutations

@@ -1306,6 +1306,29 @@ if scenario "48: a placement says where it is - one progress line, and one file 
   done_scenario
 fi
 
+if scenario "49: a DR placement is not throttled to replication's nightly share"; then
+  # BW_TOTAL_MB/LANES is replication's budget for an ordinary night. On the
+  # morning production is down, capping the placement to it only lengthens
+  # the outage - so distribute has its own knob, and 0 (the default) means no
+  # --bwlimit at all. A cap somebody sets on purpose is still honoured.
+  conf_set BW_TOTAL_MB 500; conf_set LANES 2
+  run_engine --ctid 300
+  rc_is 0; clean
+  grep -F "rsync " <<<"$TRACE" | grep -qF -- "--bwlimit" \
+    && _err "distribute passed a --bwlimit with DIST_BW_MB unset"
+  grep -F "rsync " <<<"$TRACE" | grep -qF -- "--exclude=/.zfs" \
+    || _err "the placement rsync did not run"
+  done_scenario
+fi
+if scenario "49b: DIST_BW_MB set is the cap, not BW_TOTAL_MB"; then
+  conf_set BW_TOTAL_MB 500; conf_set LANES 2; conf_set DIST_BW_MB 100
+  run_engine --ctid 300
+  rc_is 0; clean
+  grep -F "rsync " <<<"$TRACE" | grep -qF -- "--bwlimit=100m" \
+    || _err "DIST_BW_MB=100 did not reach rsync as --bwlimit=100m"
+  done_scenario
+fi
+
 echo
 echo "=== $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then echo "failed: ${FAILED_NAMES[*]}"; exit 1; fi

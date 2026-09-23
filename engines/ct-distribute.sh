@@ -223,6 +223,11 @@ MOCKNET_BRIDGE=vmbr99            # the isolated bridge with NO uplink. Same knob
 BW_TOTAL_MB=230
 LANES=1
 BW_MIN_MB=20
+DIST_BW_MB=0                     # distribute's OWN ceiling, MiB/s; 0 = no limit.
+                                 # BW_TOTAL_MB/LANES above is replication's budget
+                                 # for an ordinary night; distribute runs on the
+                                 # morning production is down, and throttling it
+                                 # to that budget only makes the outage longer
 LOG_KEEP_DAYS=14                 # same knob, same ctrep.conf, as ct-replica.sh
 SSH_CIPHERS=aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr
 # -------------------------------------------------------------------------
@@ -269,7 +274,7 @@ if [[ -f "$CONF" ]]; then
   fi
   rm -f "$_conferr"
 fi
-for _v in OFFSET DR_OFFSET DR_HEADROOM_PCT BW_TOTAL_MB LANES BW_MIN_MB LOG_KEEP_DAYS; do
+for _v in OFFSET DR_OFFSET DR_HEADROOM_PCT BW_TOTAL_MB LANES BW_MIN_MB DIST_BW_MB LOG_KEEP_DAYS; do
   [[ "${!_v}" =~ ^[0-9]+$ ]] || { echo "$CONF: $_v must be a plain integer, got '${!_v}'" >&2; exit 2; }
 done
 
@@ -1297,8 +1302,10 @@ do_ct(){   # $1 = production ctid
   # rsync cannot do remote-to-remote, and pulling everything through this
   # machine would double the traffic on the worst night of the year. The
   # target pulls; this engine only watches the exit code.
-  local bw=$(( BW_TOTAL_MB / (LANES > 0 ? LANES : 1) ))
-  (( bw < BW_MIN_MB )) && bw=$BW_MIN_MB
+  # Not BW_TOTAL_MB/LANES: that is replication's share of an ordinary night.
+  # DIST_BW_MB is set only when somebody has a reason to slow a DR placement.
+  local bwopt=""
+  (( DIST_BW_MB > 0 )) && bwopt="--bwlimit=${DIST_BW_MB}m"
   # --stats on, and stdout and stderr both kept. The numbers are the only
   # evidence anybody gets that this container's rootfs arrived rather than an
   # empty directory, and rsync's own message is the only evidence of WHY when
@@ -1328,7 +1335,7 @@ do_ct(){   # $1 = production ctid
     # parsed out of it. The tee lands on THIS machine, which is home - the
     # no-temp-file rule above protects the machine this engine is VISITING.
     local _rsout; _rsout=$(mktemp /tmp/ctdist-rsync.XXXXXX)
-    rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --exclude=/.zfs --bwlimit=${bw}m --stats \
+    rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --exclude=/.zfs $bwopt --stats \
         --info=progress2 --no-inc-recursive \
         -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
         '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?" | tee "$_rsout"
@@ -1338,7 +1345,7 @@ do_ct(){   # $1 = production ctid
     # stream still reaches the parser below: the filter only lifts the
     # progress updates out and passes everything else into the file.
     local _rsout; _rsout=$(mktemp /tmp/ctdist-rsync.XXXXXX)
-    rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --exclude=/.zfs --bwlimit=${bw}m --stats \
+    rsh "$CT_TO" "rsync -aHAX --numeric-ids --sparse --delete --exclude=/.zfs $bwopt --stats \
         --info=progress2 --no-inc-recursive \
         -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' \
         '$BKP_SSH:$CT_SRCMNT/' '$mnt/' 2>&1; echo rc=\$?" | rs_progress "$ct" "$_rsout"
