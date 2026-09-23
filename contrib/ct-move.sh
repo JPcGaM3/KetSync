@@ -33,16 +33,19 @@ set -uo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 usage(){ cat <<'EOF'
-usage: ct-move.sh --src <ip> --dst <ip> --ctid <id> --storage <dst-storage-id> --bwlimit <MB/s>
-                  [--new-ctid <id>] [--zfs-props k=v[,k=v...]] [--final] [--dry-run]
+usage: ct-move.sh --src-ip <ip> --src-ctid <id> --dst-ip <ip> --dst-ctid <id>
+                  --storage <dst-storage-id> --bwlimit <MB/s>
+                  [--zfs-props k=v[,k=v...]] [--final] [--dry-run]
 
-  --src        IP of the node the container lives on now
-  --dst        IP of the node it moves to (may be the same node)
-  --ctid       the container
+  --src-ip     IP of the node the container lives on now
+  --src-ctid   its id there
+  --dst-ip     IP of the node it moves to (may be the same node)
+  --dst-ctid   its id there. The SAME id moves the config (both nodes in one
+               cluster); a DIFFERENT id writes a new config (onboot 0) and --final
+               leaves the old container stopped under lock: migrate, so the two
+               can never be up together on one IP and MAC
   --storage    PVE storage id ON THE DESTINATION NODE (zfspool, lvmthin, lvm, dir, nfs, cifs)
   --bwlimit    MB/s for rsync (no default on purpose)
-  --new-ctid   give it a new id; the old container is left as it is. Default: keep
-               the id, and --final moves its config (needs both nodes in one cluster)
   --zfs-props  zfspool only, set when the dataset is created, e.g. for MySQL/InnoDB:
                recordsize=16K,compression=lz4,atime=off
                recordsize only affects data written AFTER it is set, so it belongs on
@@ -58,12 +61,12 @@ EOF
 SRC=""; DST=""; CTID=""; STORAGE=""; BW=""; NEW=""; ZPROPS=""; FINAL=0; DRY=0
 while (( $# )); do
   case "$1" in
-    --src) SRC="${2:-}"; shift 2;;
-    --dst) DST="${2:-}"; shift 2;;
-    --ctid) CTID="${2:-}"; shift 2;;
+    --src-ip) SRC="${2:-}"; shift 2;;
+    --dst-ip) DST="${2:-}"; shift 2;;
+    --src-ctid) CTID="${2:-}"; shift 2;;
+    --dst-ctid) NEW="${2:-}"; shift 2;;
     --storage) STORAGE="${2:-}"; shift 2;;
     --bwlimit) BW="${2:-}"; shift 2;;
-    --new-ctid) NEW="${2:-}"; shift 2;;
     --zfs-props) ZPROPS="${2:-}"; shift 2;;
     --final) FINAL=1; shift;;
     --dry-run) DRY=1; shift;;
@@ -71,13 +74,12 @@ while (( $# )); do
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2;;
   esac
 done
-for v in SRC DST CTID STORAGE BW; do
-  [[ -n "${!v}" ]] || { echo "missing --$(tr 'A-Z' 'a-z' <<<"$v" | sed 's/bw/bwlimit/')" >&2; usage >&2; exit 2; }
+for v in SRC:--src-ip CTID:--src-ctid DST:--dst-ip NEW:--dst-ctid STORAGE:--storage BW:--bwlimit; do
+  _n="${v%%:*}"
+  [[ -n "${!_n}" ]] || { echo "missing ${v#*:} (no default)" >&2; usage >&2; exit 2; }
 done
-[[ "$CTID" =~ ^[0-9]+$ ]] || { echo "--ctid must be a number" >&2; exit 2; }
+[[ "$CTID" =~ ^[0-9]+$ && "$NEW" =~ ^[0-9]+$ ]] || { echo "--src-ctid and --dst-ctid must be numbers" >&2; exit 2; }
 [[ "$BW" =~ ^[0-9]+$ ]] || { echo "--bwlimit must be a number (MB/s)" >&2; exit 2; }
-NEW="${NEW:-$CTID}"
-[[ "$NEW" =~ ^[0-9]+$ ]] || { echo "--new-ctid must be a number" >&2; exit 2; }
 
 for c in ssh flock awk sed tee date; do
   command -v "$c" >/dev/null || { echo "missing command: $c" >&2; exit 2; }
@@ -103,7 +105,7 @@ exec 9>"$STATE/.ct-move-$CTID.lock" || die "cannot open the local lock"
 flock -n 9 || die "another ct-move for $CTID is running on this machine"
 
 MODE=presync; (( FINAL )) && MODE=final
-log "=== ct-move $MODE: CT $CTID  $SRC -> $DST storage=$STORAGE new-ctid=$NEW bw=${BW}MB/s$( (( DRY )) && echo ' DRY-RUN') ==="
+log "=== ct-move $MODE: CT $CTID on $SRC -> CT $NEW on $DST storage=$STORAGE bw=${BW}MB/s$( (( DRY )) && echo ' DRY-RUN') ==="
 
 # ---------------------------------------------------------------- the nodes
 SRCN=$(rsh "$SRC" 'basename "$(readlink /etc/pve/local)"') || SRCN=""
@@ -144,7 +146,11 @@ if [[ "$NEW" == "$CTID" ]]; then
   fi
 else
   _used=$(rsh "$DST" "ls /etc/pve/nodes/*/lxc/$NEW.conf /etc/pve/nodes/*/qemu-server/$NEW.conf 2>/dev/null")
-  [[ -z "$_used" ]] || die "id $NEW already belongs to a guest: $_used"
+  if [[ -n "$_used" ]]; then
+    # a re-run after a --final that wrote the config is the one legitimate case
+    [[ -s "$STATE/ct-move-$NEW.vol" ]] || die "id $NEW already belongs to a guest: $_used"
+    die "id $NEW already has a config ($_used) - its --final has run; nothing left to do"
+  fi
 fi
 
 # ---------------------------------------------------------------- destination
@@ -364,6 +370,11 @@ if [[ "$NEW" == "$CTID" ]]; then
 else
   NEWCFG=$(grep -vE '^(rootfs|mp[0-9]+|unused[0-9]+|lock|parent|onboot):' <<<"$SRCCFG"; echo "$NEWROOT"; echo "onboot: 0")
   rsh "$DST" "test -f /etc/pve/nodes/$DSTN/lxc/$NEW.conf" && die "a config for $NEW appeared on $DSTN meanwhile - not overwriting"
+  # The old container keeps its network, so it must not be startable while the
+  # new one exists: lock it first, and only then give the new one a config.
+  rsh "$SRC" "pct set $CTID --lock migrate" || die "could not lock CT $CTID on $SRCN - no config written for $NEW"
+  _st=$(rsh "$SRC" "pct status $CTID" | awk '{print $2}')
+  [[ "$_st" == stopped ]] || die "CT $CTID is '$_st' on $SRCN after the copy - somebody started it. No config written for $NEW"
   printf '%s\n' "$NEWCFG" | wsh "$DST" "cat > /etc/pve/nodes/$DSTN/lxc/$NEW.conf" || die "could not write the config for $NEW on $DSTN"
   [[ "$(rsh "$DST" "cat /etc/pve/nodes/$DSTN/lxc/$NEW.conf")" == "$NEWCFG" ]] || die "the config for $NEW on $DSTN does not read back as sent"
 fi
@@ -379,6 +390,10 @@ if [[ "$NEW" == "$CTID" ]]; then
   log "    ssh root@$SRC 'cat > /etc/pve/nodes/$SRCN/lxc/$CTID.conf' < $STATE/ct-move-$CTID.conf.orig"
   log "    ssh root@$SRC pct start $CTID"
 else
-  log "  CT $CTID on $SRCN is untouched and still has the same network - never run both"
+  log "  CT $CTID on $SRCN: data untouched, stopped, lock: migrate (same IP/MAC as $NEW - never run both)"
+  log "  once $NEW is verified, days later: ssh root@$SRC 'pct unlock $CTID && pct destroy $CTID'"
+  log "  rollback (anything written in $NEW after start is lost):"
+  log "    ssh root@$DST pct stop $NEW"
+  log "    ssh root@$SRC 'pct unlock $CTID && pct start $CTID'"
 fi
 exit 0
