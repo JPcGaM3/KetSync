@@ -95,6 +95,17 @@ LOG="$LOGDIR/ct-move-$CTID-$(date +%F).log"
 MOCK=$(sed -n 's/^MOCKNET_BRIDGE=["]*\([^"# ]*\).*/\1/p' "$BASE/conf/ctmig.conf" 2>/dev/null | tail -1)
 log(){ printf '%s [%s] %s\n' "$(date '+%F %T')" "$CTID" "$*" | tee -a "$LOG"; }
 die(){ log "ERROR: $*"; exit 1; }
+# Storages whose images live on THIS machine (the storage node). A source CT
+# on one of them is read HERE, from its image, and pushed straight to the
+# destination: one network hop, local disk, nothing asked of the node the CT
+# runs on. Anything else is pulled by the destination from that node. The key
+# must exist (empty is a decision, missing is not).
+grep -qE '^SRC_STORAGES=' "$BASE/conf/ctmig.conf" 2>/dev/null \
+  || die "SRC_STORAGES is missing from $BASE/conf/ctmig.conf - list the storage node's pools there (\"\" for none)"
+SRC_STORAGES=$(sed -n 's/^SRC_STORAGES=["]*\([^"#]*\).*/\1/p' "$BASE/conf/ctmig.conf" | tail -1)
+LIVE_FALLBACK=$(sed -n 's/^LIVE_FALLBACK=["]*\([0-9]*\).*/\1/p' "$BASE/conf/ctmig.conf" | tail -1)
+CIPHERS=$(sed -n 's/^SSH_CIPHERS=["]*\([^"# ]*\).*/\1/p' "$BASE/conf/ctmig.conf" | tail -1)
+SSH_DATA="ssh -o BatchMode=yes -o Compression=no${CIPHERS:+ -c $CIPHERS}"
 
 SSH_OPT="-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=6"
 rsh(){ local h="$1"; shift; ssh $SSH_OPT "root@$h" "$@" </dev/null; }
@@ -116,8 +127,6 @@ SRCN=$(rsh "$SRC" 'basename "$(readlink /etc/pve/local)"') || SRCN=""
 DSTN=$(rsh "$DST" 'basename "$(readlink /etc/pve/local)"') || DSTN=""
 [[ -n "$SRCN" ]] || die "cannot ssh root@$SRC, or it is not a PVE node"
 [[ -n "$DSTN" ]] || die "cannot ssh root@$DST, or it is not a PVE node"
-rsh "$DST" "ssh -o BatchMode=yes -o ConnectTimeout=10 root@$SRC true" \
-  || die "$DSTN cannot ssh root@$SRC - the copy is issued ON $DSTN, pulling from $SRCN. fix: ssh root@$DST ssh-copy-id root@$SRC"
 
 # ---------------------------------------------------------------- the source
 SRCCFG=$(rsh "$SRC" "cat /etc/pve/nodes/$SRCN/lxc/$CTID.conf") \
@@ -136,6 +145,23 @@ OLDVOL="${OLDROOT%%,*}"
 OLDSIZE=$(sed -n 's/.*[,]size=\([^,]*\).*/\1/p' <<<"$OLDROOT")
 [[ -n "$OLDVOL" ]] || die "no rootfs line in CT $CTID's config"
 [[ "${OLDVOL%%:*}" == "$STORAGE" && "$SRCN" == "$DSTN" ]] && die "CT $CTID is already on $STORAGE on $DSTN"
+
+OLDSID="${OLDVOL%%:*}"; READ_HERE=0; SRCIMG=""
+_here=$(pvesm path "$OLDVOL" 2>/dev/null)
+if [[ " $SRC_STORAGES " == *" $OLDSID "* ]]; then
+  [[ "$_here" == /*/images/* && -f "$_here" ]] \
+    || die "SRC_STORAGES lists '$OLDSID' but its image is not a file here (got '${_here:-nothing}') - the conf is wrong"
+  READ_HERE=1; SRCIMG="$_here"
+  (( FINAL )) || [[ "$LIVE_FALLBACK" == 1 ]] \
+    || die "'$OLDSID' is read here while CT $CTID runs, which needs LIVE_FALLBACK=1 in conf/ctmig.conf (no snapshots; --final is unaffected)"
+  log "source: image $SRCIMG, read HERE and pushed to $DSTN (one hop, $SRCN untouched)"
+elif [[ "$_here" == /*/images/* && -f "$_here" ]]; then
+  die "'$OLDSID' resolves to a file on this machine ($_here) but is not in SRC_STORAGES - add it, or it would be read the slow way through $SRCN"
+else
+  rsh "$DST" "ssh -o BatchMode=yes -o ConnectTimeout=10 root@$SRC true" \
+    || die "$DSTN cannot ssh root@$SRC - the copy is issued ON $DSTN, pulling from $SRCN. fix: ssh root@$DST ssh-copy-id root@$SRC"
+  log "source: CT $CTID on $SRCN, pulled by $DSTN"
+fi
 
 # every bridge the config names must exist on the destination, or the first
 # pct start there fails - found now, not during the downtime
@@ -211,8 +237,9 @@ log "destination: $STORAGE on $DSTN is $DTYPE, active, not the root disk"
 # ---------------------------------------------------------------- locks / state
 LOCKF="/run/ketsync-ct-$NEW.lock"
 OWNER="ct-move $(hostname) pid $$ $(date +%s)"
-LOCKED=0; DST_MNT=""; SRC_MOUNTED=0
+LOCKED=0; DST_MNT=""; SRC_MOUNTED=0; HERE_MNT=""
 cleanup(){
+  [[ -n "$HERE_MNT" ]] && umount "$HERE_MNT" >>"$LOG" 2>&1 && HERE_MNT=""
   [[ -n "$DST_MNT" ]] && rsh "$DST" "umount '$DST_MNT'" >>"$LOG" 2>&1 && DST_MNT=""
   (( SRC_MOUNTED )) && rsh "$SRC" "pct unmount $CTID" >>"$LOG" 2>&1 && SRC_MOUNTED=0
   (( LOCKED )) && rsh "$DST" "grep -qxF '$OWNER' $LOCKF && rm -f $LOCKF"
@@ -315,14 +342,29 @@ if (( FINAL )); then
   fi
   printf '%s\n' "$SRCCFG" > "$STATE/ct-move-$CTID.conf.orig"
   [[ -s "$SECF" ]] && log "estimate: the last presync copy took $(( $(cat "$SECF") / 60 ))m$(( $(cat "$SECF") % 60 ))s - expect about that now"
-  rsh "$SRC" "pct mount $CTID" >>"$LOG" 2>&1 || die "pct mount $CTID failed on $SRCN"
-  SRC_MOUNTED=1
-  SRCPATH="/var/lib/lxc/$CTID/rootfs"
+  if (( ! READ_HERE )); then
+    rsh "$SRC" "pct mount $CTID" >>"$LOG" 2>&1 || die "pct mount $CTID failed on $SRCN"
+    SRC_MOUNTED=1
+    SRCPATH="/var/lib/lxc/$CTID/rootfs"
+  fi
 else
   [[ "$_st" == running ]] || die "presync needs CT $CTID RUNNING on $SRCN (it is '${_st:-unknown}'); stopped means use --final"
   _pid=$(rsh "$SRC" "lxc-info -n $CTID -p -H")
   [[ "$_pid" =~ ^[0-9]+$ && "$_pid" != 0 ]] || die "cannot read the init pid of CT $CTID on $SRCN"
   SRCPATH="/proc/$_pid/root"
+  (( READ_HERE )) && log "WARN: reading the LIVE image of a running CT (LIVE_FALLBACK=1) - a file caught mid-write can fail this round (rc=23); --final repairs it"
+fi
+if (( READ_HERE )); then
+  # the same image lock ct-migrate/replica/failback take on this machine, so
+  # none of them writes it while it is read here
+  exec 7>"$BASE/engines/.ct-intake-$CTID.lock" && flock -n 7 \
+    || die "another ketsync engine holds CT $CTID's image right now (.ct-intake-$CTID.lock)"
+  HERE_MNT="/mnt/ct-move-src-$CTID"; mkdir -p "$HERE_MNT"
+  mountpoint -q "$HERE_MNT" && die "$HERE_MNT is already mounted here - inspect and umount it"
+  # ro,noload: no journal replay - nothing is ever written into the source image
+  mount -o loop,ro,noload "$SRCIMG" "$HERE_MNT" >>"$LOG" 2>&1 && mountpoint -q "$HERE_MNT" \
+    || { HERE_MNT=""; die "could not mount $SRCIMG read-only here"; }
+  SRCPATH="$HERE_MNT"
 fi
 
 # ct-migrate's G5/G6/G8 for a new id: written ONCE, after a good round, with
@@ -359,11 +401,19 @@ RSYNC="rsync -aHAX --numeric-ids --sparse --inplace -x --delete --modify-window=
   --bwlimit=${BW}m --exclude='/proc/*' --exclude='/sys/*' --exclude='/dev/*' --exclude='/run/*' \
   --exclude='/tmp/*' --exclude='/lost+found' --exclude='/.zfs' -e 'ssh -o BatchMode=yes' \
   'root@$SRC:$SRCPATH/' '$MNT/'"
+RSL=(-aHAX --numeric-ids --sparse --inplace -x --delete --modify-window=-1 --stats ${PROG:+"$PROG"}
+  "--bwlimit=${BW}m" '--exclude=/proc/*' '--exclude=/sys/*' '--exclude=/dev/*' '--exclude=/run/*'
+  '--exclude=/tmp/*' '--exclude=/lost+found' '--exclude=/.zfs' -e "$SSH_DATA")
 attempt=0
 while :; do
-  log "copy $SRCN:$SRCPATH -> $DSTN:$MNT"
   t0=$SECONDS
-  rsh "$DST" "$RSYNC" 2>&1 | tee -a "$LOG"; rc=${PIPESTATUS[0]}
+  if (( READ_HERE )); then
+    log "copy $(hostname):$SRCPATH -> $DSTN:$MNT"
+    rsync "${RSL[@]}" "$SRCPATH/" "root@$DST:$MNT/" 2>&1 | tee -a "$LOG"; rc=${PIPESTATUS[0]}
+  else
+    log "copy $SRCN:$SRCPATH -> $DSTN:$MNT"
+    rsh "$DST" "$RSYNC" 2>&1 | tee -a "$LOG"; rc=${PIPESTATUS[0]}
+  fi
   secs=$(( SECONDS - t0 ))
   [[ $rc -eq 11 && $attempt -lt 3 ]] || break
   [[ "$SHAPE" == dataset ]] || die "out of space in $VOLID - grow it on $DSTN (lvextend/truncate + resize2fs, unmounted) and run again"
@@ -399,8 +449,8 @@ if (( ! FINAL )); then
 fi
 
 [[ $rc -eq 0 || $rc -eq 24 ]] || die "--final rsync FAILED rc=$rc - the config was NOT touched. CT $CTID is still on $SRCN, stopped; start it there if needed"
-cleanup_src(){ rsh "$SRC" "pct unmount $CTID" >>"$LOG" 2>&1 && SRC_MOUNTED=0; }
-cleanup_src
+(( SRC_MOUNTED )) && { rsh "$SRC" "pct unmount $CTID" >>"$LOG" 2>&1 && SRC_MOUNTED=0; }
+[[ -n "$HERE_MNT" ]] && { umount "$HERE_MNT" >>"$LOG" 2>&1 && HERE_MNT=""; }
 [[ -n "$DST_MNT" ]] && { rsh "$DST" "umount '$DST_MNT'" >>"$LOG" 2>&1 && DST_MNT=""; }
 
 # ---------------------------------------------------------------- the config
