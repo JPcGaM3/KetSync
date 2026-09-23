@@ -89,6 +89,9 @@ BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="$BASE/state"; LOGDIR="$BASE/logs"
 mkdir -p "$STATE" "$LOGDIR" || exit 2
 LOG="$LOGDIR/ct-move-$CTID-$(date +%F).log"
+# The island bridge a new-id config lives on until --final - the same knob, in
+# the same file, that ct-migrate's G8 reads. Never guessed.
+MOCK=$(sed -n 's/^MOCKNET_BRIDGE=["]*\([^"# ]*\).*/\1/p' "$BASE/conf/ctmig.conf" 2>/dev/null | tail -1)
 log(){ printf '%s [%s] %s\n' "$(date '+%F %T')" "$CTID" "$*" | tee -a "$LOG"; }
 die(){ log "ERROR: $*"; exit 1; }
 
@@ -145,11 +148,30 @@ if [[ "$NEW" == "$CTID" ]]; then
       || die "keeping id $CTID needs $SRCN and $DSTN in ONE cluster ($DSTN cannot see the config) - use --new-ctid"
   fi
 else
+  [[ -n "$MOCK" ]] || die "no MOCKNET_BRIDGE in $BASE/conf/ctmig.conf - a new-id config needs the island bridge"
+  grep -E '^net[0-9]+:' <<<"$SRCCFG" | grep -qv 'bridge=' && die "a net line of CT $CTID has no bridge= - refusing rather than dropping it"
+  # G8, the same question ct-migrate asks: the config written after presync
+  # carries the PRODUCTION IP and MAC; only a bridge with no uplink makes that safe
+  _g8=$(rsh "$DST" "ip -br link show $MOCK >/dev/null 2>&1 || { echo MISSING; exit 0; }
+    ports=\$(ovs-vsctl --timeout=5 list-ifaces $MOCK 2>/dev/null || ls /sys/class/net/$MOCK/brif/ 2>/dev/null)
+    for p in \$ports; do [ -e /sys/class/net/\$p/device ] || [ -d /sys/class/net/\$p/bonding ] && echo \"UPLINK \$p\"; done
+    echo OK")
+  [[ "$_g8" == *MISSING* ]] && die "bridge $MOCK does not exist on $DSTN - create the isolated island there first"
+  [[ "$_g8" == *OK* ]] || die "cannot inspect $MOCK on $DSTN"
+  [[ "$_g8" == *UPLINK* ]] && die "$MOCK on $DSTN HAS AN UPLINK ($(grep UPLINK <<<"$_g8" | tr '\n' ' ')) - it would put the production IP on the wire"
   _used=$(rsh "$DST" "ls /etc/pve/nodes/*/lxc/$NEW.conf /etc/pve/nodes/*/qemu-server/$NEW.conf 2>/dev/null")
+  NEWEXIST=""
   if [[ -n "$_used" ]]; then
-    # a re-run after a --final that wrote the config is the one legitimate case
-    [[ -s "$STATE/ct-move-$NEW.vol" ]] || die "id $NEW already belongs to a guest: $_used"
-    die "id $NEW already has a config ($_used) - its --final has run; nothing left to do"
+    # the one legitimate owner: the config an earlier presync of THIS move wrote,
+    # recognised by its rootfs being exactly the volume state/ recorded
+    _sv=$(cat "$STATE/ct-move-$NEW.vol" 2>/dev/null)
+    [[ -n "$_sv" && "$_used" == "/etc/pve/nodes/$DSTN/lxc/$NEW.conf" ]] || die "id $NEW already belongs to a guest: $_used"
+    NEWEXIST=$(rsh "$DST" "cat /etc/pve/nodes/$DSTN/lxc/$NEW.conf")
+    [[ "$(sed -n 's/^rootfs:[[:space:]]*\([^,]*\).*/\1/p' <<<"$NEWEXIST")" == "$_sv" ]] \
+      || die "id $NEW has a config whose rootfs is not $_sv - not ours, refusing"
+    # G2: never write into a rootfs whose container is up
+    _ns=$(rsh "$DST" "pct status $NEW" | awk '{print $2}')
+    [[ "$_ns" == stopped ]] || die "CT $NEW is '$_ns' on $DSTN - refusing to copy into a running container. pct stop $NEW first"
   fi
 fi
 
@@ -331,6 +353,18 @@ log "copy rc=$rc in $(( secs / 60 ))m$(( secs % 60 ))s (changed: ${_lit:-?})"
 if (( ! FINAL )); then
   if [[ $rc -eq 0 || $rc -eq 24 ]]; then
     printf '%s\n' "$secs" > "$SECF"
+    if [[ "$NEW" != "$CTID" && -z "$NEWEXIST" ]]; then
+      # ct-migrate's G5/G8 shape: after a good round, a config on the island
+      # bridge, onboot 0. Written once; later rounds leave it alone.
+      _cfg=$(grep -vE '^(rootfs|mp[0-9]+|unused[0-9]+|lock|parent|onboot|net[0-9]+):' <<<"$SRCCFG"
+             echo "rootfs: $VOLID$(sed 's/^[^,]*//; s/,size=[^,]*//' <<<"$OLDROOT"),size=${SIZE_G}G"
+             echo "onboot: 0"
+             grep -E '^net[0-9]+:' <<<"$SRCCFG" | sed -E "s/bridge=[^,]*/bridge=$MOCK/")
+      printf '%s\n' "$_cfg" | wsh "$DST" "set -C; cat > /etc/pve/nodes/$DSTN/lxc/$NEW.conf" \
+        && [[ "$(rsh "$DST" "cat /etc/pve/nodes/$DSTN/lxc/$NEW.conf")" == "$_cfg" ]] \
+        || die "presync copied fine but the config for $NEW on $DSTN was not written cleanly - check it"
+      log "wrote /etc/pve/nodes/$DSTN/lxc/$NEW.conf - net on $MOCK (isolated), onboot 0. --final moves it to the real bridges"
+    fi
     log "presync OK. estimate for --final: about $(( secs / 60 ))m$(( secs % 60 ))s of copy while the CT is down"
     log "  (plus the time to stop the service cleanly and to start it again). run presync again close to"
     log "  the cutover so the last delta is small."
@@ -368,8 +402,15 @@ if [[ "$NEW" == "$CTID" ]]; then
   [[ "$_back" == "$NEWCFG" ]] || die "the config on $DSTN does not read back as what was sent - it is locked; compare with $STATE/ct-move-$CTID.conf.orig"
   rsh "$DST" "pct unlock $CTID" || die "config is in place but still locked: ssh root@$DST pct unlock $CTID"
 else
-  NEWCFG=$(grep -vE '^(rootfs|mp[0-9]+|unused[0-9]+|lock|parent|onboot):' <<<"$SRCCFG"; echo "$NEWROOT"; echo "onboot: 0")
-  rsh "$DST" "test -f /etc/pve/nodes/$DSTN/lxc/$NEW.conf" && die "a config for $NEW appeared on $DSTN meanwhile - not overwriting"
+  if [[ -n "$NEWEXIST" ]]; then
+    # the presync config, with anything a person changed in it kept: only the
+    # net lines go back to the real bridges and rootfs takes the final size
+    NEWCFG=$(grep -vE '^(net[0-9]+|lock):' <<<"$NEWEXIST" | sed "s|^rootfs:.*|$NEWROOT|"
+             grep -E '^net[0-9]+:' <<<"$SRCCFG")
+  else
+    NEWCFG=$(grep -vE '^(rootfs|mp[0-9]+|unused[0-9]+|lock|parent|onboot):' <<<"$SRCCFG"; echo "$NEWROOT"; echo "onboot: 0")
+    rsh "$DST" "test -f /etc/pve/nodes/$DSTN/lxc/$NEW.conf" && die "a config for $NEW appeared on $DSTN meanwhile - not overwriting"
+  fi
   # The old container keeps its network, so it must not be startable while the
   # new one exists: lock it first, and only then give the new one a config.
   rsh "$SRC" "pct set $CTID --lock migrate" || die "could not lock CT $CTID on $SRCN - no config written for $NEW"
