@@ -41,9 +41,10 @@ usage: ct-move.sh --src-ip <ip> --src-ctid <id> --dst-ip <ip> --dst-ctid <id>
   --src-ctid   its id there
   --dst-ip     IP of the node it moves to (may be the same node)
   --dst-ctid   its id there. The SAME id moves the config (both nodes in one
-               cluster); a DIFFERENT id writes a new config (onboot 0) and --final
-               leaves the old container stopped under lock: migrate, so the two
-               can never be up together on one IP and MAC
+               cluster); a DIFFERENT id gets its own config after the first good
+               round, ONCE, like ketsync migrate: net on MOCKNET_BRIDGE, onboot 0,
+               never rewritten - set its real network ahead of the cutover.
+               --final leaves the old container stopped under lock: migrate
   --storage    PVE storage id ON THE DESTINATION NODE (zfspool, lvmthin, lvm, dir, nfs, cifs)
   --bwlimit    MB/s for rsync (no default on purpose)
   --zfs-props  zfspool only, set when the dataset is created, e.g. for MySQL/InnoDB:
@@ -324,6 +325,33 @@ else
   SRCPATH="/proc/$_pid/root"
 fi
 
+# ct-migrate's G5/G6/G8 for a new id: written ONCE, after a good round, with
+# every net line on the island bridge, onboot 0 and no description - and never
+# touched again. That is what lets a person set the real network (and notes)
+# on it ahead of the cutover. The one thing that can drift is the size, and
+# that is only reported.
+new_cfg_once(){
+  local _cfg _cs
+  if [[ -z "$NEWEXIST" ]]; then
+    _cfg=$(grep -vE '^(rootfs|mp[0-9]+|net[0-9]+|onboot|unused[0-9]+|parent|lock|template|description):' <<<"$SRCCFG"
+           echo "rootfs: $VOLID$(sed 's/^[^,]*//; s/,size=[^,]*//' <<<"$OLDROOT"),size=${SIZE_G}G"
+           echo "onboot: 0"
+           grep -E '^net[0-9]+:' <<<"$SRCCFG" | sed -E "s/bridge=[^,]*/bridge=$MOCK/")
+    printf '%s\n' "$_cfg" | wsh "$DST" "set -C; cat > /etc/pve/nodes/$DSTN/lxc/$NEW.conf" \
+      && [[ "$(rsh "$DST" "cat /etc/pve/nodes/$DSTN/lxc/$NEW.conf")" == "$_cfg" ]] \
+      || die "the copy is fine but the config for $NEW on $DSTN was not written cleanly - check it"
+    NEWEXIST="$_cfg"
+    log "wrote /etc/pve/nodes/$DSTN/lxc/$NEW.conf - net on $MOCK (isolated), onboot 0; it is never rewritten"
+    log "  set its real network and notes whenever you like, before the cutover"
+  else
+    _cs=$(sed -n 's/^rootfs:.*[,]size=\([^,]*\).*/\1/p' <<<"$NEWEXIST")
+    if [[ "$_cs" != "${SIZE_G}G" ]]; then
+      log "NOTE: $NEW's config says size=$_cs but the volume is ${SIZE_G}G - left untouched on purpose; fix it yourself:"
+      log "NOTE:   rootfs: $VOLID,size=${SIZE_G}G"
+    fi
+  fi
+}
+
 # ---------------------------------------------------------------- the copy
 PROG=""; [ -t 1 ] && PROG="--info=progress2"
 RSYNC="rsync -aHAX --numeric-ids --sparse --inplace -x --delete --modify-window=-1 --stats $PROG \
@@ -353,18 +381,7 @@ log "copy rc=$rc in $(( secs / 60 ))m$(( secs % 60 ))s (changed: ${_lit:-?})"
 if (( ! FINAL )); then
   if [[ $rc -eq 0 || $rc -eq 24 ]]; then
     printf '%s\n' "$secs" > "$SECF"
-    if [[ "$NEW" != "$CTID" && -z "$NEWEXIST" ]]; then
-      # ct-migrate's G5/G8 shape: after a good round, a config on the island
-      # bridge, onboot 0. Written once; later rounds leave it alone.
-      _cfg=$(grep -vE '^(rootfs|mp[0-9]+|unused[0-9]+|lock|parent|onboot|net[0-9]+):' <<<"$SRCCFG"
-             echo "rootfs: $VOLID$(sed 's/^[^,]*//; s/,size=[^,]*//' <<<"$OLDROOT"),size=${SIZE_G}G"
-             echo "onboot: 0"
-             grep -E '^net[0-9]+:' <<<"$SRCCFG" | sed -E "s/bridge=[^,]*/bridge=$MOCK/")
-      printf '%s\n' "$_cfg" | wsh "$DST" "set -C; cat > /etc/pve/nodes/$DSTN/lxc/$NEW.conf" \
-        && [[ "$(rsh "$DST" "cat /etc/pve/nodes/$DSTN/lxc/$NEW.conf")" == "$_cfg" ]] \
-        || die "presync copied fine but the config for $NEW on $DSTN was not written cleanly - check it"
-      log "wrote /etc/pve/nodes/$DSTN/lxc/$NEW.conf - net on $MOCK (isolated), onboot 0. --final moves it to the real bridges"
-    fi
+    [[ "$NEW" != "$CTID" ]] && new_cfg_once
     log "presync OK. estimate for --final: about $(( secs / 60 ))m$(( secs % 60 ))s of copy while the CT is down"
     log "  (plus the time to stop the service cleanly and to start it again). run presync again close to"
     log "  the cutover so the last delta is small."
@@ -402,22 +419,12 @@ if [[ "$NEW" == "$CTID" ]]; then
   [[ "$_back" == "$NEWCFG" ]] || die "the config on $DSTN does not read back as what was sent - it is locked; compare with $STATE/ct-move-$CTID.conf.orig"
   rsh "$DST" "pct unlock $CTID" || die "config is in place but still locked: ssh root@$DST pct unlock $CTID"
 else
-  if [[ -n "$NEWEXIST" ]]; then
-    # the presync config, with anything a person changed in it kept: only the
-    # net lines go back to the real bridges and rootfs takes the final size
-    NEWCFG=$(grep -vE '^(net[0-9]+|lock):' <<<"$NEWEXIST" | sed "s|^rootfs:.*|$NEWROOT|"
-             grep -E '^net[0-9]+:' <<<"$SRCCFG")
-  else
-    NEWCFG=$(grep -vE '^(rootfs|mp[0-9]+|unused[0-9]+|lock|parent|onboot):' <<<"$SRCCFG"; echo "$NEWROOT"; echo "onboot: 0")
-    rsh "$DST" "test -f /etc/pve/nodes/$DSTN/lxc/$NEW.conf" && die "a config for $NEW appeared on $DSTN meanwhile - not overwriting"
-  fi
-  # The old container keeps its network, so it must not be startable while the
-  # new one exists: lock it first, and only then give the new one a config.
-  rsh "$SRC" "pct set $CTID --lock migrate" || die "could not lock CT $CTID on $SRCN - no config written for $NEW"
+  # Same IP and MAC as the old one once somebody moves it onto the real
+  # bridges: the old id is locked first, so the two cannot both come up.
+  rsh "$SRC" "pct set $CTID --lock migrate" || die "could not lock CT $CTID on $SRCN - the data is copied, config not touched"
   _st=$(rsh "$SRC" "pct status $CTID" | awk '{print $2}')
-  [[ "$_st" == stopped ]] || die "CT $CTID is '$_st' on $SRCN after the copy - somebody started it. No config written for $NEW"
-  printf '%s\n' "$NEWCFG" | wsh "$DST" "cat > /etc/pve/nodes/$DSTN/lxc/$NEW.conf" || die "could not write the config for $NEW on $DSTN"
-  [[ "$(rsh "$DST" "cat /etc/pve/nodes/$DSTN/lxc/$NEW.conf")" == "$NEWCFG" ]] || die "the config for $NEW on $DSTN does not read back as sent"
+  [[ "$_st" == stopped ]] || die "CT $CTID is '$_st' on $SRCN after the copy - somebody started it"
+  new_cfg_once
 fi
 rm -f "$VOLF" "$SIZEF" "$SECF"
 
@@ -431,6 +438,7 @@ if [[ "$NEW" == "$CTID" ]]; then
   log "    ssh root@$SRC 'cat > /etc/pve/nodes/$SRCN/lxc/$CTID.conf' < $STATE/ct-move-$CTID.conf.orig"
   log "    ssh root@$SRC pct start $CTID"
 else
+  grep -q "bridge=$MOCK" <<<"$NEWEXIST" && log "  network:   $NEW is still on $MOCK - put its real bridges in before pct start"
   log "  CT $CTID on $SRCN: data untouched, stopped, lock: migrate (same IP/MAC as $NEW - never run both)"
   log "  once $NEW is verified, days later: ssh root@$SRC 'pct unlock $CTID && pct destroy $CTID'"
   log "  rollback (anything written in $NEW after start is lost):"
