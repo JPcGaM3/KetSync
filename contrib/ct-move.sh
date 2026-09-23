@@ -354,6 +354,7 @@ new_cfg_once(){
 
 # ---------------------------------------------------------------- the copy
 PROG=""; [ -t 1 ] && PROG="--info=progress2"
+[[ -z "$PROG" ]] && log "no terminal: rsync progress is not shown, only the result at the end (run it in tmux to watch)"
 RSYNC="rsync -aHAX --numeric-ids --sparse --inplace -x --delete --modify-window=-1 --stats $PROG \
   --bwlimit=${BW}m --exclude='/proc/*' --exclude='/sys/*' --exclude='/dev/*' --exclude='/run/*' \
   --exclude='/tmp/*' --exclude='/lost+found' --exclude='/.zfs' -e 'ssh -o BatchMode=yes' \
@@ -380,8 +381,14 @@ log "copy rc=$rc in $(( secs / 60 ))m$(( secs % 60 ))s (changed: ${_lit:-?})"
 
 if (( ! FINAL )); then
   if [[ $rc -eq 0 || $rc -eq 24 ]]; then
+    _first=0; [[ -s "$SECF" ]] || _first=1
     printf '%s\n' "$secs" > "$SECF"
     [[ "$NEW" != "$CTID" ]] && new_cfg_once
+    if (( _first )); then
+      log "presync OK - that was the FIRST, full copy; it says nothing about --final."
+      log "  run presync again: a round over an existing copy is what --final repeats, and ITS time is the estimate."
+      exit 0
+    fi
     log "presync OK. estimate for --final: about $(( secs / 60 ))m$(( secs % 60 ))s of copy while the CT is down"
     log "  (plus the time to stop the service cleanly and to start it again). run presync again close to"
     log "  the cutover so the last delta is small."
