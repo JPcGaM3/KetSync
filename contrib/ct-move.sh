@@ -399,7 +399,7 @@ PROG=""; [ -t 1 ] && PROG="--info=progress2"
 [[ -z "$PROG" ]] && log "no terminal: rsync progress is not shown, only the result at the end (run it in tmux to watch)"
 RSYNC="rsync -aHAX --numeric-ids --sparse --inplace -x --delete --modify-window=-1 --stats $PROG \
   --bwlimit=${BW}m --exclude='/proc/*' --exclude='/sys/*' --exclude='/dev/*' --exclude='/run/*' \
-  --exclude='/tmp/*' --exclude='/lost+found' --exclude='/.zfs' -e 'ssh -o BatchMode=yes' \
+  --exclude='/tmp/*' --exclude='/lost+found' --exclude='/.zfs' -e '$SSH_DATA' \
   'root@$SRC:$SRCPATH/' '$MNT/'"
 RSL=(-aHAX --numeric-ids --sparse --inplace -x --delete --modify-window=-1 --stats ${PROG:+"$PROG"}
   "--bwlimit=${BW}m" '--exclude=/proc/*' '--exclude=/sys/*' '--exclude=/dev/*' '--exclude=/run/*'
