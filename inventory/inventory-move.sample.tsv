@@ -1,0 +1,7 @@
+# contrib/ct-move-all.sh - one CT per row, whitespace separated. No defaults.
+#   old_node  old_ctid  new_ctid  new_node  storage(on new_node)  [zfs=k=v,k=v]  [free text]
+# zfs= is used only on a row's first round (recordsize affects new writes only).
+# A storage that is one of the storage node's own pools (SRC_STORAGES in
+# conf/ctmig.conf) is skipped here - put that row in inventory-migrate.tsv.
+10.100.1.27  192  271  10.100.1.33  local-ssd  zfs=recordsize=16K,compression=lz4,atime=off  (a MySQL/InnoDB CT)
+10.100.1.24  160  301  10.100.1.29  ssd-raid5  (dev-staff-core-api)

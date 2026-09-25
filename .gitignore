@@ -12,6 +12,7 @@
 /inventory/inventory-migrate.tsv
 /inventory/inventory-replica.tsv
 /inventory/bridgemap.tsv
+/inventory/inventory-move.tsv
 /engines/inventory-migrate.tsv
 /engines/inventory-replica.tsv
 /engines/bridgemap.tsv
