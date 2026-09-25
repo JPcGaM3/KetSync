@@ -131,7 +131,15 @@ DSTN=$(rsh "$DST" 'basename "$(readlink /etc/pve/local)"') || DSTN=""
 # ---------------------------------------------------------------- the source
 SRCCFG=$(rsh "$SRC" "cat /etc/pve/nodes/$SRCN/lxc/$CTID.conf") \
   || die "CT $CTID has no config on $SRCN ($SRC)"
-grep -q '^\[' <<<"$SRCCFG" && die "CT $CTID has snapshots in its config - this script does not carry them"
+if grep -q '^\[' <<<"$SRCCFG"; then
+  # Same as ketsync migrate: only the live rootfs moves, never the snapshots,
+  # so a new id gets the current config and nothing below the first [section].
+  # Keeping the SAME id would carry snapshot sections that point at volumes
+  # left behind on the old storage - refused.
+  [[ "$NEW" != "$CTID" ]] || die "CT $CTID has snapshots - with the same id they would travel pointing at the old storage; use a different --dst-ctid or remove them"
+  log "NOTE: CT $CTID has snapshots ($(grep -c '^\[' <<<"$SRCCFG")) - they stay on $SRCN; only the current rootfs moves"
+  SRCCFG=$(sed '/^\[/,$d' <<<"$SRCCFG")
+fi
 grep -qE '^mp[0-9]+:' <<<"$SRCCFG" && die "CT $CTID has mount points (mpN) - this script moves the rootfs only"
 _lk=$(sed -n 's/^lock:[[:space:]]*//p' <<<"$SRCCFG")
 if [[ -n "$_lk" ]]; then
