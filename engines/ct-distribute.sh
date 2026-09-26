@@ -161,6 +161,31 @@ set -uo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
+# bssh: ssh, with the remote command run by bash whatever root's login shell
+# is. ssh hands its command string to the LOGIN shell, and a node whose root
+# logs into zsh (pve-r33, 2026-09) reads it differently in exactly the way that
+# turns a failing check into a pass: an unmatched glob aborts the whole command
+# (`ls /etc/pve/nodes/*/lxc/<id>.conf` answers nothing = "that id is free"), and
+# an unquoted $var is not split (a port loop sees one word = "no uplink"). The
+# team keeps zsh, so every remote command goes through here instead. The
+# command is single-quoted for the login shell, which sh, bash and zsh all read
+# the same way; exec keeps its exit status and its stdin. Options pass through
+# untouched, and a call with no command (`ssh -O exit`) is plain ssh. This
+# function is identical in every file that has it - tests/remote-bash checks.
+bssh(){
+  local a=() c
+  while (( $# )); do
+    case "$1" in
+      -[BbcDEeFIiJLlmOoPpQRSWw]) a+=("$1" "${2-}"); shift; (( $# )) && shift;;
+      -*) a+=("$1"); shift;;
+      *)  break;;
+    esac
+  done
+  (( $# > 1 )) || { ssh "${a[@]}" "$@"; return; }
+  a+=("$1"); shift; c="$*"
+  ssh "${a[@]}" "exec bash -c '${c//\'/\'\\\'\'}'"
+}
+
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="$BASE/ctrep.conf"
 INV="$BASE/inventory-replica.tsv"
@@ -220,8 +245,13 @@ MOCKNET_BRIDGE=vmbr99            # the isolated bridge with NO uplink. Same knob
                                  # whether a running production CT has been moved
                                  # onto it, which is the one way it stops being a
                                  # second machine on the customer's address
+# Replication's budget, kept because ctrep.conf is shared and the keys are
+# still integer-checked below; distribute itself spends DIST_BW_MB instead.
+# shellcheck disable=SC2034
 BW_TOTAL_MB=230
+# shellcheck disable=SC2034
 LANES=1
+# shellcheck disable=SC2034
 BW_MIN_MB=20
 DIST_BW_MB=0                     # distribute's OWN ceiling, MiB/s; 0 = no limit.
                                  # BW_TOTAL_MB/LANES above is replication's budget
@@ -605,7 +635,7 @@ dst_lock_file(){ printf '/run/ketsync-ct-%s.lock' "$1"; }
 # volume for a container that already has one somewhere.
 take_dst_lock(){   # $1 = ssh destination, $2 = vmid
   local f out; f="$(dst_lock_file "$2")"; DST_LOCK_WHO=""
-  out=$(ssh $SSH_OPT "$1" \
+  out=$(bssh $SSH_OPT "$1" \
     "if (set -C; printf '%s\n' '$DST_LOCK_OWNER' > '$f') 2>/dev/null; then echo KETSYNC_LOCK_TAKEN; else echo KETSYNC_LOCK_HELD; cat '$f' 2>/dev/null; fi" \
     </dev/null 2>/dev/null)
   case "$out" in
@@ -620,7 +650,7 @@ take_dst_lock(){   # $1 = ssh destination, $2 = vmid
 release_dst_lock(){
   [[ -n "$DST_LOCK_ID" ]] || return 0
   local f; f="$(dst_lock_file "$DST_LOCK_ID")"
-  ssh $SSH_OPT "$DST_LOCK_HOST" \
+  bssh $SSH_OPT "$DST_LOCK_HOST" \
       "grep -qxF '$DST_LOCK_OWNER' '$f' 2>/dev/null && rm -f '$f'" \
       </dev/null >/dev/null 2>&1 || true
   DST_LOCK_HOST=""; DST_LOCK_ID=""
@@ -630,7 +660,7 @@ release_dst_lock(){
 # an unreachable target reads exactly like a free lock.
 peek_dst_lock(){   # $1 = ssh destination, $2 = vmid -> 0 free, 1 held, 2 no answer
   local out rc; DST_LOCK_WHO=""
-  out=$(ssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
+  out=$(bssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
   (( rc == 0 )) || return 2
   [[ -n "$out" ]] || return 0
   DST_LOCK_WHO="$(printf '%s\n' "$out" | sed -n '1p')"
@@ -671,7 +701,7 @@ trap 'on_signal TERM 15' TERM
 # which is the authoritative identity - safer than hostname, which can drift
 # from it after a badly done rename. Every path this engine reads on the backup
 # node is built from it.
-_bknode=$(ssh $SSH_OPT "$BKP_SSH" 'readlink /etc/pve/local 2>/dev/null | sed "s|.*/||"' \
+_bknode=$(bssh $SSH_OPT "$BKP_SSH" 'readlink /etc/pve/local 2>/dev/null | sed "s|.*/||"' \
           </dev/null 2>/dev/null | head -1)
 if [[ -z "$_bknode" ]]; then
   log "ERROR: cannot read the PVE node identity of $BKP_SSH - NOTHING was run"
@@ -707,7 +737,7 @@ storage_of(){  # $1 = production ctid -> the storage to place it on, or empty
 }
 
 # ---------- remote helpers, all against ONE machine at a time ---------------
-rsh(){ ssh $SSH_OPT "root@$1" "${@:2}" </dev/null 2>/dev/null; }
+rsh(){ bssh $SSH_OPT "root@$1" "${@:2}" </dev/null 2>/dev/null; }
 
 # `pvesm status -storage <id>` on the target, as fields. This is the whole
 # storage abstraction's read half: one uniform way to ask any storage type
@@ -1394,7 +1424,7 @@ do_ct(){   # $1 = production ctid
   fi
   newcfg=$(printf '%s\n' "$newcfg"; printf '# ct-distribute: temporary DR copy of CT %s, from %s on %s\n' "$ct" "$CT_SRC" "$BKP_NODE")
   CT_CFG="/etc/pve/nodes/$CT_TONODE/lxc/$CT_DR.conf"
-  if ! printf '%s\n' "$newcfg" | ssh $SSH_OPT "root@$CT_TO" "cat > '$CT_CFG'" 2>/dev/null; then
+  if ! printf '%s\n' "$newcfg" | bssh $SSH_OPT "root@$CT_TO" "cat > '$CT_CFG'" 2>/dev/null; then
     log "[$ct] ERROR: could not write $CT_CFG on $CT_TONODE"
     st_fail "$ct" cfg_write; return 1
   fi

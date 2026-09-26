@@ -49,7 +49,9 @@ IMAGE="${TP_GATE_IMAGE:-debian:bookworm}"
 # that skips half of itself is the kind of quiet pass this repo exists to
 # prevent. git is deliberately NOT in this list: the suites do not use it, and
 # leaving it out is what proves that.
-PKGS="shellcheck rsync perl make python3-pytest python3-jsonschema"
+# zsh is here for tests/remote-bash: its zsh half skips without one, and the
+# zsh half is the one that reproduces what a zsh login shell did on pve-r33.
+PKGS="shellcheck rsync perl make python3-pytest python3-jsonschema zsh"
 
 TARGETS=("$@")
 [[ ${#TARGETS[@]} -eq 0 ]] && TARGETS=(lint test mutation)

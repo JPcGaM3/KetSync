@@ -155,6 +155,31 @@ set -uo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
+# bssh: ssh, with the remote command run by bash whatever root's login shell
+# is. ssh hands its command string to the LOGIN shell, and a node whose root
+# logs into zsh (pve-r33, 2026-09) reads it differently in exactly the way that
+# turns a failing check into a pass: an unmatched glob aborts the whole command
+# (`ls /etc/pve/nodes/*/lxc/<id>.conf` answers nothing = "that id is free"), and
+# an unquoted $var is not split (a port loop sees one word = "no uplink"). The
+# team keeps zsh, so every remote command goes through here instead. The
+# command is single-quoted for the login shell, which sh, bash and zsh all read
+# the same way; exec keeps its exit status and its stdin. Options pass through
+# untouched, and a call with no command (`ssh -O exit`) is plain ssh. This
+# function is identical in every file that has it - tests/remote-bash checks.
+bssh(){
+  local a=() c
+  while (( $# )); do
+    case "$1" in
+      -[BbcDEeFIiJLlmOoPpQRSWw]) a+=("$1" "${2-}"); shift; (( $# )) && shift;;
+      -*) a+=("$1"); shift;;
+      *)  break;;
+    esac
+  done
+  (( $# > 1 )) || { ssh "${a[@]}" "$@"; return; }
+  a+=("$1"); shift; c="$*"
+  ssh "${a[@]}" "exec bash -c '${c//\'/\'\\\'\'}'"
+}
+
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="$BASE/ctrep.conf"
 INV="$BASE/inventory-replica.tsv"
@@ -513,7 +538,7 @@ dst_lock_file(){ printf '/run/ketsync-ct-%s.lock' "$1"; }
 # into one rootfs, which is the whole reason this exists.
 take_dst_lock(){   # $1 = ssh destination, $2 = vmid
   local f out; f="$(dst_lock_file "$2")"; DST_LOCK_WHO=""
-  out=$(ssh $SSH_OPT "$1" \
+  out=$(bssh $SSH_OPT "$1" \
     "if (set -C; printf '%s\n' '$DST_LOCK_OWNER' > '$f') 2>/dev/null; then echo KETSYNC_LOCK_TAKEN; else echo KETSYNC_LOCK_HELD; cat '$f' 2>/dev/null; fi" \
     </dev/null 2>/dev/null)
   case "$out" in
@@ -534,7 +559,7 @@ release_dst_locks(){
   for (( i = ${#DST_LOCKS[@]} - 1; i >= 0; i-- )); do
     IFS='	' read -r h v <<<"${DST_LOCKS[$i]}"
     f="$(dst_lock_file "$v")"
-    ssh $SSH_OPT "$h" \
+    bssh $SSH_OPT "$h" \
         "grep -qxF '$DST_LOCK_OWNER' '$f' 2>/dev/null && rm -f '$f'" \
         </dev/null >/dev/null 2>&1 || true
   done
@@ -545,7 +570,7 @@ release_dst_locks(){
 # an unreachable end reads exactly like a free lock.
 peek_dst_lock(){   # $1 = ssh destination, $2 = vmid -> 0 free, 1 held, 2 no answer
   local out rc; DST_LOCK_WHO=""
-  out=$(ssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
+  out=$(bssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
   (( rc == 0 )) || return 2
   [[ -n "$out" ]] || return 0
   DST_LOCK_WHO="$(printf '%s\n' "$out" | sed -n '1p')"
@@ -583,7 +608,7 @@ trap 'on_signal INT 2' INT
 trap 'on_signal TERM 15' TERM
 
 # ---------- remote helpers, all against ONE machine at a time ---------------
-rsh(){ ssh $SSH_OPT "root@$1" "${@:2}" </dev/null 2>/dev/null; }
+rsh(){ bssh $SSH_OPT "root@$1" "${@:2}" </dev/null 2>/dev/null; }
 
 # A `#` line in a PVE guest config is not a comment. It is the guest's
 # DESCRIPTION field, PVE owns it, and PVE re-emits it URL-encoded every time it
@@ -605,7 +630,7 @@ pve_decode(){
 # which is the authoritative identity - safer than hostname, which can drift
 # from it after a badly done rename. Every path this engine writes on the
 # backup node is built from it, and every cluster question goes through it.
-_bknode=$(ssh $SSH_OPT "$BKP_SSH" 'readlink /etc/pve/local 2>/dev/null | sed "s|.*/||"' \
+_bknode=$(bssh $SSH_OPT "$BKP_SSH" 'readlink /etc/pve/local 2>/dev/null | sed "s|.*/||"' \
           </dev/null 2>/dev/null | head -1)
 if [[ -z "$_bknode" ]]; then
   log "ERROR: cannot read the PVE node identity of $BKP_SSH - NOTHING was run"

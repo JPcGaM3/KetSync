@@ -217,7 +217,7 @@ mutant "the net lines never reach the written config" \
   1
 
 mutant "the written config is never read back" \
-  's{\Q&& [[ "\E\$\Q(ssh \E\$SSHOPT\Q "root@\E\$new_node\Q" "cat /etc/pve/lxc/\E\$new_ctid\Q.conf" </dev/null 2>/dev/null)" == "\E\$newcfg\Q" ]]\E}{}' \
+  's{\Q&& [[ "\E\$\Q(bssh \E\$SSHOPT\Q "root@\E\$new_node\Q" "cat /etc/pve/lxc/\E\$new_ctid\Q.conf" </dev/null 2>/dev/null)" == "\E\$newcfg\Q" ]]\E}{}' \
   52
 
 mutant "mkfs may fail without anybody noticing" \
@@ -507,6 +507,24 @@ mutant "the busy answer is thrown away - flock -n says no and the write happens 
 mutant "the stats label is anchored to the line start - every transfer reads as zeros" \
   's{\Q"s/.*\E\$\Q1: *\E}{"s/^\$1: *}' \
   1 74
+
+# ---------- bssh: every remote command runs under bash -------------------------
+# ssh hands its command to root's LOGIN shell, and pve-r33's is zsh: an
+# unmatched glob aborts the command and an unquoted $var is not split, both of
+# which read as a pass. Every fake ssh refuses a command that is not wrapped
+# (tests/sim/remote-bash.sh), so these die in the first scenario that talks to
+# another machine - which is the point: no scenario has to remember to check.
+mutant "bssh hands the command to the login shell unwrapped" \
+  's{\Q  ssh "\E\$\Q{a[\E\@\Q]}" "exec bash -c \E[^\n]*}{  ssh "\${a[\@]}" "\$c"}' \
+  1
+
+mutant "bssh stops escaping single quotes - the login shell re-splits the command" \
+  's!\$\{c//[^}]*\}!\$c!' \
+  4b
+
+mutant "the new-id existence check goes back to plain ssh" \
+  's{\Q  if bssh \E\$\QSSHOPT "root@\E\$\Qnew_node" "test -f\E}{  if ssh \$SSHOPT "root\@\$new_node" "test -f}' \
+  1
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

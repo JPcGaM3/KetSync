@@ -612,6 +612,24 @@ PERL
 mutant "an unanswered enumeration reads as an empty one - the WARN never fires" "$prog" 79
 
 
+# ---------- bssh: every remote command runs under bash -------------------------
+# ssh hands its command to root's LOGIN shell, and pve-r33's is zsh: an
+# unmatched glob aborts the command and an unquoted $var is not split, both of
+# which read as a pass. Every fake ssh refuses a command that is not wrapped
+# (tests/sim/remote-bash.sh), so these die in the first scenario that talks to
+# another machine - which is the point: no scenario has to remember to check.
+mutant "bssh hands the command to the login shell unwrapped" \
+  's{\Q  ssh "\E\$\Q{a[\E\@\Q]}" "exec bash -c \E[^\n]*}{  ssh "\${a[\@]}" "\$c"}' \
+  1
+
+mutant "bssh stops escaping single quotes - the login shell re-splits the command" \
+  's!\$\{c//[^}]*\}!\$c!' \
+  1
+
+mutant "the config lookup goes back to plain ssh - on zsh its glob aborts and reads as no config" \
+  's{\Q  cfgpath=\E\$\Q(bssh \E}{  cfgpath=\$(ssh }' \
+  1
+
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="
 if (( FAIL > 0 )); then echo "survived: ${FAILED_NAMES[*]}"; exit 1; fi

@@ -606,7 +606,7 @@ mutant "snapdir is made visible, and PBS walks into .zfs/shares" \
 # is free to fail: the old copy is still the one the config boots. Reversed,
 # the same commands are a customer's DR copy gone.
 mutant "the old dataset is removed before anything points away from it" \
-  's{\Q  log "[\E\$CT\Q] MOVE: \E\$onew\Q verified: mounted\E}{  ssh \$SSH_OPT "\$BKP_SSH" "zfs destroy -r \x27\$ofrom\x27" </dev/null >>"\$LOG" 2>\&1\n  log "[\$CT] MOVE: \$onew verified: mounted}' \
+  's{\Q  log "[\E\$CT\Q] MOVE: \E\$onew\Q verified: mounted\E}{  bssh \$SSH_OPT "\$BKP_SSH" "zfs destroy -r \x27\$ofrom\x27" </dev/null >>"\$LOG" 2>\&1\n  log "[\$CT] MOVE: \$onew verified: mounted}' \
   95
 
 mutant "a send that failed reads as a move that finished" \
@@ -629,7 +629,7 @@ mutant "two dest ids for one dataset are read as a real move" \
   107
 
 mutant "a dataset already sitting at the destination is written over" \
-  's!\Q  if ssh \E\$SSH_OPT\Q "\E\$BKP_SSH\Q" "zfs list -H -o name \E\x27\Q\E\$\Qonew\E\x27\Q" </dev/null >/dev/null 2>&1; then\E!  if false; then!' \
+  's!\Q  if bssh \E\$SSH_OPT\Q "\E\$BKP_SSH\Q" "zfs list -H -o name \E\x27\Q\E\$\Qonew\E\x27\Q" </dev/null >/dev/null 2>&1; then\E!  if false; then!' \
   99
 
 mutant "the verification compares nothing, so a short receive passes" \
@@ -680,7 +680,7 @@ mutant "a conf that half-reads runs on defaults, the way it used to" \
 # config and no lock line while bytes move is a violation, and every mutation
 # here is a way that window silently reopens.
 mutant "the copy is never locked, and a mid-round backup archives a torn rootfs" \
-  's{\Q    if ssh \E\$SSH_OPT\Q "\E\$BKP_SSH\Q" "pct set \E\$TGT\Q --lock disk" </dev/null >>"\E\$LOG\Q" 2>&1; then\E}{    if ssh \$SSH_OPT "\$BKP_SSH" "true" </dev/null >>"\$LOG" 2>\&1; then}' \
+  's{\Q    if bssh \E\$SSH_OPT\Q "\E\$BKP_SSH\Q" "pct set \E\$TGT\Q --lock disk" </dev/null >>"\E\$LOG\Q" 2>&1; then\E}{    if bssh \$SSH_OPT "\$BKP_SSH" "true" </dev/null >>"\$LOG" 2>\&1; then}' \
   110
 
 mutant "the lock outlives the round, so the NEXT backup of the copy fails too" \
@@ -821,6 +821,24 @@ s{\Q    [[ "\E\$pat\Q" == */ ]] || continue\E}{    :}
 PERL
 )
 mutant "every exclude pattern is treated as a directory, so /tmp/* invents a directory" "$prog" 123
+
+# ---------- bssh: every remote command runs under bash -------------------------
+# ssh hands its command to root's LOGIN shell, and pve-r33's is zsh: an
+# unmatched glob aborts the command and an unquoted $var is not split, both of
+# which read as a pass. Every fake ssh refuses a command that is not wrapped
+# (tests/sim/remote-bash.sh), so these die in the first scenario that talks to
+# another machine - which is the point: no scenario has to remember to check.
+mutant "bssh hands the command to the login shell unwrapped" \
+  's{\Q  ssh "\E\$\Q{a[\E\@\Q]}" "exec bash -c \E[^\n]*}{  ssh "\${a[\@]}" "\$c"}' \
+  1
+
+mutant "bssh stops escaping single quotes - the login shell re-splits the command" \
+  's!\$\{c//[^}]*\}!\$c!' \
+  1
+
+mutant "the R9 uplink probe goes back to plain ssh - on zsh its port loop sees one word" \
+  's{\Q  _r9=\E\$\Q(bssh \E}{  _r9=\$(ssh }' \
+  1
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

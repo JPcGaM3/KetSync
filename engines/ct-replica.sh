@@ -221,6 +221,31 @@ set -uo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
+# bssh: ssh, with the remote command run by bash whatever root's login shell
+# is. ssh hands its command string to the LOGIN shell, and a node whose root
+# logs into zsh (pve-r33, 2026-09) reads it differently in exactly the way that
+# turns a failing check into a pass: an unmatched glob aborts the whole command
+# (`ls /etc/pve/nodes/*/lxc/<id>.conf` answers nothing = "that id is free"), and
+# an unquoted $var is not split (a port loop sees one word = "no uplink"). The
+# team keeps zsh, so every remote command goes through here instead. The
+# command is single-quoted for the login shell, which sh, bash and zsh all read
+# the same way; exec keeps its exit status and its stdin. Options pass through
+# untouched, and a call with no command (`ssh -O exit`) is plain ssh. This
+# function is identical in every file that has it - tests/remote-bash checks.
+bssh(){
+  local a=() c
+  while (( $# )); do
+    case "$1" in
+      -[BbcDEeFIiJLlmOoPpQRSWw]) a+=("$1" "${2-}"); shift; (( $# )) && shift;;
+      -*) a+=("$1"); shift;;
+      *)  break;;
+    esac
+  done
+  (( $# > 1 )) || { ssh "${a[@]}" "$@"; return; }
+  a+=("$1"); shift; c="$*"
+  ssh "${a[@]}" "exec bash -c '${c//\'/\'\\\'\'}'"
+}
+
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # folder is relocatable
 INV="$BASE/inventory-replica.tsv"
 CONF="$BASE/ctrep.conf"
@@ -702,7 +727,7 @@ fi
 # step fails ("No such file or directory" writing the copy config) - or worse,
 # if the name happens to be another cluster member, the write SUCCEEDS and the
 # copies appear on a compute node.
-_bkinfo=$(ssh $SSH_OPT "$BKP_SSH" \
+_bkinfo=$(bssh $SSH_OPT "$BKP_SSH" \
   'readlink /etc/pve/local 2>/dev/null | sed "s|.*/||;s|^|NODE=|"
    ls -1 /etc/pve/nodes 2>/dev/null | tr "\n" " " | sed "s|^|NODES=|"' \
   </dev/null 2>/dev/null)
@@ -742,7 +767,7 @@ fi
 # /bonding, and this guard would have called that bridge isolated while it
 # reached the wire. list-ifaces returns the members themselves.
 if (( MOCKNET )); then
-  _r9=$(ssh $SSH_OPT "$BKP_SSH" "
+  _r9=$(bssh $SSH_OPT "$BKP_SSH" "
     ip -br link show $MOCKNET_BRIDGE >/dev/null 2>&1 || { echo MISSING; exit 0; }
     ports=\$(ovs-vsctl --timeout=5 list-ifaces $MOCKNET_BRIDGE 2>/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2>/dev/null)
     for p in \$ports; do
@@ -1002,7 +1027,7 @@ dest_ready(){   # $1 = dest key
   local d="$1" sid st
   case "${DEST_OK[$d]:-}" in 1) return 0;; 0) return 1;; esac
   sid="$d"
-  st=$(ssh $SSH_OPT "$BKP_SSH" "pvesm status --storage $sid" </dev/null 2>/dev/null || true)
+  st=$(bssh $SSH_OPT "$BKP_SSH" "pvesm status --storage $sid" </dev/null 2>/dev/null || true)
   if printf '%s\n' "$st" | awk 'NR>1 && $3=="active"{f=1} END{exit !f}'; then
     DEST_OK[$d]=1; return 0
   fi
@@ -1123,7 +1148,7 @@ rs_progress(){  # stdin: rsync stdout+stderr (cron branch). $1 = the CT the line
 # transfer, where both are set and every other line is prefixed the same way.
 snap_after_green(){   # $1 = dataset on the backup node   $2 = snapshot name
   local ds="$1" sn="$2" out rc=0 l
-  out=$(ssh $SSH_OPT "$BKP_SSH" "
+  out=$(bssh $SSH_OPT "$BKP_SSH" "
     if zfs list -H -o name -t snapshot '$ds@$sn' >/dev/null 2>&1; then
       echo HAVE
     elif zfs snapshot '$ds@$sn'; then
@@ -1230,7 +1255,7 @@ move_copy_dest(){   # $1 = the dest the copy's config names TODAY
   # Nothing is ever written into a dataset this run did not create. A dataset
   # already sitting at the destination is either a copy somebody made or the
   # wreckage of a move that died, and both need eyes rather than a --force.
-  if ssh $SSH_OPT "$BKP_SSH" "zfs list -H -o name '$onew'" </dev/null >/dev/null 2>&1; then
+  if bssh $SSH_OPT "$BKP_SSH" "zfs list -H -o name '$onew'" </dev/null >/dev/null 2>&1; then
     log "[$CT] MOVE: $onew already exists on $BKP_NODE - refusing"
     log "[$CT] MOVE:   nothing here overwrites a dataset it did not create. If that is"
     log "[$CT] MOVE:   the wreckage of a move that died, look at it and then remove it:"
@@ -1247,7 +1272,7 @@ move_copy_dest(){   # $1 = the dest the copy's config names TODAY
   # its snapshots, which is what -R sends; compression can move the real figure
   # either way, so this is a floor and not a promise, and zfs recv remains the
   # actual test.
-  read -r _mvneed _mvfree < <(ssh $SSH_OPT "$BKP_SSH" "
+  read -r _mvneed _mvfree < <(bssh $SSH_OPT "$BKP_SSH" "
       zfs list -Hp -o used '$ofrom' 2>/dev/null
       zfs list -Hp -o available '${DEST_DS[$DEST]}' 2>/dev/null" </dev/null 2>/dev/null | paste -sd' ')
   if [[ ! "${_mvneed:-}" =~ ^[0-9]+$ || ! "${_mvfree:-}" =~ ^[0-9]+$ ]]; then
@@ -1272,7 +1297,7 @@ move_copy_dest(){   # $1 = the dest the copy's config names TODAY
   # -R, not a plain send: it carries the ketsync-<date> snapshots too. Those
   # are the copy's history, and a move that silently dropped them would trade
   # a week of rollback points for a change of pool.
-  if ! ssh $SSH_OPT "$BKP_SSH" "
+  if ! bssh $SSH_OPT "$BKP_SSH" "
       set -o pipefail
       zfs snapshot '$ofrom@$snap' || exit 1
       zfs send -R '$ofrom@$snap' | zfs recv '$onew'
@@ -1290,10 +1315,10 @@ move_copy_dest(){   # $1 = the dest the copy's config names TODAY
     st_fail move_send; return 1
   fi
 
-  read -r nmounted nlogical < <(ssh $SSH_OPT "$BKP_SSH" \
+  read -r nmounted nlogical < <(bssh $SSH_OPT "$BKP_SSH" \
       "zfs get -H -o value mounted,logicalreferenced '$onew' 2>/dev/null | paste -sd' '" \
       </dev/null 2>/dev/null)
-  ologic=$(ssh $SSH_OPT "$BKP_SSH" \
+  ologic=$(bssh $SSH_OPT "$BKP_SSH" \
       "zfs get -H -o value logicalreferenced '$ofrom@$snap' 2>/dev/null" </dev/null 2>/dev/null)
   if [[ "${nmounted:-}" != yes ]]; then
     log "[$CT] MOVE: $onew is not mounted (mounted=${nmounted:-?}) - NOTHING was removed"
@@ -1316,8 +1341,8 @@ move_copy_dest(){   # $1 = the dest the copy's config names TODAY
   # the same reason R5 does it - a write cut short leaves a config nothing here
   # would ever rewrite.
   newcfg=$(printf '%s\n' "$tgtcfg" | sed -E "s#^(rootfs:[[:space:]]*)[^:]+:#\\1$DEST:#")
-  if printf '%s\n' "$newcfg" | ssh $SSH_OPT "$BKP_SSH" "cat > /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf" \
-     && [[ "$(ssh $SSH_OPT "$BKP_SSH" "cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf" </dev/null 2>/dev/null)" == "$newcfg" ]]; then
+  if printf '%s\n' "$newcfg" | bssh $SSH_OPT "$BKP_SSH" "cat > /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf" \
+     && [[ "$(bssh $SSH_OPT "$BKP_SSH" "cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf" </dev/null 2>/dev/null)" == "$newcfg" ]]; then
     log "[$CT] MOVE: copy config $TGT now boots from '$DEST'"
   else
     log "[$CT] MOVE: the config on $BKP_NODE does not match what was sent - STOPPING HERE"
@@ -1331,13 +1356,13 @@ move_copy_dest(){   # $1 = the dest the copy's config names TODAY
   # Only now. Everything above can fail without costing anything; this is the
   # one irreversible line in the whole command, and it runs after the config
   # has been written AND read back.
-  if ssh $SSH_OPT "$BKP_SSH" "zfs destroy -r '$ofrom'" </dev/null >>"$LOG" 2>&1; then
+  if bssh $SSH_OPT "$BKP_SSH" "zfs destroy -r '$ofrom'" </dev/null >>"$LOG" 2>&1; then
     log "[$CT] MOVE: removed the old dataset $ofrom"
   else
     log "[$CT] WARN: the old dataset $ofrom would not go. The move is DONE and correct -"
     log "[$CT] WARN:   this is space, not data: ssh $BKP_SSH 'zfs destroy -r $ofrom'"
   fi
-  ssh $SSH_OPT "$BKP_SSH" "zfs destroy '$onew@$snap'" </dev/null >>"$LOG" 2>&1 \
+  bssh $SSH_OPT "$BKP_SSH" "zfs destroy '$onew@$snap'" </dev/null >>"$LOG" 2>&1 \
     || log "[$CT] WARN: transfer snapshot $onew@$snap is still there - space, not correctness"
   log "[$CT] MOVE: done. $TGT is on '$DEST'; the next round syncs into it normally."
   st_ok; return 0
@@ -1460,7 +1485,7 @@ dst_lock_file(){ printf '/run/ketsync-ct-%s.lock' "$1"; }
 # return value and its own refusal rather than sharing "busy".
 take_dst_lock(){   # $1 = ssh destination, $2 = vmid
   local f out; f="$(dst_lock_file "$2")"; DST_LOCK_WHO=""
-  out=$(ssh $SSH_OPT "$1" \
+  out=$(bssh $SSH_OPT "$1" \
     "if (set -C; printf '%s\n' '$DST_LOCK_OWNER' > '$f') 2>/dev/null; then echo KETSYNC_LOCK_TAKEN; else echo KETSYNC_LOCK_HELD; cat '$f' 2>/dev/null; fi" \
     </dev/null 2>/dev/null)
   case "$out" in
@@ -1476,7 +1501,7 @@ take_dst_lock(){   # $1 = ssh destination, $2 = vmid
 release_dst_lock(){
   [[ -n "$DST_LOCK_ID" ]] || return 0
   local f; f="$(dst_lock_file "$DST_LOCK_ID")"
-  ssh $SSH_OPT "$DST_LOCK_HOST" \
+  bssh $SSH_OPT "$DST_LOCK_HOST" \
       "grep -qxF '$DST_LOCK_OWNER' '$f' 2>/dev/null && rm -f '$f'" \
       </dev/null >/dev/null 2>&1 || true
   DST_LOCK_HOST=""; DST_LOCK_ID=""
@@ -1487,7 +1512,7 @@ release_dst_lock(){
 # an unreachable destination reads exactly like a free lock.
 peek_dst_lock(){   # $1 = ssh destination, $2 = vmid -> 0 free, 1 held, 2 no answer
   local out rc; DST_LOCK_WHO=""
-  out=$(ssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
+  out=$(bssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
   (( rc == 0 )) || return 2
   [[ -n "$out" ]] || return 0
   DST_LOCK_WHO="$(printf '%s\n' "$out" | sed -n '1p')"
@@ -1506,7 +1531,7 @@ CUR_MNT=""
 CFG_LOCKED=""
 release_cfg_lock(){
   [[ -n "$CFG_LOCKED" ]] || return 0
-  ssh $SSH_OPT "$BKP_SSH" "pct unlock $CFG_LOCKED" </dev/null >>"$LOG" 2>&1 \
+  bssh $SSH_OPT "$BKP_SSH" "pct unlock $CFG_LOCKED" </dev/null >>"$LOG" 2>&1 \
     || log "[$CFG_LOCKED] WARN: pct unlock $CFG_LOCKED failed - the copy stays locked, vzdump will"
   CFG_LOCKED=""
 }
@@ -1614,7 +1639,7 @@ for CT in "${CTS[@]}"; do
             "$PREV_STATE" 2>/dev/null | tail -1)
 
   # --- source config from the CLUSTER (this node is not a member; bkp is) ---
-  cfgpath=$(ssh $SSH_OPT "$BKP_SSH" "ls /etc/pve/nodes/*/lxc/$CT.conf 2>/dev/null" </dev/null 2>/dev/null | head -1)
+  cfgpath=$(bssh $SSH_OPT "$BKP_SSH" "ls /etc/pve/nodes/*/lxc/$CT.conf 2>/dev/null" </dev/null 2>/dev/null | head -1)
   if [[ -z "$cfgpath" ]]; then
     log "[$CT] ERROR: no config for CT $CT anywhere in the cluster - skip"
     st_fail no_source_config; continue
@@ -1631,7 +1656,7 @@ for CT in "${CTS[@]}"; do
     st_fail source_is_backup; continue
   fi
   # strip snapshot sections ([snapname]...) before parsing anything
-  srccfg=$(ssh $SSH_OPT "$BKP_SSH" "cat $cfgpath" </dev/null 2>/dev/null | sed '/^\[/,$d')
+  srccfg=$(bssh $SSH_OPT "$BKP_SSH" "cat $cfgpath" </dev/null 2>/dev/null | sed '/^\[/,$d')
   if [[ -z "$srccfg" ]]; then
     log "[$CT] ERROR: cannot read $cfgpath - skip"
     st_fail source_config_unreadable; continue
@@ -1830,7 +1855,7 @@ for CT in "${CTS[@]}"; do
   fi
 
   # --- R2: never overwrite a copy that is RUNNING (DR promoted) ---
-  st=$(ssh $SSH_OPT "$BKP_SSH" "pct status $TGT 2>/dev/null" </dev/null 2>/dev/null | awk '{print $2}')
+  st=$(bssh $SSH_OPT "$BKP_SSH" "pct status $TGT 2>/dev/null" </dev/null 2>/dev/null | awk '{print $2}')
   if [[ "$st" == "running" ]]; then
     log "[$CT] GUARD R2: copy $TGT is RUNNING on $BKP_NODE (DR active?) - SKIP + check by hand"
     st_skip r2_running; continue
@@ -1860,7 +1885,7 @@ for CT in "${CTS[@]}"; do
   # matters during a long outage - and it clears itself the moment somebody
   # runs the `pct destroy 9<id>` that the DR guide already ends with.
   _dr=$(( CT + DR_OFFSET ))
-  _dract=$(ssh $SSH_OPT "$BKP_SSH" \
+  _dract=$(bssh $SSH_OPT "$BKP_SSH" \
       "ls /etc/pve/nodes/*/lxc/$_dr.conf 2>/dev/null" </dev/null 2>/dev/null | head -1)
   if [[ -n "$_dract" ]]; then
     log "[$CT] GUARD R13: CT $_dr exists - a DR placement for this container is live"
@@ -1888,7 +1913,7 @@ for CT in "${CTS[@]}"; do
   # guest's rootfs into ours. It is checked here, before anything is
   # transferred, and on every run rather than only on the first.
   _own="/etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf"
-  _owners=$(ssh $SSH_OPT "$BKP_SSH" \
+  _owners=$(bssh $SSH_OPT "$BKP_SSH" \
       "ls /etc/pve/nodes/*/lxc/$TGT.conf /etc/pve/nodes/*/qemu-server/$TGT.conf 2>/dev/null" \
       </dev/null 2>/dev/null | grep -vxF "$_own" || true)
   if [[ -n "$_owners" ]]; then
@@ -1901,7 +1926,7 @@ for CT in "${CTS[@]}"; do
 
   # --- R8: an existing copy config must agree with THIS row's dest ---
   # Read once here; reused at the bottom so config creation costs no extra ssh.
-  tgtcfg=$(ssh $SSH_OPT "$BKP_SSH" "cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf 2>/dev/null" </dev/null 2>/dev/null)
+  tgtcfg=$(bssh $SSH_OPT "$BKP_SSH" "cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf 2>/dev/null" </dev/null 2>/dev/null)
   # --move-dest moves a copy that EXISTS. With none there, there is nothing to
   # move and nothing to be confused about: a plain round makes one, on the pool
   # the row names, which is where the operator wanted it in the first place.
@@ -2010,18 +2035,18 @@ for CT in "${CTS[@]}"; do
   # would stop being tested.
   DRY_NO_DS=0
   if (( DRY )); then
-    if ! ssh $SSH_OPT "$BKP_SSH" "zfs list $TDS >/dev/null 2>&1" </dev/null >/dev/null 2>&1; then
+    if ! bssh $SSH_OPT "$BKP_SSH" "zfs list $TDS >/dev/null 2>&1" </dev/null >/dev/null 2>&1; then
       log "[$CT] DRY: would create dataset $TDS on $BKP_NODE (xattr=sa, acltype=posixacl)"
       DRY_NO_DS=1
     fi
-  elif ! ssh $SSH_OPT "$BKP_SSH" \
+  elif ! bssh $SSH_OPT "$BKP_SSH" \
       "zfs list $TDS >/dev/null 2>&1 || zfs create -o xattr=sa -o acltype=posixacl $TDS" \
       </dev/null >>"$LOG" 2>&1; then
     log "[$CT] ERROR: cannot prepare dataset $TDS on backup - skip"
     st_fail dataset_create; continue
   fi
   if (( ! DRY_NO_DS )); then
-    read -r tmounted tmnt < <(ssh $SSH_OPT "$BKP_SSH" \
+    read -r tmounted tmnt < <(bssh $SSH_OPT "$BKP_SSH" \
         "zfs get -H -o value mounted,mountpoint $TDS 2>/dev/null | paste -sd' '" </dev/null 2>/dev/null)
     if [[ "${tmounted:-}" != "yes" || -z "${tmnt:-}" || "$tmnt" == "none" ]]; then
       log "[$CT] GUARD R3: $TDS NOT MOUNTED on backup (mounted=${tmounted:-?}) - rsync would fill the backup ROOT fs - skip"
@@ -2077,7 +2102,7 @@ for CT in "${CTS[@]}"; do
   # config there is nothing vzdump could target.
   CFG_LOCKED=""
   if [[ -n "$tgtcfg" ]]; then
-    if ssh $SSH_OPT "$BKP_SSH" "pct set $TGT --lock disk" </dev/null >>"$LOG" 2>&1; then
+    if bssh $SSH_OPT "$BKP_SSH" "pct set $TGT --lock disk" </dev/null >>"$LOG" 2>&1; then
       CFG_LOCKED="$TGT"
     else
       # The race R15 cannot see: vzdump took the lock between R15's read and
@@ -2189,8 +2214,8 @@ for CT in "${CTS[@]}"; do
     # connection or a full /etc/pve leaves a half config, and R5 never rewrites
     # a config that exists - so the damage would be permanent and every later
     # run would report this CT as healthy. Verified once, here, is cheap.
-    if printf '%s\n' "$newcfg" | ssh $SSH_OPT "$BKP_SSH" "cat > /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf" \
-       && [[ "$(ssh $SSH_OPT "$BKP_SSH" "cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf" </dev/null 2>/dev/null)" == "$newcfg" ]]; then
+    if printf '%s\n' "$newcfg" | bssh $SSH_OPT "$BKP_SSH" "cat > /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf" \
+       && [[ "$(bssh $SSH_OPT "$BKP_SSH" "cat /etc/pve/nodes/$BKP_NODE/lxc/$TGT.conf" </dev/null 2>/dev/null)" == "$newcfg" ]]; then
       ST_CFG_PRESENT=1
       (( MOCKNET )) && ST_MOCKNET=1
       log "[$CT] INIT: created copy config $TGT on $BKP_NODE (dest=$DEST, onboot=0, stopped$( (( MOCKNET )) && echo ", net on $MOCKNET_BRIDGE tag ${MOCKNET_TAG:-<from source>}" ))"

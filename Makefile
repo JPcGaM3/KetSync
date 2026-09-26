@@ -28,11 +28,12 @@ SHIPPED := $(ROOT)/bin/ketsync $(ROOT)/lib/*.sh $(ROOT)/tools/*.sh \
 SIMS    := $(ROOT)/tests/sim/*/run-sim-*.sh $(ROOT)/tests/sim/*/lib.sh \
            $(ROOT)/tests/mutation/run-mutation-*.sh \
            $(ROOT)/tests/tp/run-tp.sh $(ROOT)/tests/c2v/run-c2v.sh \
+           $(ROOT)/tests/remote-bash/run-remote-bash.sh $(ROOT)/tests/sim/remote-bash.sh \
            $(ROOT)/tests/gates-in-docker.sh
 
 .DEFAULT_GOAL := help
 .PHONY: help lint syntax shellcheck no-thai log-sep \
-        test test-engines test-ketsync test-tp test-c2v \
+        test test-engines test-ketsync test-tp test-c2v test-remote-bash \
         test-migrate test-replica test-failback test-distribute test-recall test-prepare \
         mutation mutation-engines mutation-ketsync gates clean
 
@@ -62,7 +63,7 @@ log-sep:         ## every tool that logs also separates its operations
 	@$(ROOT)/tools/check-log-separator.sh
 
 # -- tests --------------------------------------------------------------------
-test: test-engines test-tp test-c2v test-ketsync  ## the real suite: everything
+test: test-remote-bash test-engines test-tp test-c2v test-ketsync  ## the real suite: everything
 	@echo
 	@echo "NOTE: ketsync role still has no simulator. sync, distribute, the"
 	@echo "      confirmation, doctor, recover, watch and mail-setup do. See"
@@ -88,6 +89,9 @@ test-tp:         ## the dispatcher: tp status, tp doctor, argument pass-through
 	@$(ROOT)/tests/tp/run-tp.sh
 test-c2v:        ## what both CT-to-VM phase-2 scripts write
 	@$(ROOT)/tests/c2v/run-c2v.sh
+
+test-remote-bash: ## every remote command runs under bash, whatever root's login shell is
+	@$(ROOT)/tests/remote-bash/run-remote-bash.sh
 
 test-ketsync:    ## the decision layer: sync, distribute, the confirmation, doctor, recover, watch, mail-setup, completion
 	@$(ROOT)/tests/sim/sync/run-sim-sync.sh

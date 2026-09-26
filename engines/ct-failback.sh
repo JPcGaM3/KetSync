@@ -142,6 +142,31 @@ set -uo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
+# bssh: ssh, with the remote command run by bash whatever root's login shell
+# is. ssh hands its command string to the LOGIN shell, and a node whose root
+# logs into zsh (pve-r33, 2026-09) reads it differently in exactly the way that
+# turns a failing check into a pass: an unmatched glob aborts the whole command
+# (`ls /etc/pve/nodes/*/lxc/<id>.conf` answers nothing = "that id is free"), and
+# an unquoted $var is not split (a port loop sees one word = "no uplink"). The
+# team keeps zsh, so every remote command goes through here instead. The
+# command is single-quoted for the login shell, which sh, bash and zsh all read
+# the same way; exec keeps its exit status and its stdin. Options pass through
+# untouched, and a call with no command (`ssh -O exit`) is plain ssh. This
+# function is identical in every file that has it - tests/remote-bash checks.
+bssh(){
+  local a=() c
+  while (( $# )); do
+    case "$1" in
+      -[BbcDEeFIiJLlmOoPpQRSWw]) a+=("$1" "${2-}"); shift; (( $# )) && shift;;
+      -*) a+=("$1"); shift;;
+      *)  break;;
+    esac
+  done
+  (( $# > 1 )) || { ssh "${a[@]}" "$@"; return; }
+  a+=("$1"); shift; c="$*"
+  ssh "${a[@]}" "exec bash -c '${c//\'/\'\\\'\'}'"
+}
+
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="$BASE/ctrep.conf"
 INV="$BASE/inventory-replica.tsv"
@@ -586,7 +611,7 @@ fi
 # uses the name to tell "a CT that lives on the backup node" (a copy, not a
 # source) from a production CT, and getting that backwards points a restore at
 # the wrong side of the transfer.
-_bknode=$(ssh $SSH_OPT "$BKP_SSH" 'readlink /etc/pve/local 2>/dev/null | sed "s|.*/||"' \
+_bknode=$(bssh $SSH_OPT "$BKP_SSH" 'readlink /etc/pve/local 2>/dev/null | sed "s|.*/||"' \
           </dev/null 2>/dev/null | head -1)
 if [[ -z "$_bknode" ]]; then
   log "ERROR: cannot read the PVE node identity of $BKP_SSH - NOTHING was run"
@@ -678,7 +703,7 @@ dst_lock_file(){ printf '/run/ketsync-ct-%s.lock' "$1"; }
 # writes a torn rootfs into production.
 take_dst_lock(){   # $1 = ssh destination, $2 = vmid
   local f out; f="$(dst_lock_file "$2")"; DST_LOCK_WHO=""
-  out=$(ssh $SSH_OPT "$1" \
+  out=$(bssh $SSH_OPT "$1" \
     "if (set -C; printf '%s\n' '$DST_LOCK_OWNER' > '$f') 2>/dev/null; then echo KETSYNC_LOCK_TAKEN; else echo KETSYNC_LOCK_HELD; cat '$f' 2>/dev/null; fi" \
     </dev/null 2>/dev/null)
   case "$out" in
@@ -693,7 +718,7 @@ take_dst_lock(){   # $1 = ssh destination, $2 = vmid
 release_dst_lock(){
   [[ -n "$DST_LOCK_ID" ]] || return 0
   local f; f="$(dst_lock_file "$DST_LOCK_ID")"
-  ssh $SSH_OPT "$DST_LOCK_HOST" \
+  bssh $SSH_OPT "$DST_LOCK_HOST" \
       "grep -qxF '$DST_LOCK_OWNER' '$f' 2>/dev/null && rm -f '$f'" \
       </dev/null >/dev/null 2>&1 || true
   DST_LOCK_HOST=""; DST_LOCK_ID=""
@@ -704,7 +729,7 @@ release_dst_lock(){
 # unreachable destination reads exactly like a free lock.
 peek_dst_lock(){   # $1 = ssh destination, $2 = vmid -> 0 free, 1 held, 2 no answer
   local out rc; DST_LOCK_WHO=""
-  out=$(ssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
+  out=$(bssh $SSH_OPT "$1" "cat '$(dst_lock_file "$2")' 2>/dev/null; exit 0" </dev/null 2>/dev/null); rc=$?
   (( rc == 0 )) || return 2
   [[ -n "$out" ]] || return 0
   DST_LOCK_WHO="$(printf '%s\n' "$out" | sed -n '1p')"
@@ -743,11 +768,11 @@ probe_ct(){
   CT_TGT="${TGT_MAP[$ct]}"; CT_DEST="${DEST_MAP[$ct]}"
   CT_NODE=""; CT_HOST=""; CT_SID=""; CT_VOL=""; CT_IMG=""; CT_PSTAT=""; CT_CSTAT=""
   CT_SRCDS="${DEST_DS[$CT_DEST]}/subvol-$CT_TGT-disk-0"
-  cfgpath=$(ssh $SSH_OPT "$BKP_SSH" "ls /etc/pve/nodes/*/lxc/$ct.conf 2>/dev/null" </dev/null 2>/dev/null | head -1)
+  cfgpath=$(bssh $SSH_OPT "$BKP_SSH" "ls /etc/pve/nodes/*/lxc/$ct.conf 2>/dev/null" </dev/null 2>/dev/null | head -1)
   [[ -n "$cfgpath" ]] || return 1
   CT_NODE="${cfgpath#/etc/pve/nodes/}"; CT_NODE="${CT_NODE%%/*}"
   [[ "$CT_NODE" != "$BKP_NODE" ]] || return 1
-  srccfg=$(ssh $SSH_OPT "$BKP_SSH" "cat $cfgpath" </dev/null 2>/dev/null | sed '/^\[/,$d')
+  srccfg=$(bssh $SSH_OPT "$BKP_SSH" "cat $cfgpath" </dev/null 2>/dev/null | sed '/^\[/,$d')
   CT_SID=$(printf '%s\n' "$srccfg" | sed -n 's/^rootfs:[[:space:]]*\([^:]*\):.*/\1/p' | head -1)
   CT_VOL=$(printf '%s\n' "$srccfg" | sed -n 's/^rootfs:[[:space:]]*[^:]*:\([^,]*\).*/\1/p' | head -1)
   [[ -n "$CT_SID" && -n "$CT_VOL" ]] || return 1
@@ -764,8 +789,8 @@ probe_ct(){
   # not exist. No map is not an error: the name is used as-is, exactly as this
   # engine always did, and --list says which nodes could not be reached.
   CT_HOST="$(node_ip "$CT_NODE")"; CT_HOST="${CT_HOST:-$CT_NODE}"
-  CT_PSTAT=$(ssh $SSH_OPT "root@$CT_HOST" "pct status $ct 2>/dev/null" </dev/null 2>/dev/null | awk '{print $2}')
-  CT_CSTAT=$(ssh $SSH_OPT "$BKP_SSH" "pct status $CT_TGT 2>/dev/null" </dev/null 2>/dev/null | awk '{print $2}')
+  CT_PSTAT=$(bssh $SSH_OPT "root@$CT_HOST" "pct status $ct 2>/dev/null" </dev/null 2>/dev/null | awk '{print $2}')
+  CT_CSTAT=$(bssh $SSH_OPT "$BKP_SSH" "pct status $CT_TGT 2>/dev/null" </dev/null 2>/dev/null | awk '{print $2}')
   return 0
 }
 
@@ -831,7 +856,7 @@ mk_excluded_dirs(){   # $1 = the copy's mount on the backup node, $2 = the mount
   # directory out of the list. `|| exit 0` on the cd: a copy with nothing to
   # put back is not an error. The ssh itself failing IS one - "could not ask"
   # must never read as "nothing there".
-  out=$(ssh $SSH_OPT "$BKP_SSH" "cd '$src' 2>/dev/null || exit 0; for d in $pats; do [ -d \"\$d\" ] && printf '%s\n' \"\$d\"; done; exit 0" </dev/null 2>/dev/null) || return 1
+  out=$(bssh $SSH_OPT "$BKP_SSH" "cd '$src' 2>/dev/null || exit 0; for d in $pats; do [ -d \"\$d\" ] && printf '%s\n' \"\$d\"; done; exit 0" </dev/null 2>/dev/null) || return 1
   while IFS= read -r d; do
     [[ -n "$d" ]] && args+=("$BKP_SSH:$src/./$d")
   done <<< "$out"
@@ -903,7 +928,7 @@ failback_one(){
       # window that grows with the length of the outage, in the hour when it
       # matters most.
       _dr=$(( ct + DR_OFFSET ))
-      _dract=$(ssh $SSH_OPT "$BKP_SSH" \
+      _dract=$(bssh $SSH_OPT "$BKP_SSH" \
           "ls /etc/pve/nodes/*/lxc/$_dr.conf 2>/dev/null" </dev/null 2>/dev/null | head -1)
       if [[ -n "$_dract" ]]; then
         log "[$ct] B2: copy $TGT is stopped, and CT $_dr is live - ct-replica R13 is holding"
@@ -948,7 +973,7 @@ failback_one(){
     st_write "$ct" failed b3_root_fs -1
     return 1
   fi
-  CT_SRCMNT=$(ssh $SSH_OPT "$BKP_SSH" "zfs get -H -o value mountpoint $CT_SRCDS 2>/dev/null" </dev/null 2>/dev/null)
+  CT_SRCMNT=$(bssh $SSH_OPT "$BKP_SSH" "zfs get -H -o value mountpoint $CT_SRCDS 2>/dev/null" </dev/null 2>/dev/null)
   if [[ -z "$CT_SRCMNT" || "$CT_SRCMNT" == "none" ]]; then
     log "[$ct] ERROR: cannot resolve the mountpoint of $CT_SRCDS on $BKP_NODE"
     st_write "$ct" failed src_mountpoint -1

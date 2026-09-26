@@ -168,6 +168,31 @@ set -uo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
+# bssh: ssh, with the remote command run by bash whatever root's login shell
+# is. ssh hands its command string to the LOGIN shell, and a node whose root
+# logs into zsh (pve-r33, 2026-09) reads it differently in exactly the way that
+# turns a failing check into a pass: an unmatched glob aborts the whole command
+# (`ls /etc/pve/nodes/*/lxc/<id>.conf` answers nothing = "that id is free"), and
+# an unquoted $var is not split (a port loop sees one word = "no uplink"). The
+# team keeps zsh, so every remote command goes through here instead. The
+# command is single-quoted for the login shell, which sh, bash and zsh all read
+# the same way; exec keeps its exit status and its stdin. Options pass through
+# untouched, and a call with no command (`ssh -O exit`) is plain ssh. This
+# function is identical in every file that has it - tests/remote-bash checks.
+bssh(){
+  local a=() c
+  while (( $# )); do
+    case "$1" in
+      -[BbcDEeFIiJLlmOoPpQRSWw]) a+=("$1" "${2-}"); shift; (( $# )) && shift;;
+      -*) a+=("$1"); shift;;
+      *)  break;;
+    esac
+  done
+  (( $# > 1 )) || { ssh "${a[@]}" "$@"; return; }
+  a+=("$1"); shift; c="$*"
+  ssh "${a[@]}" "exec bash -c '${c//\'/\'\\\'\'}'"
+}
+
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="$BASE/ctrep.conf"
 INV="$BASE/inventory-replica.tsv"
@@ -405,7 +430,7 @@ SSH_COMMON="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeo
 SSH_OPT="$SSH_COMMON -o ControlMaster=auto -o ControlPath=/run/ctprep-$$-%r@%h.sock -o ControlPersist=120"
 
 node_ip(){ awk -v n="$1" '$1!~/^#/ && $2==n{print $1; exit}' "$NODEMAP" 2>/dev/null; }
-rsh(){ ssh $SSH_OPT "root@$1" "${@:2}" </dev/null 2>/dev/null; }
+rsh(){ bssh $SSH_OPT "root@$1" "${@:2}" </dev/null 2>/dev/null; }
 
 # The bridge named by one net line. Split on commas and take the field, rather
 # than matching bridge=vmbr99 inside a string - which also matches vmbr990, and
@@ -791,7 +816,7 @@ do_isolate(){   # $1 = ctid
   for (( i = 0; i < ${#NETIDS[@]}; i++ )); do
     body="$body$(printf '\n%s\t%s' "${NETIDS[$i]}" "${NETBRS[$i]}")"
   done
-  if ! printf '%s\n' "$body" | ssh $SSH_OPT "root@$pip" \
+  if ! printf '%s\n' "$body" | bssh $SSH_OPT "root@$pip" \
         "mkdir -p $REC_DIR && cat > '$(rec_path "$ct")'" 2>/dev/null; then
     log "[$ct] ERROR: could not write $(rec_path "$ct") on $pn - NOTHING was moved"
     log "[$ct] ERROR:   that file is the only record of which bridge each interface came from."
@@ -1358,7 +1383,7 @@ do_evacuate(){   # $1 = node ip
     RECSTOP+=("$_pv")
   done <<< "$_prev"
   for _s in "${RECSTOP[@]}"; do body="$body$(printf '\nstopped\t%s' "$_s")"; done
-  if ! printf '%s\n' "$body" | ssh $SSH_OPT "root@$pip" \
+  if ! printf '%s\n' "$body" | bssh $SSH_OPT "root@$pip" \
         "mkdir -p $EVAC_DIR && cat > '$(evac_path "$pn")'" 2>/dev/null; then
     log "[$pip] ERROR: could not write $(evac_path "$pn") - NOTHING was disabled"
     log "[$pip] ERROR:   that file is the list of storages somebody has to switch back on."

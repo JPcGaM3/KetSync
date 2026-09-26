@@ -34,6 +34,11 @@ while (( $# )); do
 done
 [[ -n "$ctl" ]] && exit 0
 c="${cmd[*]:-}"
+# Unwrapped before anything reads it: see tests/sim/remote-bash.sh. A plain
+# `ssh host "cmd"` is refused here, in every scenario that reaches it.
+# shellcheck source=tests/sim/remote-bash.sh
+. "$SIMBIN/../../remote-bash.sh"
+require_remote_bash "$c" "$SIMROOT/violations"; c="$REMOTE_CMD"
 trace "ssh $host :: $(printf '%s' "$c" | tr '\n' ' ')"
 
 PVE="$SIMROOT/pve"

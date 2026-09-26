@@ -108,13 +108,32 @@ CIPHERS=$(sed -n 's/^SSH_CIPHERS=["]*\([^"# ]*\).*/\1/p' "$BASE/conf/ctmig.conf"
 SSH_DATA="ssh -o BatchMode=yes -o Compression=no${CIPHERS:+ -c $CIPHERS}"
 
 SSH_OPT="-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=6"
-# Every remote command runs under bash, whatever root's login shell is. pve-r33
-# logs root into zsh, where an unmatched glob aborts the whole command (the
-# "is this id free" ls came back empty = "free") and $var is not word-split
-# (the island-bridge uplink loop saw one port instead of several = "no
-# uplink"). Both failures read as a pass, so the shell is not left to chance.
-rsh(){ local h="$1"; shift; ssh $SSH_OPT "root@$h" "exec bash -c $(printf '%q' "$*")" </dev/null; }
-wsh(){ local h="$1"; shift; ssh $SSH_OPT "root@$h" "exec bash -c $(printf '%q' "$*")"; }   # stdin passes through
+# bssh: ssh, with the remote command run by bash whatever root's login shell
+# is. ssh hands its command string to the LOGIN shell, and a node whose root
+# logs into zsh (pve-r33, 2026-09) reads it differently in exactly the way that
+# turns a failing check into a pass: an unmatched glob aborts the whole command
+# (`ls /etc/pve/nodes/*/lxc/<id>.conf` answers nothing = "that id is free"), and
+# an unquoted $var is not split (a port loop sees one word = "no uplink"). The
+# team keeps zsh, so every remote command goes through here instead. The
+# command is single-quoted for the login shell, which sh, bash and zsh all read
+# the same way; exec keeps its exit status and its stdin. Options pass through
+# untouched, and a call with no command (`ssh -O exit`) is plain ssh. This
+# function is identical in every file that has it - tests/remote-bash checks.
+bssh(){
+  local a=() c
+  while (( $# )); do
+    case "$1" in
+      -[BbcDEeFIiJLlmOoPpQRSWw]) a+=("$1" "${2-}"); shift; (( $# )) && shift;;
+      -*) a+=("$1"); shift;;
+      *)  break;;
+    esac
+  done
+  (( $# > 1 )) || { ssh "${a[@]}" "$@"; return; }
+  a+=("$1"); shift; c="$*"
+  ssh "${a[@]}" "exec bash -c '${c//\'/\'\\\'\'}'"
+}
+rsh(){ local h="$1"; shift; bssh $SSH_OPT "root@$h" "$*" </dev/null; }
+wsh(){ local h="$1"; shift; bssh $SSH_OPT "root@$h" "$*"; }   # stdin passes through
 
 to_gib(){ awk -v s="$1" 'BEGIN{
   n=s+0; u=toupper(substr(s,length(s)));

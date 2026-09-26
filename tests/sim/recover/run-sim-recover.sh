@@ -188,6 +188,9 @@ scenario(){
   echo "  [$1]"; SFAIL=0; SNAME="${1%%:*}"; new_world; return 0
 }
 done_scenario(){
+  # the fake ssh's one standing refusal (tests/sim/remote-bash.sh): a remote
+  # command that did not go through bssh fails the scenario that sent it.
+  [[ -s "$SIMROOT/violations" ]] && _err "$(cat "$SIMROOT/violations")"
   if (( SFAIL )); then FAIL=$((FAIL+1)); FAILED_NAMES+=("$SNAME")
   else echo "      ok"; PASS=$((PASS+1)); fi
   [[ -n "${KEEP:-}" ]] && echo "      sandbox: $SIMROOT" || rm -rf "$SIMROOT"

@@ -46,6 +46,13 @@ its first run.
                      engines as stubs again - what recover can get wrong is the
                      ORDER, what a failed step is allowed to touch, and what
                      may happen only when everything went green
+    sim/remote-bash.sh  sourced by every fake ssh: unwraps the
+                     `exec bash -c '...'` bssh sends and refuses a command
+                     that was not wrapped, in every scenario of every suite
+    remote-bash/     bssh itself: identical in every file, no plain command
+                     ssh anywhere, and the wrapped commands run through a real
+                     sh and zsh as the login shell print what bash prints.
+                     zsh is the half that matters; make gates installs it
 
     make test-ketsync       21 + 13 + 17 + 20 + 17 scenarios
     make mutation-ketsync   19 + 13 + 16 + 19 + 17 mutations

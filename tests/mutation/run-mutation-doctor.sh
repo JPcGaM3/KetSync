@@ -33,13 +33,16 @@ command -v perl >/dev/null || { echo "perl is required for the mutation suite"; 
 # makes this work.
 mutant(){
   local name="$1" prog="$2"; shift 2
+  # MUT_SRC names a different lib file for one mutation - lib/common.sh, whose
+  # bssh carries every question doctor asks another machine.
+  local SRC="${MUT_SRC:-$SRC}"
   local m ok=1 s tree
   tree="$(mktemp -d /tmp/ksdoc-mutant.XXXXXX)"
   echo "  [$name]"
   mkdir -p "$tree/lib" "$tree/engines"
   cp "$ROOT/ketsync" "$tree/ketsync"; chmod +x "$tree/ketsync"
   cp "$ROOT"/lib/*.sh "$tree/lib/"
-  m="$tree/lib/cmd_doctor.sh"
+  m="$tree/lib/$(basename "$SRC")"
   # A zero-byte mutant is not a mutant: perl refusing the program writes
   # nothing, and an empty cmd_doctor.sh makes the dispatcher fail every
   # scenario for a reason that has nothing to do with the mutation. That would
@@ -265,6 +268,20 @@ mutant "the leading digit comes back - a customer's CT 900 is condemned as a lef
 mutant "the placed question is never asked - a 9<id> that outlived its DR goes unreported" \
   's{\Q    for f in \E\$placed\Q; do\E}{    for f in ; do}' \
   10 29
+
+
+# ---------- bssh (lib/common.sh): every remote question runs under bash --------
+# ssh hands its command to root's LOGIN shell, and pve-r33's is zsh. Doctor's
+# questions are the kind zsh answers wrongly and quietly - a glob over
+# /etc/pve/nodes/*, a loop over a list - so the fake ssh refuses any command
+# that is not wrapped, and these two die on the first node doctor asks.
+MUT_SRC="$ROOT/lib/common.sh" mutant "bssh hands the command to the login shell unwrapped" \
+  's{\Q  ssh "\E\$\Q{a[\E\@\Q]}" "exec bash -c \E[^\n]*}{  ssh "\${a[\@]}" "\$c"}' \
+  1
+
+MUT_SRC="$ROOT/lib/common.sh" mutant "bssh stops escaping single quotes - the login shell re-splits the command" \
+  's!\$\{c//[^}]*\}!\$c!' \
+  1
 
 echo
 echo "=== $PASS mutations killed, $FAIL survived ==="

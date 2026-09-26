@@ -127,7 +127,7 @@ twice.
 argv out, exit code back - and its fake satellite records the argv, which is
 the entire output under test.
 
-`doctor` has 29 and 33, and it went last for the wrong reason: it writes
+`doctor` has 29 and 35, and it went last for the wrong reason: it writes
 nothing, so nothing it does can corrupt anything. What it can do is stop
 noticing, and a check that stops noticing prints exactly what a healthy fleet
 prints. Writing the simulator found one immediately - a compute node nobody
@@ -152,8 +152,9 @@ follow-up.
 ## Before you say you are done
 
     make lint     # both layers: bash -n, shellcheck, the language rule
-    make test     # both layers: 495 tp simulator + 16 dispatcher + 125 c2v, 151 ketsync
-    make mutation # 637 known bugs put back. None may survive
+    make test     # both layers: 493 tp simulator + 16 dispatcher + 125 c2v, 151 ketsync,
+                  # 8 remote-bash
+    make mutation # 659 known bugs put back. None may survive
 
 Never commit on red. If you touched an engine, `make mutation` is not optional
 — that is the target that proves the suite can still fail.
@@ -274,12 +275,12 @@ must be mirrored in its mutation file in the same change. Never "fix" a broken
 anchor by deleting the mutation. If you are not confident you can do both
 halves, do not touch the engine — say so instead.
 
-    ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     72 mutations
-    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    117 mutations
-    ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    79 mutations
-    ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  83 mutations
-    ct-recall.sh     tests/mutation/run-mutation-ct-recall.sh      56 mutations
-    ct-prepare.sh    tests/mutation/run-mutation-ct-prepare.sh     82 mutations
+    ct-migrate.sh    tests/mutation/run-mutation-ct-migrate.sh     75 mutations
+    ct-replica.sh    tests/mutation/run-mutation-ct-replica.sh    120 mutations
+    ct-failback.sh   tests/mutation/run-mutation-ct-failback.sh    82 mutations
+    ct-distribute.sh tests/mutation/run-mutation-ct-distribute.sh  86 mutations
+    ct-recall.sh     tests/mutation/run-mutation-ct-recall.sh      59 mutations
+    ct-prepare.sh    tests/mutation/run-mutation-ct-prepare.sh     85 mutations
     tp               tests/mutation/run-mutation-tp.sh              9 mutations
 
     (the numbers drift upward; each suite prints its own count, and the gate
@@ -419,6 +420,33 @@ for a while the check that would have named the missing tool sat below the lock
 where it could never fire. List local commands only: `pct` runs on the old node
 over ssh, and requiring it here would refuse a perfectly good storage node for
 not being a compute node.
+
+**9. Every remote command runs under bash: `bssh`, never plain `ssh`.**
+ssh does not run a command, it hands a STRING to root's login shell on the far
+end, and that shell is not ours to choose - pve-r33 logs root into zsh
+(2026-09) and the team wants it that way. zsh reads a bash snippet differently
+in exactly the way that turns a failing guard into a pass: an unmatched glob
+aborts the whole command, so `ls /etc/pve/nodes/*/lxc/<id>.conf` answers
+nothing and G7/R4/D3 read "free"; and an unquoted `$var` is not split, so a
+port loop sees one word and R9/G8 read "no uplink". It surfaced in
+contrib/ct-move.sh first, and every engine had the same exposure.
+
+So every file that talks to another machine defines `bssh`, which sends
+`exec bash -c '<the command>'` - single-quoted, which sh, bash and zsh all read
+the same way; `exec` keeps the exit status and stdin. It is the same function
+in every file, byte for byte. A new remote call goes through `bssh` (or the
+`rsh`/`ks_ssh` helpers that use it); `ssh -O exit` carries no command and
+stays plain, and rsync's `-e "ssh ..."` is a transport whose remote end is
+`rsync --server`, which rsync quotes itself.
+
+Nothing has to remember this. Every fake ssh in tests/sim refuses a command
+that is not wrapped (tests/sim/remote-bash.sh) and records a violation, so a
+plain `ssh host "cmd"` turns every scenario that reaches it red.
+tests/remote-bash holds the rest: bssh identical everywhere, no plain command
+ssh in any shipped file (contrib/ has no sims), and the wrapped commands run
+through a real sh and a real zsh as the login shell print exactly what bash
+prints - with the same matrix sent unwrapped through zsh proven to differ, so
+the check can see the bug it exists for.
 
 
 Each simulator runs the real engine in a sandbox with fake `pvesm`, `pct`,

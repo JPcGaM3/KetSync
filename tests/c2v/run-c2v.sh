@@ -1527,7 +1527,7 @@ run_family(){ # run_family <ct-config> <forced-family> <stopped> [guest files]
     log(){ printf '%s\n' "$*" >> "$T/log"; }
     die(){ printf 'DIE: %s\n' "$*" >> "$T/log"; return 1; }
     # shellcheck disable=SC2317  # called from the sourced block
-    ssh(){ cat "$T/guestos"; }
+    bssh(){ cat "$T/guestos"; }
     # shellcheck disable=SC1090
     . "$FAM_BLOCK"
     printf 'FAMILY=%s\n' "$GUEST_FAMILY"

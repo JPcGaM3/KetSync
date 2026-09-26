@@ -108,6 +108,31 @@ set -uo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
+# bssh: ssh, with the remote command run by bash whatever root's login shell
+# is. ssh hands its command string to the LOGIN shell, and a node whose root
+# logs into zsh (pve-r33, 2026-09) reads it differently in exactly the way that
+# turns a failing check into a pass: an unmatched glob aborts the whole command
+# (`ls /etc/pve/nodes/*/lxc/<id>.conf` answers nothing = "that id is free"), and
+# an unquoted $var is not split (a port loop sees one word = "no uplink"). The
+# team keeps zsh, so every remote command goes through here instead. The
+# command is single-quoted for the login shell, which sh, bash and zsh all read
+# the same way; exec keeps its exit status and its stdin. Options pass through
+# untouched, and a call with no command (`ssh -O exit`) is plain ssh. This
+# function is identical in every file that has it - tests/remote-bash checks.
+bssh(){
+  local a=() c
+  while (( $# )); do
+    case "$1" in
+      -[BbcDEeFIiJLlmOoPpQRSWw]) a+=("$1" "${2-}"); shift; (( $# )) && shift;;
+      -*) a+=("$1"); shift;;
+      *)  break;;
+    esac
+  done
+  (( $# > 1 )) || { ssh "${a[@]}" "$@"; return; }
+  a+=("$1"); shift; c="$*"
+  ssh "${a[@]}" "exec bash -c '${c//\'/\'\\\'\'}'"
+}
+
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # everything lives next to this script
 INV="$BASE/inventory-migrate.tsv"
 CONF="$BASE/ctmig.conf"
@@ -895,7 +920,7 @@ g8_bridge_ok(){   # $1 = new_node -> 0 ok, 1 refused (already logged)
   (( MOCKNET )) || return 0
   case "${G8_SEEN[$1]:-}" in ok) return 0;; bad) return 1;; esac
   local out
-  out=$(ssh $SSHOPT "root@$1" "
+  out=$(bssh $SSHOPT "root@$1" "
     ip -br link show $MOCKNET_BRIDGE >/dev/null 2>&1 || { echo MISSING; exit 0; }
     ports=\$(ovs-vsctl --timeout=5 list-ifaces $MOCKNET_BRIDGE 2>/dev/null || ls /sys/class/net/$MOCKNET_BRIDGE/brif/ 2>/dev/null)
     for p in \$ports; do
@@ -930,8 +955,8 @@ g8_bridge_ok(){   # $1 = new_node -> 0 ok, 1 refused (already logged)
 # - the answer is half the plan. Only the write below it is skipped.
 dry_cfg_plan(){   # $1=ctid $2=new_node $3=storage $4=image size
   local cfgsize
-  if ssh $SSHOPT "root@$2" "test -f /etc/pve/lxc/$1.conf" </dev/null 2>/dev/null; then
-    cfgsize=$(ssh $SSHOPT "root@$2" "grep '^rootfs:' /etc/pve/lxc/$1.conf" </dev/null 2>/dev/null \
+  if bssh $SSHOPT "root@$2" "test -f /etc/pve/lxc/$1.conf" </dev/null 2>/dev/null; then
+    cfgsize=$(bssh $SSHOPT "root@$2" "grep '^rootfs:' /etc/pve/lxc/$1.conf" </dev/null 2>/dev/null \
               | sed -n 's/.*size=\([^,]*\).*/\1/p')
     log "[$1] DRY: a config already exists on $2 - G6 would leave it untouched (size=${cfgsize:-?})"
     [[ -n "$cfgsize" && -n "$4" && "$cfgsize" != "$4" ]] \
@@ -1002,7 +1027,7 @@ release_intake_lock(){
 SRC_MOUNT_NODE=""; SRC_MOUNT_CT=""
 cleanup_src(){
   [[ -n "$SRC_MOUNT_NODE" ]] || return 0
-  ssh $SSHOPT "root@$SRC_MOUNT_NODE" "pct unmount $SRC_MOUNT_CT" </dev/null >>"$LOG" 2>&1 \
+  bssh $SSHOPT "root@$SRC_MOUNT_NODE" "pct unmount $SRC_MOUNT_CT" </dev/null >>"$LOG" 2>&1 \
     || log "WARN: pct unmount $SRC_MOUNT_CT on $SRC_MOUNT_NODE failed - check it by hand"
   SRC_MOUNT_NODE=""; SRC_MOUNT_CT=""
 }
@@ -1117,7 +1142,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   MNT="$MNT_BASE/ctmig-$new_ctid"
 
   # --- G2: never touch a copy that is already running on the new-node ---
-  newstat=$(ssh $SSHOPT "root@$new_node" "pct status $new_ctid 2>/dev/null" </dev/null 2>/dev/null || true)
+  newstat=$(bssh $SSHOPT "root@$new_node" "pct status $new_ctid 2>/dev/null" </dev/null 2>/dev/null || true)
   if [[ "$newstat" == *running* ]]; then
     log "[$new_ctid] GUARD G2: copy is RUNNING on $new_node - skip resync (double mount = corruption)"
     st_skip g2_running; continue
@@ -1130,8 +1155,8 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   # container into ours. A typo of one digit in inventory-migrate.tsv is all it takes.
   # A config with no rootfs: line at all is a truncated write from an earlier run
   # - refuse that too, because G6 will never rewrite it and it can never boot.
-  if ssh $SSHOPT "root@$new_node" "test -f /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null; then
-    exist_root=$(ssh $SSHOPT "root@$new_node" "cat /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null \
+  if bssh $SSHOPT "root@$new_node" "test -f /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null; then
+    exist_root=$(bssh $SSHOPT "root@$new_node" "cat /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null \
                  | sed -n 's/^rootfs:[[:space:]]*\([^,]*\).*/\1/p' | head -1)
     if [[ "$exist_root" != "$storage:$new_ctid/vm-$new_ctid-disk-0.raw" ]]; then
       log "[$new_ctid] GUARD G7: CT id $new_ctid on $new_node already belongs to something else"
@@ -1146,7 +1171,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   # --- the same storage id must resolve on the target too, or the config we
   #     write later points at a volume the new node cannot see. Cheap to check
   #     now, expensive to discover after a 400G transfer. ---
-  tgtst=$(ssh $SSHOPT "root@$new_node" "pvesm status --storage $storage" </dev/null 2>/dev/null || true)
+  tgtst=$(bssh $SSHOPT "root@$new_node" "pvesm status --storage $storage" </dev/null 2>/dev/null || true)
   if ! printf '%s\n' "$tgtst" | awk 'NR>1 && $3=="active"{f=1} END{exit !f}'; then
     log "[$new_ctid] ERROR: storage '$storage' is not active on $new_node - skip"
     log "[$new_ctid] ERROR:   add it there as NFS with the SAME id:"
@@ -1163,11 +1188,11 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   fi
 
   # --- reachability + source state (clear, distinct reasons) ---
-  if ! ssh $SSHOPT "root@$old_node" true </dev/null 2>/dev/null; then
+  if ! bssh $SSHOPT "root@$old_node" true </dev/null 2>/dev/null; then
     log "[$new_ctid] SSH to $old_node FAILED (key not set up / host down) - skip"
     st_fail ssh_old_node; continue
   fi
-  oldcfg=$(ssh $SSHOPT "root@$old_node" "pct config $old_ctid" </dev/null 2>/dev/null || true)
+  oldcfg=$(bssh $SSHOPT "root@$old_node" "pct config $old_ctid" </dev/null 2>/dev/null || true)
   if [[ -z "$oldcfg" ]]; then
     log "[$new_ctid] CT $old_ctid NOT FOUND on $old_node (wrong id/node?) - skip"
     st_fail ct_not_found; continue
@@ -1193,13 +1218,13 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
 
   # --- pick the source: running CT via /proc, or stopped CT via pct mount ---
   if (( FINAL )); then
-    st=$(ssh $SSHOPT "root@$old_node" "pct status $old_ctid" </dev/null 2>/dev/null || true)
+    st=$(bssh $SSHOPT "root@$old_node" "pct status $old_ctid" </dev/null 2>/dev/null || true)
     if [[ "$st" != *stopped* ]]; then
       log "[$new_ctid] ERROR: --final needs CT $old_ctid on $old_node to be stopped (got: ${st:-unknown})"
       log "[$new_ctid] ERROR:   stop it yourself first - this tool does not touch CT lifecycle"
       st_fail not_stopped; continue
     fi
-    if ! ssh $SSHOPT "root@$old_node" "pct mount $old_ctid" </dev/null >>"$LOG" 2>&1; then
+    if ! bssh $SSHOPT "root@$old_node" "pct mount $old_ctid" </dev/null >>"$LOG" 2>&1; then
       log "[$new_ctid] ERROR: pct mount $old_ctid failed on $old_node - skip"
       st_fail pct_mount; continue
     fi
@@ -1222,7 +1247,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
       log "[$new_ctid] FINAL delta from a STOPPED CT (pct mount) <= $old_node:$old_ctid"
     fi
   else
-    ctpid=$(ssh $SSHOPT "root@$old_node" "lxc-info -n $old_ctid -p -H" </dev/null 2>/dev/null || true)
+    ctpid=$(bssh $SSHOPT "root@$old_node" "lxc-info -n $old_ctid -p -H" </dev/null 2>/dev/null || true)
     if [[ -z "${ctpid:-}" || "$ctpid" == 0 ]]; then
       log "[$new_ctid] CT $old_ctid on $old_node is not running (start it first) - skip"
       st_fail not_running; continue
@@ -1255,10 +1280,10 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
     # first copy from a stopped CT fell back to quota+headroom - 40G allocated
     # for 1G of data, silently, per container.
     if (( FINAL )); then
-      usedb=$(ssh $SSHOPT "root@$old_node" "df -B1 -P /var/lib/lxc/$old_ctid/rootfs" </dev/null 2>/dev/null \
+      usedb=$(bssh $SSHOPT "root@$old_node" "df -B1 -P /var/lib/lxc/$old_ctid/rootfs" </dev/null 2>/dev/null \
               | awk 'NR==2{print $3}')
     else
-      usedb=$(ssh $SSHOPT "root@$old_node" "pct exec $old_ctid -- df -B1 -P /" </dev/null 2>/dev/null \
+      usedb=$(bssh $SSHOPT "root@$old_node" "pct exec $old_ctid -- df -B1 -P /" </dev/null 2>/dev/null \
               | awk 'NR==2{print $3}')
     fi
     if [[ "$usedb" =~ ^[0-9]+$ && "$usedb" -gt 0 ]]; then
@@ -1442,7 +1467,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   if (( DRY )); then
     dry_cfg_plan "$new_ctid" "$new_node" "$storage" "$size"
     log "[$new_ctid] dry-run - nothing was written"
-  elif ! ssh $SSHOPT "root@$new_node" "test -f /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null; then
+  elif ! bssh $SSHOPT "root@$new_node" "test -f /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null; then
     log "[$new_ctid] create CT config on $new_node ($( (( MOCKNET )) && echo "net on $MOCKNET_BRIDGE" || echo "no net" ), onboot=0, stopped)"
     newcfg=$( printf '%s\n' "$oldcfg" \
                 | grep -vE '^(rootfs|mp[0-9]+|net[0-9]+|onboot|unused[0-9]+|parent|lock|template|description):'
@@ -1458,8 +1483,8 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
     # connection or a full /etc/pve leaves a half config, and G6 above will never
     # rewrite a config that exists - so the damage would be permanent and every
     # later run would report this CT as healthy. Verified once, here, is cheap.
-    if printf '%s\n' "$newcfg" | ssh $SSHOPT "root@$new_node" "cat > /etc/pve/lxc/$new_ctid.conf" \
-       && [[ "$(ssh $SSHOPT "root@$new_node" "cat /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null)" == "$newcfg" ]]; then
+    if printf '%s\n' "$newcfg" | bssh $SSHOPT "root@$new_node" "cat > /etc/pve/lxc/$new_ctid.conf" \
+       && [[ "$(bssh $SSHOPT "root@$new_node" "cat /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null)" == "$newcfg" ]]; then
       ST_CFG_PRESENT=1; ST_CFG_SIZE="$size"
     else
       log "[$new_ctid] ERROR: the config on $new_node does not match what was sent (truncated write)"
@@ -1470,7 +1495,7 @@ while read -r old_node old_ctid new_ctid new_node storage _rest <&3 \
   else
     # never rewrite it (a human may have added net0 by now), but the image can
     # have grown since it was written — say so instead of silently diverging.
-    cfgsize=$(ssh $SSHOPT "root@$new_node" "grep '^rootfs:' /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null \
+    cfgsize=$(bssh $SSHOPT "root@$new_node" "grep '^rootfs:' /etc/pve/lxc/$new_ctid.conf" </dev/null 2>/dev/null \
               | sed -n 's/.*size=\([^,]*\).*/\1/p')
     ST_CFG_PRESENT=1; ST_CFG_SIZE="$cfgsize"
     if [[ -n "$cfgsize" && "$cfgsize" != "$size" ]]; then

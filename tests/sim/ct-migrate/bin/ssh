@@ -21,7 +21,13 @@ printf '%s\t%s\n' "$([[ -n "$ctl" ]] && echo "-O $ctl" || echo cmd)" \
 N="$SIMROOT/nodes/$host"
 [[ -d "$N" ]] || { echo "ssh: connect to host $host: No route to host" >&2; exit 255; }
 [[ -f "$N/.down" ]] && { echo "ssh: connect to host $host: Connection refused" >&2; exit 255; }
-c="${cmd[*]}"; trace "ssh $host :: $c"
+c="${cmd[*]}"
+# Unwrapped before anything reads it: see tests/sim/remote-bash.sh. A plain
+# `ssh host "cmd"` is refused here, in every scenario that reaches it.
+# shellcheck source=tests/sim/remote-bash.sh
+. "$SIMBIN/../../remote-bash.sh"
+require_remote_bash "$c" "$SIMROOT/violations"; c="$REMOTE_CMD"
+trace "ssh $host :: $c"
 export SIM_HOST="$host"
 case "$c" in
   true) exit 0;;

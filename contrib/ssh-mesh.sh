@@ -33,14 +33,39 @@ ME=$(hostname -I 2>/dev/null)
 echo "hosts: ${HOSTS[*]}"
 
 O="-o BatchMode=yes -o ConnectTimeout=8"
+
+# bssh: ssh, with the remote command run by bash whatever root's login shell
+# is. ssh hands its command string to the LOGIN shell, and a node whose root
+# logs into zsh (pve-r33, 2026-09) reads it differently in exactly the way that
+# turns a failing check into a pass: an unmatched glob aborts the whole command
+# (`ls /etc/pve/nodes/*/lxc/<id>.conf` answers nothing = "that id is free"), and
+# an unquoted $var is not split (a port loop sees one word = "no uplink"). The
+# team keeps zsh, so every remote command goes through here instead. The
+# command is single-quoted for the login shell, which sh, bash and zsh all read
+# the same way; exec keeps its exit status and its stdin. Options pass through
+# untouched, and a call with no command (`ssh -O exit`) is plain ssh. This
+# function is identical in every file that has it - tests/remote-bash checks.
+bssh(){
+  local a=() c
+  while (( $# )); do
+    case "$1" in
+      -[BbcDEeFIiJLlmOoPpQRSWw]) a+=("$1" "${2-}"); shift; (( $# )) && shift;;
+      -*) a+=("$1"); shift;;
+      *)  break;;
+    esac
+  done
+  (( $# > 1 )) || { ssh "${a[@]}" "$@"; return; }
+  a+=("$1"); shift; c="$*"
+  ssh "${a[@]}" "exec bash -c '${c//\'/\'\\\'\'}'"
+}
 self(){ [[ " $ME " == *" $1 "* ]]; }
-on(){ local h="$1"; shift; if self "$h"; then bash -c "$*"; else ssh $O -n "root@$h" "$*"; fi; }
+on(){ local h="$1"; shift; if self "$h"; then bash -c "$*"; else bssh $O -n "root@$h" "$*"; fi; }
 
 # --- 0) this machine must reach every host (the only place a password is typed)
 declare -A PUB=()
 for h in "${HOSTS[@]}"; do
   self "$h" && continue
-  if ! ssh $O -n "root@$h" true 2>/dev/null; then
+  if ! bssh $O -n "root@$h" true 2>/dev/null; then
     if (( CHECK )); then echo "FAIL this -> $h"; continue; fi
     echo ">>> this machine cannot reach $h by key - root password of $h:"
     ssh-copy-id -o StrictHostKeyChecking=accept-new "root@$h" </dev/tty \

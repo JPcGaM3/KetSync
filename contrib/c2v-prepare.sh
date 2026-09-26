@@ -167,6 +167,31 @@ SSHOPT_COMMON=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new
 SSHOPT=("${SSHOPT_COMMON[@]}" -o ControlMaster=auto
         -o ControlPath=/run/c2v-%r@%h:%p -o ControlPersist=60)
 
+# bssh: ssh, with the remote command run by bash whatever root's login shell
+# is. ssh hands its command string to the LOGIN shell, and a node whose root
+# logs into zsh (pve-r33, 2026-09) reads it differently in exactly the way that
+# turns a failing check into a pass: an unmatched glob aborts the whole command
+# (`ls /etc/pve/nodes/*/lxc/<id>.conf` answers nothing = "that id is free"), and
+# an unquoted $var is not split (a port loop sees one word = "no uplink"). The
+# team keeps zsh, so every remote command goes through here instead. The
+# command is single-quoted for the login shell, which sh, bash and zsh all read
+# the same way; exec keeps its exit status and its stdin. Options pass through
+# untouched, and a call with no command (`ssh -O exit`) is plain ssh. This
+# function is identical in every file that has it - tests/remote-bash checks.
+bssh(){
+  local a=() c
+  while (( $# )); do
+    case "$1" in
+      -[BbcDEeFIiJLlmOoPpQRSWw]) a+=("$1" "${2-}"); shift; (( $# )) && shift;;
+      -*) a+=("$1"); shift;;
+      *)  break;;
+    esac
+  done
+  (( $# > 1 )) || { ssh "${a[@]}" "$@"; return; }
+  a+=("$1"); shift; c="$*"
+  ssh "${a[@]}" "exec bash -c '${c//\'/\'\\\'\'}'"
+}
+
 # The cipher list for the transfer only; the probes above negotiate whatever they
 # like, because eight short sessions cannot be made faster and a peer that refuses
 # a list should not take the whole run down with it. OpenSSH offers
@@ -321,7 +346,7 @@ if [[ -f "/etc/pve/qemu-server/$VMID.conf" ]]; then
   [[ "$vst" == *stopped* ]] || die "VM $VMID is not stopped (got: ${vst:-unknown}) - 'qm stop $VMID' first, this mounts its disk"
 fi
 
-st=$(ssh "${SSHOPT[@]}" "root@$OLD_NODE" "pct status $OLD_CTID" </dev/null 2>/dev/null || true)
+st=$(bssh "${SSHOPT[@]}" "root@$OLD_NODE" "pct status $OLD_CTID" </dev/null 2>/dev/null || true)
 [[ -n "$st" ]] || die "cannot read 'pct status $OLD_CTID' on $OLD_NODE"
 if (( STOPPED )); then
   [[ "$st" == *stopped* ]] || die "--stopped needs CT $OLD_CTID stopped on $OLD_NODE (got: $st)"
@@ -329,7 +354,7 @@ else
   [[ "$st" == *running* ]] || die "CT $OLD_CTID is not running on $OLD_NODE (got: $st) - use --stopped"
 fi
 
-oldcfg=$(ssh "${SSHOPT[@]}" "root@$OLD_NODE" "pct config $OLD_CTID" </dev/null 2>/dev/null || true)
+oldcfg=$(bssh "${SSHOPT[@]}" "root@$OLD_NODE" "pct config $OLD_CTID" </dev/null 2>/dev/null || true)
 [[ -n "$oldcfg" ]] || die "cannot read 'pct config $OLD_CTID' on $OLD_NODE"
 
 # ---------------------------------------------------------------------------
@@ -394,7 +419,7 @@ else
     # One ssh, two files, so a running CT costs a single round trip. os-release
     # is asked for first and matched first; redhat-release is what answers for
     # EL6, which has no os-release at all.
-    guestos=$(ssh "${SSHOPT[@]}" "root@$OLD_NODE" \
+    guestos=$(bssh "${SSHOPT[@]}" "root@$OLD_NODE" \
               "pct exec $OLD_CTID -- sh -c 'cat /etc/os-release /etc/redhat-release 2>/dev/null'" \
               </dev/null 2>/dev/null || true)
     if [[ -n "$guestos" ]]; then
@@ -659,7 +684,7 @@ else
   if (( STOPPED )); then
     used_gib=0        # a stopped CT cannot be measured with pct exec; quota wins
   else
-    usedb=$(ssh "${SSHOPT[@]}" "root@$OLD_NODE" "pct exec $OLD_CTID -- df -B1 -P /" </dev/null 2>/dev/null \
+    usedb=$(bssh "${SSHOPT[@]}" "root@$OLD_NODE" "pct exec $OLD_CTID -- df -B1 -P /" </dev/null 2>/dev/null \
             | awk 'NR==2{print $3}')
     if [[ "$usedb" =~ ^[0-9]+$ ]]; then
       used_gib=$(( (usedb * SIZE_FACTOR / 100 + 1073741823) / 1073741824 ))
@@ -783,12 +808,12 @@ mkdir -p "$MNT"
 mountpoint -q "$MNT" || mount "$PART" "$MNT" || die "mount $PART -> $MNT failed"
 
 if (( STOPPED )); then
-  ssh "${SSHOPT[@]}" "root@$OLD_NODE" "pct mount $OLD_CTID" </dev/null >/dev/null 2>&1 \
+  bssh "${SSHOPT[@]}" "root@$OLD_NODE" "pct mount $OLD_CTID" </dev/null >/dev/null 2>&1 \
     || die "pct mount $OLD_CTID failed on $OLD_NODE"
   SRC="root@$OLD_NODE:/var/lib/lxc/$OLD_CTID/rootfs/"
   log "FINAL delta from a STOPPED CT (pct mount)"
 else
-  ctpid=$(ssh "${SSHOPT[@]}" "root@$OLD_NODE" "lxc-info -n $OLD_CTID -p -H" </dev/null 2>/dev/null || true)
+  ctpid=$(bssh "${SSHOPT[@]}" "root@$OLD_NODE" "lxc-info -n $OLD_CTID -p -H" </dev/null 2>/dev/null || true)
   [[ "$ctpid" =~ ^[0-9]+$ ]] || die "cannot read the init pid of CT $OLD_CTID on $OLD_NODE"
   SRC="root@$OLD_NODE:/proc/$ctpid/root/"
 fi
@@ -866,7 +891,7 @@ if [ -t 1 ]; then rsync "${RSOPT[@]}" --info=progress2 "$SRC" "$MNT/"; else rsyn
 rc=$?
 
 if (( STOPPED )); then
-  ssh "${SSHOPT[@]}" "root@$OLD_NODE" "pct unmount $OLD_CTID" </dev/null >/dev/null 2>&1 \
+  bssh "${SSHOPT[@]}" "root@$OLD_NODE" "pct unmount $OLD_CTID" </dev/null >/dev/null 2>&1 \
     || log "WARN: pct unmount $OLD_CTID on $OLD_NODE failed - check it by hand"
 fi
 
