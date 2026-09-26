@@ -86,7 +86,12 @@ while read -r onode octid nctid nnode stor rest <&3 || [[ -n "${onode:-}" ]]; do
   echo; echo "--- $octid on $onode -> $nctid on $nnode ($stor) ---"
   args=(--src-ip "$onode" --src-ctid "$octid" --dst-ip "$nnode" --dst-ctid "$nctid" --storage "$stor" --bwlimit "$BW")
   [[ -n "$zp" ]] && args+=(--zfs-props "$zp")
-  if "$MOVE" "${args[@]}" "${PASS[@]}" </dev/null; then ok+=("$nctid"); else failed+=("$nctid"); fi
+  "$MOVE" "${args[@]}" "${PASS[@]}" </dev/null; rc=$?
+  # Ctrl-C reaches ct-move too, which cleans up and exits 130. That is a normal
+  # exit as far as this loop can see, so without this check ^C stopped one row
+  # and the batch went straight on to the next one.
+  if (( rc == 130 )); then failed+=("$nctid"); echo; echo "=== interrupted at $octid -> $nctid - the rest of the list was NOT run ==="; break; fi
+  if (( rc == 0 )); then ok+=("$nctid"); else failed+=("$nctid"); fi
 done 3< "$FILE"
 
 echo; echo "=== ct-move-all lane=$LANE: ok=${#ok[@]} failed=${#failed[@]} skipped=${#skipped[@]} ==="

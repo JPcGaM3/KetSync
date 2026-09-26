@@ -106,6 +106,26 @@ SRC_STORAGES=$(sed -n 's/^SRC_STORAGES=["]*\([^"#]*\).*/\1/p' "$BASE/conf/ctmig.
 LIVE_FALLBACK=$(sed -n 's/^LIVE_FALLBACK=["]*\([0-9]*\).*/\1/p' "$BASE/conf/ctmig.conf" | tail -1)
 CIPHERS=$(sed -n 's/^SSH_CIPHERS=["]*\([^"# ]*\).*/\1/p' "$BASE/conf/ctmig.conf" | tail -1)
 SSH_DATA="ssh -o BatchMode=yes -o Compression=no${CIPHERS:+ -c $CIPHERS}"
+# What a PRESYNC round leaves out: conf/ctrep-exclude.conf, the list replica
+# uses, for the same reason. A presync reads a RUNNING container, and its
+# busiest directories (PHP session files under /home/<user>/tmp, Hestia's
+# sessions) change under the reader - on the image read ro,noload a file
+# caught mid-write comes back "Structure needs cleaning" (117), rsync says
+# "IO error - skipping file deletion" and the whole round is rc=23.
+# --final does NOT use it: the CT is stopped, nothing moves, and the cutover
+# copy has to be complete - whatever presync skipped arrives there, so nothing
+# in these directories is lost; the final delta is only a little bigger.
+EXCL_FILE="$BASE/conf/ctrep-exclude.conf"
+PRE_EXCL=()
+if (( ! FINAL )); then
+  [[ -r "$EXCL_FILE" ]] || die "$EXCL_FILE is missing - presync reads the same exclude list replica does"
+  while IFS= read -r _p || [[ -n "${_p:-}" ]]; do
+    _p="${_p%%#*}"; _p="${_p#"${_p%%[![:space:]]*}"}"; _p="${_p%"${_p##*[![:space:]]}"}"
+    [[ -z "$_p" ]] && continue
+    [[ "$_p" == *\'* ]] && die "a single quote in $EXCL_FILE ('$_p') - refused, it would break the remote command"
+    PRE_EXCL+=("--exclude=$_p")
+  done < "$EXCL_FILE"
+fi
 
 SSH_OPT="-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=6"
 # bssh: ssh, with the remote command run by bash whatever root's login shell
@@ -431,11 +451,13 @@ PROG=""; [ -t 1 ] && PROG="--info=progress2"
 [[ -z "$PROG" ]] && log "no terminal: rsync progress is not shown, only the result at the end (run it in tmux to watch)"
 RSYNC="rsync -aHAX --numeric-ids --sparse --inplace -x --delete --modify-window=-1 --stats $PROG \
   --bwlimit=${BW}m --exclude='/proc/*' --exclude='/sys/*' --exclude='/dev/*' --exclude='/run/*' \
-  --exclude='/tmp/*' --exclude='/lost+found' --exclude='/.zfs' -e '$SSH_DATA' \
+  --exclude='/tmp/*' --exclude='/lost+found' --exclude='/.zfs'$( (( ${#PRE_EXCL[@]} )) && printf " '%s'" "${PRE_EXCL[@]}") -e '$SSH_DATA' \
   'root@$SRC:$SRCPATH/' '$MNT/'"
 RSL=(-aHAX --numeric-ids --sparse --inplace -x --delete --modify-window=-1 --stats ${PROG:+"$PROG"}
   "--bwlimit=${BW}m" '--exclude=/proc/*' '--exclude=/sys/*' '--exclude=/dev/*' '--exclude=/run/*'
-  '--exclude=/tmp/*' '--exclude=/lost+found' '--exclude=/.zfs' -e "$SSH_DATA")
+  '--exclude=/tmp/*' '--exclude=/lost+found' '--exclude=/.zfs' "${PRE_EXCL[@]}" -e "$SSH_DATA")
+if (( FINAL )); then log "final round: nothing extra excluded - the CT is stopped, everything is copied"
+else log "presync leaves out (conf/ctrep-exclude.conf, --final copies them): ${PRE_EXCL[*]#--exclude=}"; fi
 attempt=0
 while :; do
   t0=$SECONDS
