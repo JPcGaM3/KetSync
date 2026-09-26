@@ -291,6 +291,11 @@ LOCKF="/run/ketsync-ct-$NEW.lock"
 OWNER="ct-move $(hostname) pid $$ $(date +%s)"
 LOCKED=0; DST_MNT=""; SRC_MOUNTED=0; HERE_MNT=""
 cleanup(){
+  # A second Ctrl-C used to land in here: the INT trap exits again, EXIT does
+  # not run twice, and whatever was not undone yet - the destination lock, a
+  # mount - stayed behind (266's lock on pve-r23, 2026-09-26). Cleanup is not
+  # interruptible; it is a few seconds of umount and one rm.
+  trap '' INT TERM
   [[ -n "$HERE_MNT" ]] && umount "$HERE_MNT" >>"$LOG" 2>&1 && HERE_MNT=""
   [[ -n "$DST_MNT" ]] && rsh "$DST" "umount '$DST_MNT'" >>"$LOG" 2>&1 && DST_MNT=""
   (( SRC_MOUNTED )) && rsh "$SRC" "pct unmount $CTID" >>"$LOG" 2>&1 && SRC_MOUNTED=0
