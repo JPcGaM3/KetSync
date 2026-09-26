@@ -108,8 +108,13 @@ CIPHERS=$(sed -n 's/^SSH_CIPHERS=["]*\([^"# ]*\).*/\1/p' "$BASE/conf/ctmig.conf"
 SSH_DATA="ssh -o BatchMode=yes -o Compression=no${CIPHERS:+ -c $CIPHERS}"
 
 SSH_OPT="-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=6"
-rsh(){ local h="$1"; shift; ssh $SSH_OPT "root@$h" "$@" </dev/null; }
-wsh(){ local h="$1"; shift; ssh $SSH_OPT "root@$h" "$@"; }   # stdin passes through
+# Every remote command runs under bash, whatever root's login shell is. pve-r33
+# logs root into zsh, where an unmatched glob aborts the whole command (the
+# "is this id free" ls came back empty = "free") and $var is not word-split
+# (the island-bridge uplink loop saw one port instead of several = "no
+# uplink"). Both failures read as a pass, so the shell is not left to chance.
+rsh(){ local h="$1"; shift; ssh $SSH_OPT "root@$h" "exec bash -c $(printf '%q' "$*")" </dev/null; }
+wsh(){ local h="$1"; shift; ssh $SSH_OPT "root@$h" "exec bash -c $(printf '%q' "$*")"; }   # stdin passes through
 
 to_gib(){ awk -v s="$1" 'BEGIN{
   n=s+0; u=toupper(substr(s,length(s)));
