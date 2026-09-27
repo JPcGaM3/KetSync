@@ -44,7 +44,7 @@ usage: ct-move.sh --src-ip <ip> --src-ctid <id> --dst-ip <ip> --dst-ctid <id>
                cluster); a DIFFERENT id gets its own config after the first good
                round, ONCE, like ketsync migrate: net on MOCKNET_BRIDGE, onboot 0,
                never rewritten - set its real network ahead of the cutover.
-               --final leaves the old container stopped under lock: migrate
+               --final leaves the old container stopped, unlocked, untouched
   --storage    PVE storage id ON THE DESTINATION NODE (zfspool, lvmthin, lvm, dir, nfs, cifs)
   --bwlimit    MB/s for rsync (no default on purpose)
   --zfs-props  zfspool only, set when the dataset is created, e.g. for MySQL/InnoDB:
@@ -187,7 +187,7 @@ fi
 grep -qE '^mp[0-9]+:' <<<"$SRCCFG" && die "CT $CTID has mount points (mpN) - this script moves the rootfs only"
 _lk=$(sed -n 's/^lock:[[:space:]]*//p' <<<"$SRCCFG")
 if [[ -n "$_lk" ]]; then
-  [[ "$_lk" == migrate ]] && log "NOTE: lock: migrate is ours from an interrupted --final; check, then: ssh root@$SRC pct unlock $CTID"
+  [[ "$_lk" == migrate ]] && log "NOTE: an older ct-move --final left lock: migrate on the old CT - if CT $CTID was already moved this row is done; otherwise clear it: ssh root@$SRC pct unlock $CTID"
   die "CT $CTID is locked ($_lk) - something else owns it right now"
 fi
 rsh "$SRC" "ha-manager status 2>/dev/null" | grep -qE "ct:$CTID([^0-9]|\$)" \
@@ -535,9 +535,12 @@ if [[ "$NEW" == "$CTID" ]]; then
   [[ "$_back" == "$NEWCFG" ]] || die "the config on $DSTN does not read back as what was sent - it is locked; compare with $STATE/ct-move-$CTID.conf.orig"
   rsh "$DST" "pct unlock $CTID" || die "config is in place but still locked: ssh root@$DST pct unlock $CTID"
 else
-  # Same IP and MAC as the old one once somebody moves it onto the real
-  # bridges: the old id is locked first, so the two cannot both come up.
-  rsh "$SRC" "pct set $CTID --lock migrate" || die "could not lock CT $CTID on $SRCN - the data is copied, config not touched"
+  # The old container is left exactly as ketsync migrate leaves one: stopped,
+  # no lock, config untouched. It used to get lock: migrate so it could not
+  # come up next to the new one, and every cutover then ended with a hand
+  # unlock (and a GUI showing a migration that was not happening). The new
+  # one sits on MOCKNET_BRIDGE with onboot 0 until a human moves it - the
+  # same guard migrate relies on.
   _st=$(rsh "$SRC" "pct status $CTID" | awk '{print $2}')
   [[ "$_st" == stopped ]] || die "CT $CTID is '$_st' on $SRCN after the copy - somebody started it"
   new_cfg_once
@@ -555,10 +558,10 @@ if [[ "$NEW" == "$CTID" ]]; then
   log "    ssh root@$SRC pct start $CTID"
 else
   grep -q "bridge=$MOCK" <<<"$NEWEXIST" && log "  network:   $NEW is still on $MOCK - put its real bridges in before pct start"
-  log "  CT $CTID on $SRCN: data untouched, stopped, lock: migrate (same IP/MAC as $NEW - never run both)"
-  log "  once $NEW is verified, days later: ssh root@$SRC 'pct unlock $CTID && pct destroy $CTID'"
+  log "  CT $CTID on $SRCN: data untouched, stopped, not locked - same IP/MAC as $NEW: never start both"
+  log "  once $NEW is verified, days later: ssh root@$SRC pct destroy $CTID"
   log "  rollback (anything written in $NEW after start is lost):"
   log "    ssh root@$DST pct stop $NEW"
-  log "    ssh root@$SRC 'pct unlock $CTID && pct start $CTID'"
+  log "    ssh root@$SRC pct start $CTID"
 fi
 exit 0
